@@ -220,6 +220,7 @@ func serve(ctx context.Context, cfg *config.Config, opts Options, d hubDeps, s *
 	if err != nil {
 		return s.fail(ReasonListen, err)
 	}
+	wireWatchSink(agent, fleet)
 	agent.RecordStates(ctx, d.swept)
 	hk, err := housekeeping.New(housekeeping.Options{Now: opts.Now, Telemetry: s.tel}, housekeeping.Job{
 		Name: "machine_state", Every: housekeeping.TickEvery, Run: agent.Housekeep,
@@ -231,6 +232,14 @@ func serve(ctx context.Context, cfg *config.Config, opts Options, d hubDeps, s *
 		Name: "events_prune", Every: gateway.PruneEventsEvery, Run: agent.PruneEvents,
 	}, housekeeping.Job{
 		Name: "system_evaluate", Every: system.EvaluateEvery, Run: sysLoop.Run,
+	}, housekeeping.Job{
+		// The Watch publish tick (plan row 12, slice 2): the audit tail,
+		// the volatile flush and the dirty fleet summary, at most every
+		// housekeeping tick. It never fails: every failure is logged and
+		// retried on the next pass.
+		Name: "watch_publish", Every: housekeeping.TickEvery, Run: func(ctx context.Context, _ time.Time) error {
+			return fleet.PublishTick(ctx)
+		},
 	}, housekeeping.Job{
 		Name: "approvals_expiry", Every: approvalsExpiryEvery, Run: func(ctx context.Context, now time.Time) error {
 			expired, err := approvals.ExpirePass(ctx, d.st, now)
@@ -321,6 +330,10 @@ func serve(ctx context.Context, cfg *config.Config, opts Options, d hubDeps, s *
 		return s.fail(ReasonConfig, err)
 	}
 	if gsync != nil {
+		// The syncer's mirror changes publish to Watch subscribers
+		// (the Watch ingest slice), serialized on the Fleet's watchMu.
+		gsync.OnWorkItems = fleet.PublishWorkItems
+		gsync.OnChangeRequests = fleet.PublishChangeRequests
 		wg.Add(1)
 		go func() { defer wg.Done(); gsync.Loop(ctx, GitHubIntegrationID) }()
 	}

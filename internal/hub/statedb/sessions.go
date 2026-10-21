@@ -20,6 +20,13 @@ ALTER TABLE hub_sessions ADD COLUMN owner_id TEXT NOT NULL DEFAULT '';
 ALTER TABLE hub_sessions ADD COLUMN owner_kind TEXT NOT NULL DEFAULT '';
 ALTER TABLE hub_sessions ADD COLUMN owner_name TEXT NOT NULL DEFAULT '';`
 
+// sessionsHubSeqSQL is migration 23 (plan row 12, the Watch ingest slice):
+// the Watch stamp on the create-time record, so a hub-started session
+// publishes its creation with its commit position. Rows from before this
+// migration read back 0 and never publish as live; the initial state
+// covers them.
+const sessionsHubSeqSQL = `ALTER TABLE hub_sessions ADD COLUMN hub_seq INTEGER NOT NULL DEFAULT 0 CHECK (hub_seq >= 0);`
+
 // ErrSessionUnknown is ReadSessionRow without a row.
 var ErrSessionUnknown = errors.New("statedb: no hub session row for the id")
 
@@ -39,16 +46,18 @@ type SessionRow struct {
 	// API_TOKEN, DEVICE, UNKNOWN).
 	OwnerID, OwnerKind, OwnerName string
 	CreatedMillis                 int64
+	// HubSeq is the Watch stamp of the create write (migration 23).
+	HubSeq int64
 }
 
 // sessionColumns lists every hub_sessions column a SessionRow scan reads.
 const sessionColumns = `session_id, machine_id, name, server,
-	owner_id, owner_kind, owner_name, create_time`
+	owner_id, owner_kind, owner_name, create_time, hub_seq`
 
 func scanSessionRow(row rowScanner) (SessionRow, error) {
 	var m SessionRow
 	err := row.Scan(&m.SessionID, &m.MachineID, &m.Name, &m.Server,
-		&m.OwnerID, &m.OwnerKind, &m.OwnerName, &m.CreatedMillis)
+		&m.OwnerID, &m.OwnerKind, &m.OwnerName, &m.CreatedMillis, &m.HubSeq)
 	if errors.Is(err, sql.ErrNoRows) {
 		return SessionRow{}, ErrSessionUnknown
 	}

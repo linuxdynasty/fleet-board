@@ -9,6 +9,7 @@ import (
 	"time"
 
 	agentv1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/agent/v1"
+	"github.com/linuxdynasty/fleet-board/internal/hub/statedb"
 )
 
 // machineRow is what the Snapshot transaction writes to a machine row.
@@ -89,8 +90,8 @@ func (a *applied) got() []string {
 }
 
 // applierFunc is an ingest.Applier from a function.
-type applierFunc func(ctx context.Context, tx *sql.Tx, machineID string, s *agentv1.Snapshot) error
+type applierFunc func(ctx context.Context, tx *sql.Tx, machineID string, s *agentv1.Snapshot) ([]statedb.GoalRow, error)
 
-func (f applierFunc) Apply(ctx context.Context, tx *sql.Tx, machineID string, s *agentv1.Snapshot) error {
+func (f applierFunc) Apply(ctx context.Context, tx *sql.Tx, machineID string, s *agentv1.Snapshot) ([]statedb.GoalRow, error) {
 	return f(ctx, tx, machineID, s)
 }

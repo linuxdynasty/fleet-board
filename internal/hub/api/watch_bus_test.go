@@ -4,13 +4,50 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"log/slog"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
 
 	hubv1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/hub/v1"
+	"github.com/linuxdynasty/fleet-board/internal/hub/statedb"
+	"github.com/linuxdynasty/fleet-board/internal/telemetry"
 )
+
+// testCommitFleet builds a Fleet with a real store for commitWatch tests:
+// the commit now tails the audit log, so a zero Fleet no longer suffices.
+func testCommitFleet(t *testing.T) *Fleet {
+	t.Helper()
+	dir := filepath.Join(t.TempDir(), "state")
+	if err := statedb.EnsureDir(dir); err != nil {
+		t.Fatal(err)
+	}
+	id := statedb.Identity{
+		FleetID: "fleet", CACert: []byte("c"), CAKey: []byte("k"), ServerCert: []byte("c"), ServerKey: []byte("k"),
+		AccountSalt: make([]byte, 32), SaltVersion: 1, SettingsEpoch: "e", CreatedTime: time.Now(),
+	}
+	ctx := context.Background()
+	if err := statedb.Create(ctx, dir, id, statedb.CreateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	tel, err := telemetry.New(telemetry.Config{Service: telemetry.Hub, Version: "test", InstanceID: "test", LogOutput: io.Discard})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = tel.Shutdown(context.Background()) })
+	st, err := statedb.Open(ctx, dir, tel)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	f, err := NewFleet(FleetOptions{Store: st, CACert: []byte("c"), Telemetry: tel, HubInstanceID: "test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return f
+}
 
 // testLogger is a Watch session logger that drops its lines: the tests
 // assert messages, and the FELL_BEHIND log test captures its own.
@@ -160,7 +197,7 @@ func TestWatchBusDropsUnsubscribedShed(t *testing.T) {
 // bus appends in commit order (P1-4).
 func TestCommitWatchSerializesPublish(t *testing.T) {
 	t.Parallel()
-	var f Fleet
+	f := testCommitFleet(t)
 	var order []string
 	entered := make(chan struct{})
 	release := make(chan struct{})
@@ -269,7 +306,7 @@ func TestWatchFellBehindLogsResync(t *testing.T) {
 // the bus order matches the commit order on every interleaving (P1-4).
 func TestCommitWatchSerializesManyWriters(t *testing.T) {
 	t.Parallel()
-	var f Fleet
+	f := testCommitFleet(t)
 	const writers = 32
 	var mu sync.Mutex
 	var order []string

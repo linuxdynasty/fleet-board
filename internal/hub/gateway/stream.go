@@ -12,7 +12,6 @@ import (
 	"connectrpc.com/connect"
 
 	agentv1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/agent/v1"
-	"github.com/linuxdynasty/fleet-board/internal/hub/ingest"
 	"github.com/linuxdynasty/fleet-board/internal/hub/statedb"
 )
 
@@ -83,8 +82,11 @@ type stream struct {
 	beats chan struct{}
 	// abandoned are the Snapshot jobs whose waits the arm gave up when the
 	// stream ended, in the order they were queued; the teardown reads their
-	// results. Only the handler goroutine uses it.
-	abandoned []*ingest.Pending
+	// results. Each carries the pre-submit before images for the
+	// post-commit Watch publish, so a committed job publishes its goal
+	// writes as well as its machine write. Only the handler goroutine
+	// uses it.
+	abandoned []abandonedSnapshot
 	// lastBeat is the last Heartbeat the reader took, not yet judged for
 	// its event fields (beatEvents swaps it out).
 	lastBeat atomic.Pointer[agentv1.Heartbeat]
@@ -93,8 +95,13 @@ type stream struct {
 	// seenWritten is the hub clock of the last last_seen_time write for
 	// this stream (the Hello's at first); only the handler goroutine uses it.
 	seenWritten time.Time
-	in          chan *agentv1.ConnectRequest
-	out         chan *agentv1.ConnectResponse
+	// panes maps a pane key to the snapshot's hub session id for it
+	// (empty for the developer's own panes): PaneSummary attribution for
+	// the Watch ingest slice. Only the handler goroutine touches it; a
+	// newer Snapshot replaces it whole.
+	panes map[string]string
+	in    chan *agentv1.ConnectRequest
+	out   chan *agentv1.ConnectResponse
 
 	once   sync.Once
 	ended  chan struct{} // closed by end

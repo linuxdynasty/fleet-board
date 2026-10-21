@@ -75,3 +75,15 @@ func (t watchToken) covers(topic hubv1.WatchTopic, hash string) bool {
 	}
 	return false
 }
+
+// hasTopic reports whether the token ever covered the topic, under any
+// filter: a changed filter restarts the topic, but a lost scope still
+// resyncs it as SCOPES_CHANGED.
+func (t watchToken) hasTopic(topic hubv1.WatchTopic) bool {
+	for _, s := range t.Subs {
+		if s.Topic == topic {
+			return true
+		}
+	}
+	return false
+}

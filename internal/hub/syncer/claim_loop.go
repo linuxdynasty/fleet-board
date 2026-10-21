@@ -61,9 +61,15 @@ func (s *Syncer) claimItem(ctx context.Context, a Adapter, id string, c statedb.
 			if getErr != nil {
 				return getErr
 			}
-			return statedb.UpdateWorkItemClaims(ctx, s.Store, key, []byte(stored.ClaimsJSON),
+			change, err := statedb.UpdateWorkItemClaims(ctx, s.Store, key, []byte(stored.ClaimsJSON),
 				int32(hubv1.WorkStage_WORK_STAGE_CLOSED),
 				int32(hubv1.WorkManualReason_WORK_MANUAL_REASON_UNSPECIFIED), now.UnixMilli())
+			if err != nil {
+				return err
+			}
+			// The close committed: its mirror change publishes to Watch.
+			s.publishWorkItems(ctx, []statedb.WorkItemChange{change})
+			return nil
 		}
 		return s.fail(ctx, id, c.Project, ResourceClaims, err, now)
 	}
@@ -96,11 +102,14 @@ func (s *Syncer) claimItem(ctx context.Context, a Adapter, id string, c statedb.
 	})
 	foreign, ours, theirs := splitClaims(page.Claims)
 	stage, reason := InitialStage(item.GetState(), verdict, foreign, gate.Enabled)
-	if err := statedb.UpdateWorkItemClaims(ctx, s.Store, key, claimsJSON, int32(stage), int32(reason), now.UnixMilli()); err != nil {
+	change, err := statedb.UpdateWorkItemClaims(ctx, s.Store, key, claimsJSON, int32(stage), int32(reason), now.UnixMilli())
+	if err != nil {
 		return err
 	}
+	// The claim move committed: its mirror change publishes to Watch.
+	s.publishWorkItems(ctx, []statedb.WorkItemChange{change})
 	cursorOut := statedb.CursorValue{Resource: ResourceClaims, Page: c.ItemKey, ETag: page.Validators.GetEtag()}
-	if err := statedb.UpsertWorkItemPage(ctx, s.Store, id, nil,
+	if _, err := statedb.UpsertWorkItemPage(ctx, s.Store, id, nil,
 		[]statedb.CursorValue{cursorOut}, rateLimitValues(page.Meta), now.UnixMilli()); err != nil {
 		return err
 	}

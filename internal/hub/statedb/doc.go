@@ -218,6 +218,18 @@
 // reserves in [PrecheckRevokeForWrite] before its separate file stage and
 // rechecks the row in the final writer job.
 //
+// Plan row 12 (Watch ingest slice) adds the publish stamps: the
+// hub_session_watch_stamp migration stamps each hub-started session's create
+// write (hub_sessions.hub_seq, read as [SessionRow.HubSeq]; 0 on older rows,
+// which never publish as live), and the mirror_watch_stamps migration stamps
+// each mirror's last real change (work_items.hub_seq and
+// change_requests.hub_seq, read as [WorkItemRow.HubSeq] and
+// [ChangeRequestRow.HubSeq]). Every stamped write takes its number with
+// [NextStamp] inside its committing job. [RestampMachine] and [RestampGoal]
+// move one row to a fresh stamp for the volatile flush; [ReadGoalTx] reads a
+// goal inside the writer job for applier after-images, and [EndObservedGone]
+// returns the ids it closed for the same publish.
+//
 // Plan row 11 adds the provider mirrors (provider_sync_mirrors migration):
 // work_items and change_requests keyed canonically with the hub's verdicts
 // beside the provider shape, sync_cursors and rate_limit_state per page

@@ -24,6 +24,10 @@ import (
 // commit order (02c "Order"). The critical section holds no other lock:
 // the commit runs its writer job, the publish reads the read pool at
 // most, and both are short and non-blocking.
+//
+// After the publish it tails the audit log: the commit may have appended
+// audit rows (every state-changing write does), and the tail publishes
+// them as AUDIT live with their stamps.
 func (f *Fleet) commitWatch(commit func() error, publish func()) error {
 	f.watchMu.Lock()
 	defer f.watchMu.Unlock()
@@ -31,15 +35,22 @@ func (f *Fleet) commitWatch(commit func() error, publish func()) error {
 		return err
 	}
 	publish()
+	f.publishAuditTail(context.Background())
 	return nil
 }
 
 // offerWatch logs one never-dropped change with the store stamp. A
 // non-positive seq means the write carried no stamp and stays unpublished.
+// Every published change dirties the fleet summary: the publish tick
+// recomputes it at most once per second (02c).
 func (f *Fleet) offerWatch(seq int64, change watchChange) {
 	if seq <= 0 {
 		return
 	}
+	if u := uint64(seq); u > f.summarySeq {
+		f.summarySeq = u
+	}
+	f.summaryDirty = true
 	f.watch.publish(watchEntry{at: f.now(), seq: uint64(seq), change: change})
 }
 

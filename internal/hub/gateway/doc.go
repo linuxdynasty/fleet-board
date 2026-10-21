@@ -85,4 +85,10 @@
 // [EventAckCapability] (plan row 7a-B; row 7 ruling round 3, 3e).
 // [Server.PruneEvents] keeps [EventRetention] of history.
 // Terminal and SessionLog answer Unimplemented until their rows land.
+//
+// [Server.SetWatchSink] hands the agent writes to Watch: the Snapshot and
+// event arms publish their committed machine and goal changes through the
+// sink in submission order, and presence and enroll publish through it too,
+// so machine-driven writes reach subscribers in commit order (02c). With no
+// sink set the gateway publishes nothing.
 package gateway

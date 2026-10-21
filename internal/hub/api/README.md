@@ -22,12 +22,17 @@ reads (`ListGoals`, `GetGoal`), the work-item reads (`ListWorkItems`,
 the account reads (`ListAccounts`, `GetAccount`), and `GetSystemStatus`
 on the local admin socket and local TCP API. `Watch` streams per-topic
 subscriptions with the initial state, resume tokens, `RESYNC_REQUIRED`
-and latest-wins summaries (02c); the in-package writes publish their
-stamped changes, and agent-driven changes follow once ingest publishes
-too. `AUDIT` serves its initial state only until then: audit rows commit
-in every writer job (owner and ingest alike), so no single slice can keep
-the topic live on its own. Unserved topics (`ROUTINES`, the v3 `DEVICES`
-and `NOTIFICATION_TARGETS`) are refused as whole subscriptions.
+and latest-wins summaries (02c). Every writer publishes through the same
+commit-then-publish step (`watch_ingest.go`, `watch_tick.go`): the
+in-package writes and the ingest hooks (the statedb writer jobs, the
+gateway's agent writes through its `WatchSink`, the syncer's mirror pages)
+commit first, then offer their stamped changes in commit order (a job's goal
+writes publish from the after-images its appliers captured, so rapid
+transitions keep every intermediate change); the publish tick tails new
+audit rows, flushes volatile-only holds at fresh positions a resume cannot
+skip (a failed flush keeps its hold for the next tick) and recomputes a
+dirty summary at most once a second. Unserved topics (`ROUTINES`, the v3
+`DEVICES` and `NOTIFICATION_TARGETS`) are refused as whole subscriptions.
 
 ```go
 fleet, err := api.NewFleet(api.FleetOptions{Store: st, CACert: id.CACert, Telemetry: tel, HubInstanceID: instanceID})

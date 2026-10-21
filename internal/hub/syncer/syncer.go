@@ -83,8 +83,15 @@ type Syncer struct {
 	FleetUsers map[string]bool
 	// OnTriage receives raises and retires; nil drops them.
 	OnTriage func(TriageNotice)
-	Logger   *slog.Logger
-	Metrics  *Metrics
+	// OnWorkItems receives the work-item mirror changes a page or claim
+	// write committed, in commit order, for Watch subscribers; nil drops
+	// them. The daemon wires it to the Fleet.
+	OnWorkItems func(context.Context, []statedb.WorkItemChange)
+	// OnChangeRequests receives the change-request mirror changes a
+	// page committed, as OnWorkItems.
+	OnChangeRequests func(context.Context, []statedb.ChangeRequestChange)
+	Logger           *slog.Logger
+	Metrics          *Metrics
 	// Tracer draws the hub.sync.* spans; nil uses the global provider.
 	Tracer trace.Tracer
 	// Clock and intervals are seams for the fake clock in tests.
@@ -99,6 +106,22 @@ type Syncer struct {
 	health   map[string]*integrationHealth
 	branches map[string]map[string][]string
 	noticed  map[string]bool
+}
+
+// publishWorkItems hands committed mirror changes to Watch subscribers;
+// nil and empty publish nothing.
+func (s *Syncer) publishWorkItems(ctx context.Context, changes []statedb.WorkItemChange) {
+	if s.OnWorkItems != nil && len(changes) > 0 {
+		s.OnWorkItems(ctx, changes)
+	}
+}
+
+// publishChangeRequests hands committed change-request changes to Watch
+// subscribers, as publishWorkItems.
+func (s *Syncer) publishChangeRequests(ctx context.Context, changes []statedb.ChangeRequestChange) {
+	if s.OnChangeRequests != nil && len(changes) > 0 {
+		s.OnChangeRequests(ctx, changes)
+	}
 }
 
 type integrationHealth struct {

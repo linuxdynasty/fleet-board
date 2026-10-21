@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"time"
 
 	"github.com/linuxdynasty/fleet-board/internal/store"
 )
@@ -135,16 +136,41 @@ func ListClaimCandidates(ctx context.Context, s *store.Store, integration string
 
 // UpdateWorkItemClaims replaces one mirror's claims (the claim loop owns
 // this column; the item poll never touches it) and re-stores the stage the
-// caller recomputed from them, bumping version with the row.
-func UpdateWorkItemClaims(ctx context.Context, s *store.Store, key string, claims []byte, stage, reason int32, nowMs int64) error {
+// caller recomputed from them, bumping version with the row. The write
+// takes a hub_seq stamp and reports the change, so Watch publishes a claim
+// move with its commit position.
+func UpdateWorkItemClaims(ctx context.Context, s *store.Store, key string, claims []byte, stage, reason int32, nowMs int64) (WorkItemChange, error) {
 	if len(claims) == 0 {
 		claims = []byte("[]")
 	}
 	jctx := context.WithoutCancel(ctx)
-	return s.Write(ctx, func(tx *sql.Tx) error {
+	var out WorkItemChange
+	err := s.Write(ctx, func(tx *sql.Tx) error {
+		var before WorkItemRow
+		var storedStage, storedReason int64
+		err := tx.QueryRowContext(jctx, `SELECT `+workItemColumns+` FROM work_items WHERE key = ?`,
+			key).Scan(&before.Key, &before.Integration, &before.Kind, &before.Project, &before.ItemKey,
+			&before.ItemJSON, &before.UpdateMs, &storedStage, &before.TrustJSON, &storedReason,
+			&before.Version, &before.CreateMs, &before.LastSyncMs, &before.HubSeq)
+		if err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return ErrWorkItemUnknown
+			}
+			return err
+		}
+		if before.Stage, err = int32Range(storedStage); err != nil {
+			return err
+		}
+		if before.ManualReason, err = int32Range(storedReason); err != nil {
+			return err
+		}
+		st, err := NextStamp(jctx, tx, time.UnixMilli(nowMs))
+		if err != nil {
+			return err
+		}
 		res, err := tx.ExecContext(jctx, `UPDATE work_items SET claims_json = ?, stage = ?,
-			manual_reason = ?, version = version + 1, last_sync_ms = ? WHERE key = ?`,
-			string(claims), stage, reason, nowMs, key)
+			manual_reason = ?, version = version + 1, last_sync_ms = ?, hub_seq = ? WHERE key = ?`,
+			string(claims), stage, reason, nowMs, st.HubSeq, key)
 		if err != nil {
 			return err
 		}
@@ -154,8 +180,13 @@ func UpdateWorkItemClaims(ctx context.Context, s *store.Store, key string, claim
 			}
 			return ErrWorkItemUnknown
 		}
+		out = WorkItemChange{Key: key, HubSeq: st.HubSeq, Before: &before}
 		return nil
 	})
+	if err != nil {
+		return WorkItemChange{}, err
+	}
+	return out, nil
 }
 
 // ErrWorkItemUnknown is a missing mirror row.

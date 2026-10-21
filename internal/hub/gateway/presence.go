@@ -218,10 +218,14 @@ func (s *Server) RecordStates(ctx context.Context, changes []statedb.StateChange
 	}
 }
 
-// stateChanged logs machine.state_changed and moves the state gauge.
+// stateChanged logs machine.state_changed and moves the state gauge. It
+// also publishes the committed change for the Watch ingest slice: a state
+// change is never volatile, so it publishes at once, with the state the
+// job left for UNMATCHED evaluation.
 func (a *agentService) stateChanged(ctx context.Context, c statedb.StateChange) {
 	a.log.InfoContext(ctx, "machine.state_changed", "machine_id", c.MachineID, "from", c.From, "to", c.To, "reason", c.Reason)
 	a.recordState(ctx, c.MachineID, c.To)
+	a.publishMachineState(ctx, c.MachineID, c.From)
 }
 
 // recordState sets fleet_hub_machine_state{machine, state} to 1 for state

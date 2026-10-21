@@ -11,6 +11,7 @@ import (
 	agentv1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/agent/v1"
 	"github.com/linuxdynasty/fleet-board/internal/hub/gateway"
 	"github.com/linuxdynasty/fleet-board/internal/hub/ingest"
+	"github.com/linuxdynasty/fleet-board/internal/hub/statedb"
 )
 
 // The Hello transaction leaves the machine ENROLLED; only the Snapshot of
@@ -69,14 +70,14 @@ func TestAFailingApplierRollsTheWholeSnapshotBack(t *testing.T) {
 	t.Parallel()
 	var hook applied
 	var order []string
-	first := applierFunc(func(ctx context.Context, tx *sql.Tx, id string, s *agentv1.Snapshot) error {
+	first := applierFunc(func(ctx context.Context, tx *sql.Tx, id string, s *agentv1.Snapshot) ([]statedb.GoalRow, error) {
 		order = append(order, "first:"+s.GetFacts().GetHostname())
 		_, err := tx.ExecContext(ctx, `UPDATE machines SET name = 'changed' WHERE machine_id = ?`, id)
-		return err
+		return nil, err
 	})
-	failing := applierFunc(func(context.Context, *sql.Tx, string, *agentv1.Snapshot) error {
+	failing := applierFunc(func(context.Context, *sql.Tx, string, *agentv1.Snapshot) ([]statedb.GoalRow, error) {
 		order = append(order, "failing")
-		return errors.New("a row 7 bug")
+		return nil, errors.New("a row 7 bug")
 	})
 	h := startHub(t, func(o *gateway.ServerOptions) {
 		o.Appliers = []ingest.Applier{first, failing}

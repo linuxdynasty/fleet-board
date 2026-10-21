@@ -71,6 +71,11 @@ type connectDeps struct {
 	// beforeMark is a hook tests run between housekeeping's judgement of a
 	// machine and its MarkState job.
 	beforeMark func(machineID string)
+	// watch publishes committed gateway changes to Watch subscribers
+	// (the Watch ingest slice): the daemon wires each hook to a Fleet
+	// publish method with SetWatchSink after both exist. The zero value
+	// publishes nothing.
+	watch WatchSink
 	// outbox is the command path (NewServer builds it on the store); its
 	// sender runs until stopping ends and closes outboxDone.
 	outbox     *outbox.Service

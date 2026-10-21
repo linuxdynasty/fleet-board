@@ -34,55 +34,78 @@ func (a Applier) now() time.Time {
 // OBSERVED GoalState is inserted or refreshed, and every stored observed
 // goal the snapshot no longer lists ends OBSERVED_GONE. Bindings the
 // fleet manages (REGISTRY, ENV) are row 21's, never this applier's.
-func (a Applier) Apply(ctx context.Context, tx *sql.Tx, machineID string, snap *agentv1.Snapshot) error {
+func (a Applier) Apply(ctx context.Context, tx *sql.Tx, machineID string, snap *agentv1.Snapshot) ([]statedb.GoalRow, error) {
 	now := a.now()
 	var keep []string
+	var afters []statedb.GoalRow
 	for _, gs := range snap.GetGoals() {
 		if gs.GetBinding() != agentv1.GoalBindingSource_GOAL_BINDING_SOURCE_OBSERVED {
 			continue
 		}
-		if err := a.applyOne(ctx, tx, machineID, harnessOf(snap, gs), gs, now); err != nil {
-			return err
+		after, err := a.applyOne(ctx, tx, machineID, harnessOf(snap, gs), gs, now)
+		if err != nil {
+			return nil, err
+		}
+		if after != nil {
+			afters = append(afters, *after)
 		}
 		keep = append(keep, gs.GetGoalId().GetValue())
 	}
 	stamp, err := statedb.NextStamp(ctx, tx, now)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	_, err = statedb.EndObservedGone(ctx, tx, machineID, keep, now.UnixMilli(), stamp.HubSeq)
-	return err
+	closed, err := statedb.EndObservedGone(ctx, tx, machineID, keep, now.UnixMilli(), stamp.HubSeq)
+	if err != nil {
+		return nil, err
+	}
+	for _, id := range closed {
+		after, err := statedb.ReadGoalTx(ctx, tx, id)
+		if err != nil {
+			return nil, err
+		}
+		afters = append(afters, after)
+	}
+	return afters, nil
 }
 
 // ApplyEvent stores one GoalState event with binding OBSERVED. History
 // events (at or below the Snapshot floor) run no rule; anything else is
 // row 21's.
-func (a Applier) ApplyEvent(ctx context.Context, tx *sql.Tx, machineID string, out statedb.EventOut, ev *agentv1.Event) error {
+func (a Applier) ApplyEvent(ctx context.Context, tx *sql.Tx, machineID string, out statedb.EventOut, ev *agentv1.Event) ([]statedb.GoalRow, error) {
 	if out.History {
-		return nil
+		return nil, nil
 	}
 	gs := ev.GetGoalState()
 	if gs == nil || gs.GetBinding() != agentv1.GoalBindingSource_GOAL_BINDING_SOURCE_OBSERVED {
-		return nil
+		return nil, nil
 	}
 	// An event carries no inventory: the pane's harness is unknown here
 	// (the snapshot fills it when known; row 8 names it).
-	return a.applyOne(ctx, tx, machineID, "", gs, a.now())
+	after, err := a.applyOne(ctx, tx, machineID, "", gs, a.now())
+	if err != nil {
+		return nil, err
+	}
+	if after == nil {
+		return nil, nil
+	}
+	return []statedb.GoalRow{*after}, nil
 }
 
-// applyOne inserts or refreshes one goal. An unchanged sighting writes
-// nothing (snapshots repeat the goals every time); otherwise the status
-// is replaced and stamped, and the spec is written once, except for the
-// harness, which an event cannot see: an empty stored harness is filled
+// applyOne inserts or refreshes one goal and returns the stamped
+// after-image it wrote, or nil for an unchanged sighting (snapshots repeat
+// the goals every time): no write, no stamp, no after-image. Otherwise the
+// status is replaced and stamped, and the spec is written once, except for
+// the harness, which an event cannot see: an empty stored harness is filled
 // when a sighting names it.
-func (a Applier) applyOne(ctx context.Context, tx *sql.Tx, machineID, harness string, gs *agentv1.GoalState, now time.Time) error {
+func (a Applier) applyOne(ctx context.Context, tx *sql.Tx, machineID, harness string, gs *agentv1.GoalState, now time.Time) (*statedb.GoalRow, error) {
 	id := gs.GetGoalId().GetValue()
 	if id == "" {
-		return fmt.Errorf("observed: goal without an id")
+		return nil, fmt.Errorf("observed: goal without an id")
 	}
 	old, err := statedb.ReadGoal(ctx, tx, id)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	phase, reason := PhaseFor(gs.GetState(), gs.GetWatchAlive())
 	var start time.Time
@@ -91,7 +114,7 @@ func (a Applier) applyOne(ctx context.Context, tx *sql.Tx, machineID, harness st
 	if old.Found {
 		var ost hubv1.GoalStatus
 		if err := protojson.Unmarshal([]byte(old.Status), &ost); err != nil {
-			return fmt.Errorf("observed: read stored status: %w", err)
+			return nil, fmt.Errorf("observed: read stored status: %w", err)
 		}
 		start = ost.GetStartTime().AsTime()
 		phaseTime = ost.GetPhaseTime().AsTime()
@@ -118,16 +141,16 @@ func (a Applier) applyOne(ctx context.Context, tx *sql.Tx, machineID, harness st
 		status.EndTime = timestamppb.New(now)
 	}
 	if old.Found && statusEqual(old.Status, status) {
-		return nil // the same sighting again: no write, no stamp
+		return nil, nil // the same sighting again: no write, no stamp
 	}
 	stamp, err := statedb.NextStamp(ctx, tx, now)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	status.ObservedTime, status.HubSeq = timestamppb.New(now), uint64(stamp.HubSeq) //nolint:gosec // hub_seq > 0
 	statusJSON, err := protojson.Marshal(status)
 	if err != nil {
-		return fmt.Errorf("observed: encode status: %w", err)
+		return nil, fmt.Errorf("observed: encode status: %w", err)
 	}
 	specJSON := specOf(old.Spec, machineID, harness, gs.GetFirstLine())
 	row := statedb.ObservedRow{
@@ -139,7 +162,14 @@ func (a Applier) applyOne(ctx context.Context, tx *sql.Tx, machineID, harness st
 		end := now.UnixMilli()
 		row.EndMs = &end
 	}
-	return statedb.UpsertObservedGoal(ctx, tx, row)
+	if err := statedb.UpsertObservedGoal(ctx, tx, row); err != nil {
+		return nil, err
+	}
+	after, err := statedb.ReadGoalTx(ctx, tx, id)
+	if err != nil {
+		return nil, err
+	}
+	return &after, nil
 }
 
 // PhaseFor derives the hub phase from the goal line (03k): working runs;

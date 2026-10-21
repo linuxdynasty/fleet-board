@@ -26,7 +26,11 @@ import (
 // [SubmitSnapshot] queues recovers a panic into an error all the same, so the writer lives on. Text a row stores beyond what [Clean] covers is
 // cleaned before the job, never in Apply.
 type Applier interface {
-	Apply(ctx context.Context, tx *sql.Tx, machineID string, snap *agentv1.Snapshot) error
+	// Apply runs the row's part of the Snapshot job and returns the
+	// stamped goal after-images it wrote, so Watch publishes each job's
+	// own writes: a later job must never publish an earlier job's change
+	// twice while losing its own intermediate state.
+	Apply(ctx context.Context, tx *sql.Tx, machineID string, snap *agentv1.Snapshot) ([]statedb.GoalRow, error)
 }
 
 // ErrApplier wraps the error of a failing [Applier].
@@ -65,9 +69,11 @@ func SubmitSnapshot(ctx context.Context, st *store.Store, s Stream, snap *agentv
 			return err
 		}
 		for i, a := range appliers {
-			if err := apply(jctx, tx, a, s.MachineID, snap); err != nil {
+			var goals []statedb.GoalRow
+			if goals, err = apply(jctx, tx, a, s.MachineID, snap); err != nil {
 				return fmt.Errorf("%w: applier %d: %w", ErrApplier, i, err)
 			}
+			p.goals = append(p.goals, goals...)
 		}
 		if p.expired, err = outbox.Expire(jctx, tx, s.MachineID, now, ExpireInSnapshot); err != nil {
 			return err
@@ -92,6 +98,7 @@ type Pending struct {
 	done    <-chan error
 	out     statedb.SnapshotOut // written by the job; read after done
 	expired []outbox.Closed     // written by the job; read after done
+	goals   []statedb.GoalRow   // the appliers' stamped after-images; read after done
 	result  error
 	read    bool
 }
@@ -103,6 +110,17 @@ func (p *Pending) Expired() []outbox.Closed {
 		return nil
 	}
 	return p.expired
+}
+
+// Goals are the stamped goal after-images the job's appliers wrote, for
+// the Watch publish; nil until a [Pending.Wait] returned without error.
+// Each entry is exactly what its writer stamped in this job's transaction,
+// so rapid transitions publish every intermediate change.
+func (p *Pending) Goals() []statedb.GoalRow {
+	if !p.read || p.result != nil {
+		return nil
+	}
+	return p.goals
 }
 
 // Wait returns the job's result once it committed or failed, or ctx's
@@ -125,10 +143,11 @@ func (p *Pending) Wait(ctx context.Context) (statedb.SnapshotOut, error) {
 // apply runs one applier and turns a panic into an error: the job runs on
 // the store's writer goroutine, which has no recover, so a panic on agent
 // data would end the hub. The error rolls the Snapshot back like any other.
-func apply(ctx context.Context, tx *sql.Tx, a Applier, machineID string, snap *agentv1.Snapshot) (err error) {
+func apply(ctx context.Context, tx *sql.Tx, a Applier, machineID string, snap *agentv1.Snapshot,
+) (goals []statedb.GoalRow, err error) {
 	defer func() {
 		if r := recover(); r != nil {
-			err = fmt.Errorf("%w: %v", errApplierPanic, r)
+			goals, err = nil, fmt.Errorf("%w: %v", errApplierPanic, r)
 		}
 	}()
 	return a.Apply(ctx, tx, machineID, snap)

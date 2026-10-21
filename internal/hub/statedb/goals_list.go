@@ -69,6 +69,14 @@ func scanGoalRows(row *sql.Rows) (GoalRow, error) {
 	return g, nil
 }
 
+// ReadGoalTx reads one goal row inside the writer job's tx
+// ([ErrGoalUnknown] when there is no row). Appliers use it to capture the
+// stamped after-image of the row they just wrote, so Watch publishes each
+// job's own writes instead of re-reading the latest state.
+func ReadGoalTx(ctx context.Context, tx *sql.Tx, id string) (GoalRow, error) {
+	return scanGoalRow(tx.QueryRowContext(ctx, `SELECT `+goalColumns+` FROM goals WHERE id = ?`, id))
+}
+
 // ReadGoalRow reads one goal row on the read pool
 // ([ErrGoalUnknown] when there is no row).
 func ReadGoalRow(ctx context.Context, s *store.Store, id string) (GoalRow, error) {

@@ -9,6 +9,7 @@ import (
 	agentv1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/agent/v1"
 	"github.com/linuxdynasty/fleet-board/internal/hub/gateway"
 	"github.com/linuxdynasty/fleet-board/internal/hub/ingest"
+	"github.com/linuxdynasty/fleet-board/internal/hub/statedb"
 )
 
 // An agent that leaves while its Snapshot waits for the writer is no
@@ -106,7 +107,9 @@ func TestASnapshotCutByHousekeepingIsAbandonedAsCut(t *testing.T) {
 // must never die.
 func TestAPanickingApplierRollsBackAndTheHubLivesOn(t *testing.T) {
 	t.Parallel()
-	panicky := applierFunc(func(context.Context, *sql.Tx, string, *agentv1.Snapshot) error { panic("row 8 bug") })
+	panicky := applierFunc(func(context.Context, *sql.Tx, string, *agentv1.Snapshot) ([]statedb.GoalRow, error) {
+		panic("row 8 bug")
+	})
 	h := startHub(t, func(o *gateway.ServerOptions) { o.Appliers = []ingest.Applier{panicky} })
 	m := h.enrollMachine(t)
 	before := h.machineRow(t, m.id)

@@ -38,12 +38,16 @@ func (c watchChange) droppable() bool {
 		c.topic == hubv1.WatchTopic_WATCH_TOPIC_FLEET_SUMMARY
 }
 
-// paneKeyOf names the pane a summary is the latest of: the canonical
-// PaneKey form (ids.proto), so two summaries of one pane collapse.
+// paneKeyOf names the pane a summary is the latest of: the owning machine
+// plus the canonical PaneKey form (ids.proto), so two summaries of one
+// pane collapse. The machine is part of the key because PaneKey is unique
+// only within one machine: two machines reporting the same server, start
+// and pane tuple must not share a version counter or overwrite each other
+// in the latest-pane map.
 func paneKeyOf(m *hubv1.WatchResponse) string {
 	p := m.GetPaneSummary()
 	k := p.GetPane()
-	return k.GetServer() + "/" + k.GetServerStartId() + "/" + k.GetPaneId()
+	return p.GetMachine().GetValue() + "/" + k.GetServer() + "/" + k.GetServerStartId() + "/" + k.GetPaneId()
 }
 
 // watchEntry is a logged change with its commit time for the 10-minute

@@ -199,7 +199,7 @@ func seedMachine(t *testing.T, dir string) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := statedb.UpsertWorkItemPage(t.Context(), st, "github-1", []statedb.WorkItemMirror{{
+	if _, err := statedb.UpsertWorkItemPage(t.Context(), st, "github-1", []statedb.WorkItemMirror{{
 		Integration: "github-1", Kind: "WORK_ITEM_KIND_ISSUE", Project: "acme/web", ItemKey: "7398",
 		ItemJSON: []byte(`{"title":"Fix\n\u001b[31m the parser"}`), UpdateMs: now.UnixMilli(), Stage: 2,
 		TrustJSON: []byte(`{"trusted":true}`),

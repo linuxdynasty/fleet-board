@@ -30,11 +30,14 @@ type WorkItemRow struct {
 	Version      int64
 	CreateMs     int64
 	LastSyncMs   int64
+	// HubSeq is the stamp of the last real change (migration 24); 0 on
+	// rows from before it, which never publish as live.
+	HubSeq int64
 }
 
 // workItemColumns lists every work_items column a WorkItemRow scan reads.
 const workItemColumns = `key, integration, kind, project, item_key, item_json,
-	update_ms, stage, trust_json, manual_reason, version, create_ms, last_sync_ms`
+	update_ms, stage, trust_json, manual_reason, version, create_ms, last_sync_ms, hub_seq`
 
 // scanWorkItemRow reads one mirror row and converts the small integers.
 func scanWorkItemRow(row *sql.Row) (WorkItemRow, error) {
@@ -42,7 +45,7 @@ func scanWorkItemRow(row *sql.Row) (WorkItemRow, error) {
 	var stage, reason int64
 	err := row.Scan(&w.Key, &w.Integration, &w.Kind, &w.Project, &w.ItemKey,
 		&w.ItemJSON, &w.UpdateMs, &stage, &w.TrustJSON, &reason,
-		&w.Version, &w.CreateMs, &w.LastSyncMs)
+		&w.Version, &w.CreateMs, &w.LastSyncMs, &w.HubSeq)
 	if err != nil {
 		return WorkItemRow{}, fmt.Errorf("statedb: read work item row: %w", err)
 	}
@@ -64,7 +67,7 @@ func scanWorkItemRows(rows *sql.Rows) (WorkItemRow, error) {
 	var stage, reason int64
 	err := rows.Scan(&w.Key, &w.Integration, &w.Kind, &w.Project, &w.ItemKey,
 		&w.ItemJSON, &w.UpdateMs, &stage, &w.TrustJSON, &reason,
-		&w.Version, &w.CreateMs, &w.LastSyncMs)
+		&w.Version, &w.CreateMs, &w.LastSyncMs, &w.HubSeq)
 	if err != nil {
 		return WorkItemRow{}, fmt.Errorf("statedb: read work item row: %w", err)
 	}

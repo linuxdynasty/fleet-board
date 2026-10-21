@@ -26,7 +26,7 @@ func TestTheSyncSchemaMirrorsProviderPages(t *testing.T) {
 
 	mustUpsert := func(items []statedb.WorkItemMirror) {
 		t.Helper()
-		if err := statedb.UpsertWorkItemPage(ctx, s, "github-1", items, nil, nil, 10); err != nil {
+		if _, err := statedb.UpsertWorkItemPage(ctx, s, "github-1", items, nil, nil, 10); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -58,6 +58,66 @@ func TestTheSyncSchemaMirrorsProviderPages(t *testing.T) {
 	}
 	if got := mirrorField(t, db, key, "update_ms"); got != 110 {
 		t.Errorf("update_ms = %d, want 110", got)
+	}
+}
+
+// A page commit reports the rows it created or changed with their stamps,
+// so Watch can publish the mirrors without re-reading the page. An
+// identical page and an older one report nothing; a newer one reports the
+// update with its stamp and the row it replaced.
+func TestUpsertWorkItemPageReportsChanges(t *testing.T) {
+	t.Parallel()
+	dir := stateDir(t)
+	create(t, dir)
+	s := open(t, dir)
+	ctx := context.Background()
+	row := func(updateMs int64, title string) statedb.WorkItemMirror {
+		return statedb.WorkItemMirror{
+			Integration: "github-1", Kind: "ISSUE", Project: "acme/web", ItemKey: "7398",
+			ItemJSON:  []byte(`{"title":` + strconv.Quote(title) + `}`),
+			UpdateMs:  updateMs,
+			Stage:     2,
+			TrustJSON: []byte(`{"trusted":true}`),
+		}
+	}
+	got, err := statedb.UpsertWorkItemPage(ctx, s, "github-1", []statedb.WorkItemMirror{row(100, "first")}, nil, nil, 10)
+	if err != nil {
+		t.Fatalf("UpsertWorkItemPage: %v", err)
+	}
+	if len(got) != 1 || !got[0].Created || got[0].HubSeq <= 0 {
+		t.Fatalf("insert changes = %+v, want one created change with a stamp", got)
+	}
+	if got[0].Before != nil {
+		t.Errorf("insert before = %+v, want nil (nothing replaced)", got[0].Before)
+	}
+	key := "github-1/ISSUE/acme/web/7398"
+	if got[0].Key != key {
+		t.Errorf("change key = %q, want %q", got[0].Key, key)
+	}
+	firstSeq := got[0].HubSeq
+	got, err = statedb.UpsertWorkItemPage(ctx, s, "github-1", []statedb.WorkItemMirror{row(100, "first")}, nil, nil, 20)
+	if err != nil {
+		t.Fatalf("UpsertWorkItemPage: %v", err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("identical page changes = %+v, want none", got)
+	}
+	got, err = statedb.UpsertWorkItemPage(ctx, s, "github-1", []statedb.WorkItemMirror{row(90, "late")}, nil, nil, 30)
+	if err != nil {
+		t.Fatalf("UpsertWorkItemPage: %v", err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("older page changes = %+v, want none (guard drops it)", got)
+	}
+	got, err = statedb.UpsertWorkItemPage(ctx, s, "github-1", []statedb.WorkItemMirror{row(110, "second")}, nil, nil, 40)
+	if err != nil {
+		t.Fatalf("UpsertWorkItemPage: %v", err)
+	}
+	if len(got) != 1 || got[0].Created || got[0].HubSeq <= firstSeq {
+		t.Fatalf("update changes = %+v, want one update stamped past %d", got, firstSeq)
+	}
+	if got[0].Before == nil || got[0].Before.UpdateMs != 100 {
+		t.Fatalf("update before = %+v, want the row the update replaced", got[0].Before)
 	}
 }
 

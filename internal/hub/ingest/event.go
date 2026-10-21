@@ -24,7 +24,10 @@ import (
 // state. The rules of [Applier] hold: only tx, no network call, no wait, no
 // Commit; an error rolls the event back; ev is read-only cleaned data.
 type EventApplier interface {
-	ApplyEvent(ctx context.Context, tx *sql.Tx, machineID string, out statedb.EventOut, ev *agentv1.Event) error
+	// ApplyEvent runs the row's part of an Event job and returns the
+	// stamped goal after-images it wrote, as [Applier.Apply] does for a
+	// Snapshot job.
+	ApplyEvent(ctx context.Context, tx *sql.Tx, machineID string, out statedb.EventOut, ev *agentv1.Event) ([]statedb.GoalRow, error)
 }
 
 // EventKind is the bounded name of ev's body arm: the oneof field name, or
@@ -89,9 +92,11 @@ func SubmitEvent(ctx context.Context, st *store.Store, in statedb.EventIn, ev *a
 			return nil
 		}
 		for i, a := range appliers {
-			if err := applyEvent(jctx, tx, a, in.MachineID, p.out, ev); err != nil {
+			var goals []statedb.GoalRow
+			if goals, err = applyEvent(jctx, tx, a, in.MachineID, p.out, ev); err != nil {
 				return fmt.Errorf("%w: event applier %d: %w", ErrApplier, i, err)
 			}
+			p.goals = append(p.goals, goals...)
 		}
 		return nil
 	})
@@ -103,8 +108,9 @@ func SubmitEvent(ctx context.Context, st *store.Store, in statedb.EventIn, ev *a
 
 // EventPending is a queued Event job ([SubmitEvent]).
 type EventPending struct {
-	done <-chan error
-	out  statedb.EventOut // written by the job; read after its result
+	done  <-chan error
+	out   statedb.EventOut  // written by the job; read after its result
+	goals []statedb.GoalRow // the appliers' stamped after-images; read after the result
 }
 
 // Result delivers the job's outcome once: nil after the batch holding it
@@ -115,14 +121,19 @@ func (p *EventPending) Result() <-chan error { return p.done }
 // Out is what the job decided; valid only after Result delivered nil.
 func (p *EventPending) Out() statedb.EventOut { return p.out }
 
+// Goals are the stamped goal after-images the job's appliers wrote, as
+// [Pending.Goals] does for a Snapshot job. Each entry is exactly what its
+// writer stamped in this job's transaction.
+func (p *EventPending) Goals() []statedb.GoalRow { return p.goals }
+
 // applyEvent runs one event applier, turning a panic into an error as
 // [apply] does for a Snapshot applier.
 func applyEvent(ctx context.Context, tx *sql.Tx, a EventApplier, machineID string, out statedb.EventOut,
 	ev *agentv1.Event,
-) (err error) {
+) (goals []statedb.GoalRow, err error) {
 	defer func() {
 		if r := recover(); r != nil {
-			err = fmt.Errorf("%w: %v", errApplierPanic, r)
+			goals, err = nil, fmt.Errorf("%w: %v", errApplierPanic, r)
 		}
 	}()
 	return a.ApplyEvent(ctx, tx, machineID, out, ev)

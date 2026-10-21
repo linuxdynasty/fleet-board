@@ -115,10 +115,14 @@ func (s *Syncer) workItemsRound(ctx context.Context, a Adapter, id string, repo 
 	if ts := nextSince.GetUpdatedAfterTime(); ts != nil {
 		cursorOut.SinceMs, cursorOut.HasSince = ts.AsTime().UnixMilli(), true
 	}
-	if err := statedb.UpsertWorkItemPage(ctx, s.Store, id, mirrors,
-		[]statedb.CursorValue{cursorOut}, rateLimitValues(page.Meta), now.UnixMilli()); err != nil {
+	changes, err := statedb.UpsertWorkItemPage(ctx, s.Store, id, mirrors,
+		[]statedb.CursorValue{cursorOut}, rateLimitValues(page.Meta), now.UnixMilli())
+	if err != nil {
 		return err
 	}
+	// The page committed: its mirror changes publish to Watch (the
+	// Watch ingest slice).
+	s.publishWorkItems(ctx, changes)
 	s.ok(ctx, id, ResourceWorkItems, "ok", start, now)
 	return nil
 }
@@ -356,10 +360,14 @@ func (s *Syncer) VerifyBranches(ctx context.Context, id, project string, branche
 		})
 	}
 	cursorOut := statedb.CursorValue{Resource: ResourceChangeRequests, Page: project}
-	if err := statedb.UpsertChangeRequestPage(ctx, s.Store, id, mirrors,
-		[]statedb.CursorValue{cursorOut}, rateLimitValues(out.Meta), now.UnixMilli()); err != nil {
+	changes, err := statedb.UpsertChangeRequestPage(ctx, s.Store, id, mirrors,
+		[]statedb.CursorValue{cursorOut}, rateLimitValues(out.Meta), now.UnixMilli())
+	if err != nil {
 		return nil, err
 	}
+	// The page committed: its mirror changes publish to Watch (the
+	// Watch ingest slice).
+	s.publishChangeRequests(ctx, changes)
 	if s.Metrics != nil {
 		s.Metrics.requests.Add(ctx, 1, metricWith("integration", id, "resource", ResourceChangeRequests, "status", "ok"))
 	}

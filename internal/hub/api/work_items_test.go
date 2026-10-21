@@ -57,7 +57,7 @@ func seedWorkItem(t *testing.T, e *fleetEnv, integration, kind, project, key, ti
 		ItemJSON: raw, UpdateMs: update.UnixMilli(),
 		Stage: int32(stage), TrustJSON: trust,
 	}
-	if err := statedb.UpsertWorkItemPage(context.Background(), e.st, integration,
+	if _, err := statedb.UpsertWorkItemPage(context.Background(), e.st, integration,
 		[]statedb.WorkItemMirror{mirror}, nil, nil, createMs); err != nil {
 		t.Fatal(err)
 	}
