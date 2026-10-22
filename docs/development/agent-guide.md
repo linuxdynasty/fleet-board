@@ -266,7 +266,8 @@ default test count of 3, `make test` took 32 of those minutes, and the ceiling
 killed the job during the advisory benchmark report with every required step
 green. After that, PR runs test once (`TEST_COUNT=1` in `ci.yml`; the race
 pass still runs, and pushes to `main` and local `make gates` keep 3), and the
-benchmark report runs in its own parallel job outside the ceiling.
+benchmark report runs in its own parallel job outside the ceiling, three
+samples a side (`BENCH_COUNT=3`) instead of ten.
 
 The plan includes 2000 GitHub Actions minutes a month. Estimates, in minutes
 a month (typical / worst case):

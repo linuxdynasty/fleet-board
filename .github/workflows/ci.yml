@@ -315,6 +315,10 @@ jobs:
     continue-on-error: true
     env:
       BASE_REF: ${{ format('origin/{0}', github.base_ref) }}
+      # Three samples a side, not ten: the report is advisory, and a change
+      # that names every package (a Makefile-only change does) needed more
+      # than 20 minutes at the default count (#389).
+      BENCH_COUNT: "3"
     steps:
       - name: Check out (full history, for the merge base)
         uses: actions/checkout@v7
