@@ -33,9 +33,10 @@ concurrency:
 jobs:
   gates:
     runs-on: ubuntu-latest
-    # A full-scope PR took 37m25s before its benchmark report, which has
-    # its own 8-minute cap. Allow both plus cleanup; this ceiling does not
-    # add work or extend the report step. See the agent guide for evidence.
+    # A full-scope PR took 37m25s at TEST_COUNT=3 with the benchmark report
+    # inside this job. The report runs in its own job now and PRs test once
+    # (#389), so this ceiling covers the gates only. See the agent guide
+    # for evidence.
     timeout-minutes: 55
     env:
       # A PR is measured against its base. A push to main is measured against
@@ -45,6 +46,11 @@ jobs:
       # force push), or it is missing, it names no commit, and
       # changed-go-packages.sh then tests every package: the safe choice.
       BASE_REF: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || github.event.before || '0000000000000000000000000000000000000000' }}
+      # A PR tests once; the race pass still runs. A push to main keeps three
+      # passes, since two PRs that pass alone can break a package neither
+      # touched. The full-scope PR runs that hit the 55-minute ceiling (#389)
+      # spent 32 of those minutes in make test at the default count of 3.
+      TEST_COUNT: ${{ github.event_name == 'pull_request' && '1' || '3' }}
     steps:
       - name: Check out (full history, for the merge base)
         uses: actions/checkout@v7
@@ -292,14 +298,64 @@ jobs:
           PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: python3 scripts/check-docs-stale.py --ci --range "$PR_BASE_SHA..$PR_HEAD_SHA"
 
+  # The benchmark report runs beside the gates, never inside them. It is
+  # advisory (continue-on-error: a REVIEW row asks a person to look, never
+  # failing the run), and inside the gates job its minutes counted against
+  # the 55-minute ceiling until the ceiling killed full-scope PR runs
+  # mid-report (#389). PR-only, like the step it was; a newer push to the PR
+  # cancels this run's older attempt with the rest of the workflow. The cap
+  # is 20 minutes: the old 8-minute step cap proved too small once a change
+  # names every package.
+  benchmarks:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    # Advisory and parallel, so a generous cap: a Makefile-only change names
+    # every package, and their benchmarks needed more than 8 minutes (#389).
+    timeout-minutes: 20
+    continue-on-error: true
+    env:
+      BASE_REF: ${{ format('origin/{0}', github.base_ref) }}
+      # Three samples a side, not ten: the report is advisory, and a change
+      # that names every package (a Makefile-only change does) needed more
+      # than 20 minutes at the default count (#389).
+      BENCH_COUNT: "3"
+    steps:
+      - name: Check out (full history, for the merge base)
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          # Nothing after checkout pushes; do not leave the token in .git/config.
+          persist-credentials: false
+
+      - name: Set up Go from go.mod
+        id: setup-go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - name: Set up Node from .node-version
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          cache: npm
+          cache-dependency-path: tools/tscheck/package-lock.json
+
+      # The base worktree's `make gen` needs the pinned buf, so restore .bin/
+      # the same way the gates job does; `make tools` rebuilds on a miss.
+      - name: Restore the pinned tools (.bin/)
+        uses: actions/cache@v6
+        with:
+          path: .bin
+          key: bin-${{ runner.os }}-${{ hashFiles('tool-versions.env') }}-go${{ steps.setup-go.outputs.go-version }}
+
+      - name: Pinned tools and generated code
+        run: make tools gen
+
       # #107: the benchmarks of the changed packages at the merge base and at
       # the head, on this one runner, compared by benchstat. A report for the
       # reviewer in the job summary, never a gate: a shared runner is too noisy
       # to fail a build on time, and REVIEW rows only ask a person to look.
       - name: Benchmarks, base vs head (report)
-        if: github.event_name == 'pull_request'
-        timeout-minutes: 8
-        continue-on-error: true
         shell: bash
         run: make -s bench-report | tee -a "$GITHUB_STEP_SUMMARY"
 
