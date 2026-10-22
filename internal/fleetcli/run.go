@@ -107,7 +107,7 @@ func (i *invocation) command() *cobra.Command {
 	root.SetVersionTemplate("fleet {{.Version}}\n")
 	root.SetFlagErrorFunc(func(*cobra.Command, error) error { return errUsage })
 	root.CompletionOptions.DisableDefaultCmd = true
-	for _, name := range []string{"status", "doctor", "machines", "accounts", "goals", "work"} {
+	for _, name := range []string{"status", "doctor", "machines", "accounts", "goals", "work", "export"} {
 		name := name
 		c := &cobra.Command{Use: name, Args: cobra.NoArgs, RunE: func(c *cobra.Command, _ []string) error {
 			if name == "machines" || name == "accounts" || name == "goals" || name == "work" {
@@ -149,6 +149,11 @@ func (i *invocation) command() *cobra.Command {
 		}
 		root.AddCommand(c)
 	}
+	i.addRepoCommands(root)
+	i.addAccountCommands(root)
+	i.addSettingsCommands(root)
+	i.addMachineCommands(root)
+	i.addImportCommand(root)
 	return root
 }
 

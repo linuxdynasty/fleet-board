@@ -1,0 +1,27 @@
+{
+  "machine": {
+    "createTime": "\u003ctime\u003e",
+    "id": {
+      "value": "01jclidoomed0000000000001"
+    },
+    "spec": {
+      "displayName": "doomed",
+      "revocation": {
+        "by": {
+          "id": {
+            "value": "local-owner"
+          },
+          "kind": "PRINCIPAL_KIND_USER",
+          "name": "owner"
+        },
+        "reason": "stolen",
+        "revokeTime": "\u003ctime\u003e"
+      }
+    },
+    "status": {
+      "state": "MACHINE_STATE_REVOKED"
+    },
+    "updateTime": "\u003ctime\u003e",
+    "version": "2"
+  }
+}

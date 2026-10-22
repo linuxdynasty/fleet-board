@@ -1,0 +1,16 @@
+{
+  "machine": {
+    "createTime": "\u003ctime\u003e",
+    "id": {
+      "value": "01jseedlap00000000000001"
+    },
+    "spec": {
+      "displayName": "renamed"
+    },
+    "status": {
+      "state": "MACHINE_STATE_STALE"
+    },
+    "updateTime": "\u003ctime\u003e",
+    "version": "2"
+  }
+}

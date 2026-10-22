@@ -1,0 +1,20 @@
+{
+  "repo": {
+    "createTime": "\u003ctime\u003e",
+    "id": {
+      "value": "github.com/acme/api"
+    },
+    "spec": {
+      "branchPattern": "fleet/{work}",
+      "repo": {
+        "codeHost": {
+          "value": "github"
+        },
+        "host": "github.com",
+        "path": "acme/api"
+      }
+    },
+    "updateTime": "\u003ctime\u003e",
+    "version": "2"
+  }
+}

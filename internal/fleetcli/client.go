@@ -106,7 +106,7 @@ func safeError(err error) string {
 		return answer
 	}
 	if errors.Is(err, errNotTerminal) {
-		return "doctor needs a terminal for its approval secret"
+		return "this command needs a terminal for its approval secret"
 	}
 	if errors.Is(err, errUnsupportedMode) {
 		return "this build needs a local_trusted hub"
@@ -119,6 +119,15 @@ func safeError(err error) string {
 	}
 	if errors.Is(err, errOutput) {
 		return "could not write output"
+	}
+	if errors.Is(err, errReadFile) {
+		return "could not read fleet.yaml"
+	}
+	if errors.Is(err, errPlanHash) {
+		return "run fleet import --dry-run first, then re-run with --expected-plan-hash"
+	}
+	if errors.Is(err, errNotPortable) {
+		return "fleet export cannot render this hub as portable YAML yet"
 	}
 	return "request failed"
 }

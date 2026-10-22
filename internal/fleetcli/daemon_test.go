@@ -33,6 +33,11 @@ func startHub(t *testing.T) localHub {
 
 func startHubWithSeed(t *testing.T, withSeed bool) localHub {
 	t.Helper()
+	return startHubWithExtra(t, withSeed, nil)
+}
+
+func startHubWithExtra(t *testing.T, withSeed bool, extra func(*testing.T, string)) localHub {
+	t.Helper()
 	dir, err := os.MkdirTemp("/tmp", "fleet-cli-") //nolint:usetesting // macOS t.TempDir paths can exceed the hub admin Unix socket limit
 	if err != nil {
 		t.Fatal(err)
@@ -55,6 +60,9 @@ func startHubWithSeed(t *testing.T, withSeed bool) localHub {
 	secret := strings.TrimSpace(strings.Split(shown.String(), "\n")[1])
 	if withSeed {
 		seedMachine(t, state)
+	}
+	if extra != nil {
+		extra(t, state)
 	}
 	ctx, stop := context.WithCancel(context.Background())
 	ready := make(chan daemon.Addrs, 1)
@@ -445,6 +453,8 @@ func normalize(value any) {
 			switch {
 			case key == "fleetId" || key == "hubInstanceId":
 				v[key] = "<hub-id>"
+			case key == "token" || key == "caFingerprint" || key == "enrollCommand":
+				v[key] = "<secret>"
 			case strings.HasSuffix(key, "Time"):
 				v[key] = "<time>"
 			case strings.HasSuffix(key, "Bytes"):

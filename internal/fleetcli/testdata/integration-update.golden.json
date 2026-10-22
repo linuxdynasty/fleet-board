@@ -1,0 +1,14 @@
+{
+  "integration": {
+    "createTime": "\u003ctime\u003e",
+    "id": {
+      "value": "github"
+    },
+    "spec": {
+      "label": "GitHub"
+    },
+    "status": {},
+    "updateTime": "\u003ctime\u003e",
+    "version": "2"
+  }
+}

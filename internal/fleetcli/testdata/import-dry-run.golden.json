@@ -1,0 +1,10 @@
+{
+  "changes": [
+    {
+      "entity": "CONFIG_ENTITY_REPO",
+      "kind": "CONFIG_CHANGE_KIND_CREATE",
+      "name": "github.com/acme/web"
+    }
+  ],
+  "planHash": "45893b7ecb83314d7e8b9ed6bfeb81d846856d1d52e8f61cd3886810dc0bbe20"
+}

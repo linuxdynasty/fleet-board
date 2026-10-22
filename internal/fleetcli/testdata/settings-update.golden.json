@@ -1,0 +1,25 @@
+{
+  "settings": {
+    "createTime": "\u003ctime\u003e",
+    "id": {
+      "value": "fleet"
+    },
+    "spec": {
+      "hub": {
+        "autoDispatch": true
+      },
+      "scope": {
+        "fleet": {}
+      },
+      "values": {
+        "maxActive": 2
+      }
+    },
+    "status": {
+      "hubSeq": "1",
+      "observedTime": "\u003ctime\u003e"
+    },
+    "updateTime": "\u003ctime\u003e",
+    "version": "1"
+  }
+}

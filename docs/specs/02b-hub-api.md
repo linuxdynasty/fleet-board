@@ -202,6 +202,10 @@ them, and approving or revoking a device that keeps pinging cannot conflict
 with itself. Settings delivery acks (`generation`, `settings_epoch`) are
 status and do not bump `Settings.version`.
 
+An `optional` scalar set explicitly — including an explicit zero — is stored
+as given; an unset field keeps its default (a new account's
+`reserve_percent` is 10 unless the create request sets it, even to 0).
+
 `DecideApproval` requires a non-zero `expected_version`, so a decision always
 names the state that was shown. When an approval is both stale and closed,
 `APPROVAL_CLOSED` wins over `VERSION_MISMATCH` (the phone shows "already

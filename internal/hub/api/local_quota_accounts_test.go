@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
+	"google.golang.org/protobuf/proto"
 
 	hubv1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/hub/v1"
 	"github.com/linuxdynasty/fleet-board/gen/go/fleet/hub/v1/hubv1connect"
@@ -143,7 +144,7 @@ func TestLocalWriteQuotaAccountsUpdateAndDelete(t *testing.T) {
 			invoke: func(e *quotaWriteEnv, requestID string, id *typev1.AccountId, version uint64) error {
 				req := connect.NewRequest(&hubv1.UpdateAccountRequest{
 					RequestId:  requestID,
-					Account:    &hubv1.Account{Id: id, Spec: &hubv1.AccountSpec{ReservePercent: 25}},
+					Account:    &hubv1.Account{Id: id, Spec: &hubv1.AccountSpec{ReservePercent: proto.Uint32(25)}},
 					UpdateMask: fieldMask([]string{"spec.reserve_percent"}), ExpectedVersion: version,
 				})
 				req.Header().Set(api.SecretHeader, e.secret)

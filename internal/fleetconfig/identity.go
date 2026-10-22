@@ -6,6 +6,8 @@ import (
 	"sort"
 
 	"google.golang.org/protobuf/reflect/protoreflect"
+
+	hubv1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/hub/v1"
 )
 
 // These are hub or fleet record identifiers. Provider-owned identifiers such
@@ -177,6 +179,61 @@ func checkMessage(message protoreflect.Message, path string, depth int, budget *
 		}
 	}
 	return result
+}
+
+// UnportableIDs lists the field paths of the hub ID wrappers a FleetConfig
+// still carries: the sections fleet.yaml cannot render until portable
+// references and hub-side translation land. Empty means the codec will not
+// refuse the document for IDs. Exporters use it to fail with a clear
+// diagnostic instead of an opaque codec error.
+func UnportableIDs(config *hubv1.FleetConfig) []string {
+	if config == nil {
+		return nil
+	}
+	var out []string
+	var walk func(message protoreflect.Message, path string)
+	walk = func(message protoreflect.Message, path string) {
+		for i := 0; i < message.Descriptor().Fields().Len(); i++ {
+			field := message.Descriptor().Fields().Get(i)
+			fieldPath := path + "." + string(field.Name())
+			if field.IsList() {
+				list := message.Get(field).List()
+				if isForbiddenID(field.Message()) {
+					for j := 0; j < list.Len(); j++ {
+						out = append(out, fmt.Sprintf("%s[%d]", fieldPath, j))
+					}
+					continue
+				}
+				if field.Kind() != protoreflect.MessageKind && field.Kind() != protoreflect.GroupKind {
+					continue
+				}
+				if isScalarWellKnown(field.Message()) {
+					continue
+				}
+				for j := 0; j < list.Len(); j++ {
+					walk(list.Get(j).Message(), fmt.Sprintf("%s[%d]", fieldPath, j))
+				}
+				continue
+			}
+			if field.IsMap() || !message.Has(field) {
+				continue
+			}
+			if isForbiddenID(field.Message()) {
+				out = append(out, fieldPath)
+				continue
+			}
+			if field.Kind() != protoreflect.MessageKind && field.Kind() != protoreflect.GroupKind {
+				continue
+			}
+			if isScalarWellKnown(field.Message()) {
+				continue
+			}
+			walk(message.Get(field).Message(), fieldPath)
+		}
+	}
+	walk(config.ProtoReflect(), "config")
+	sort.Strings(out)
+	return out
 }
 
 func isScalarWellKnown(descriptor protoreflect.MessageDescriptor) bool {

@@ -1,0 +1,28 @@
+{
+  "account": {
+    "createTime": "\u003ctime\u003e",
+    "id": {
+      "value": "\u003caccount-id\u003e"
+    },
+    "spec": {
+      "budgetKind": "BUDGET_KIND_DOLLAR_CAP",
+      "consent": [
+        "CONSENT_ACT_PUSH",
+        "CONSENT_ACT_PR_OPEN",
+        "CONSENT_ACT_MERGE"
+      ],
+      "displayName": "work",
+      "mode": "ACCOUNT_MODE_FLEET",
+      "reservePercent": 25
+    },
+    "status": {
+      "harness": {
+        "name": "opencode"
+      },
+      "origin": "ACCOUNT_ORIGIN_OWNER_CREATED",
+      "provider": "anthropic"
+    },
+    "updateTime": "\u003ctime\u003e",
+    "version": "2"
+  }
+}

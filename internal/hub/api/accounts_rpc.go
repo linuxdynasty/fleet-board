@@ -158,8 +158,10 @@ func checkCreateAccount(harness, provider string, spec *hubv1.AccountSpec) (*hub
 			"the request has invalid fields", nil, v)
 	}
 	out := proto.Clone(spec).(*hubv1.AccountSpec) //nolint:forcetypeassert // Clone keeps the message type
-	if out.GetReservePercent() == 0 {
-		out.ReservePercent = defaultReserve
+	// Presence carries the owner's choice: only an unset reserve takes the
+	// default, while an explicit zero stays zero.
+	if out.ReservePercent == nil {
+		out.ReservePercent = proto.Uint32(defaultReserve)
 	}
 	if len(out.GetConsent()) == 0 {
 		out.Consent = append([]typev1.ConsentAct(nil), defaultConsent...)
