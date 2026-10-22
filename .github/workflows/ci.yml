@@ -303,11 +303,15 @@ jobs:
   # failing the run), and inside the gates job its minutes counted against
   # the 55-minute ceiling until the ceiling killed full-scope PR runs
   # mid-report (#389). PR-only, like the step it was; a newer push to the PR
-  # cancels this run's older attempt with the rest of the workflow.
+  # cancels this run's older attempt with the rest of the workflow. The cap
+  # is 20 minutes: the old 8-minute step cap proved too small once a change
+  # names every package.
   benchmarks:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    # Advisory and parallel, so a generous cap: a Makefile-only change names
+    # every package, and their benchmarks needed more than 8 minutes (#389).
+    timeout-minutes: 20
     continue-on-error: true
     env:
       BASE_REF: ${{ format('origin/{0}', github.base_ref) }}
