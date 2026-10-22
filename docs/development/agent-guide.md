@@ -274,13 +274,13 @@ a month (typical / worst case):
 
 | Workflow | Runs on | Typical | Worst | Status |
 |---|---|---|---|---|
-| `ci.yml` gates on PRs | PR opened, new commits, reopened | ~383 | ~599 | built; tmux steps (row 7) only on a change that reaches tmux (below) |
+| `ci.yml` gates on PRs | PR opened, new commits, reopened | ~301 | ~473 | TEST_COUNT=1 (#389); tmux steps as below |
 | `pr-meta.yml` | every PR event, edits included | ~100 | ~100 | built (#107) |
-| `ci.yml` on `main` pushes | each merge: every package, plus the report job | ~183 | ~318 | built (#107); tmux steps as above |
+| `ci.yml` on `main` pushes | each merge: every package, plus the report job | ~183 | ~318 | built (#107); test count stays 3, tmux steps as above |
 | nightly | daily, skipped when `main` did not move since the last night (Sundays always run) | ~390 | ~520 | built (#107) |
 | macOS weekly | Sundays, on demand, and PRs that change it | ~260 | ~394 | built (#107); the tmux steps run on demand only: none typical, one dispatch a month at most in the worst case (below) |
-| perf report | PRs whose changed packages hold a benchmark | ~48 | ~48 | built (#107) |
-| **Total** | | **~1364** | **~1979** | the sums of the rows above |
+| `ci.yml` benchmarks on PRs | every PR pays setup; the report runs only when a changed package holds a benchmark, 3 samples a side | ~50 | ~93 | replaces the perf-report row (#389) |
+| **Total** | | **~1284** | **~1898** | the sums of the rows above |
 
 How the tmux steps (row 7) were counted, and what that rests on. The table's
 run counts are its own assumptions, not measurements: about 21 PR runs and
@@ -307,6 +307,17 @@ macOS tmux steps run only on a manual dispatch; the worst case allows at
 most one a month, with a cache miss: (1 Homebrew + 3 build + 1 tests) x
 10 = 50. At the observed pace (about 95 `main` runs and twice as many PR
 runs a month) the tmux steps alone would add about 46 + 91 minutes.
+
+How the #389 rows were counted. The run counts stay the table's old
+assumptions (21 PR runs typical, 32 worst). The gates PR row assumes the test
+step is a third of the 17.6-minute median run, so testing once instead of
+three times moves the median to about 13.7: 21 x 13.7 plus the tmux 13 is
+~301, 32 x 13.7 plus 35 is ~473. The benchmarks row prices what PR 398
+measured: about 1.5 minutes of setup (checkout, toolchains, cache, `gen`)
+on every PR run, plus the report on the 6 benchmark PRs the old row assumed,
+about 3 minutes typical and 7.5 worst (every package at 3 samples a side):
+21 x 1.5 + 6 x 3 is ~50, 32 x 1.5 + 6 x 7.5 is ~93. The new worst total,
+1898, stays under the 2000 allowance.
 
 A PR that adds CI minutes (a new workflow, job, trigger or a longer step)
 updates this table in the same PR. The PR goes to the owner before it merges
