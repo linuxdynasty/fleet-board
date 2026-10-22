@@ -37,7 +37,7 @@ func seedRevocableMachine(t *testing.T, state, id, serial, hostname string) {
 		MachineID: id, CertDER: []byte("cli-revoke-cert-" + id), Serial: serial,
 		CertNotAfter: now.Add(time.Hour), ReportedHostname: hostname + ".lan",
 		Facts: `{"hostname":"` + hostname + `.lan"}`, Now: now,
-	}); err != nil {
+	}, nil); err != nil {
 		t.Fatal(err)
 	}
 	if err := st.Write(t.Context(), func(tx *sql.Tx) error {

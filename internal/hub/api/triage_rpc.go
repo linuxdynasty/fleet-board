@@ -151,29 +151,28 @@ func (f *Fleet) SnoozeTriageItem(ctx context.Context, req *connect.Request[hubv1
 		preItem = &pre
 	}
 	writeCtx := statedb.WithValidatedWrite(ctx, func() error { return quotaCheckpoint(ctx, quotaWrite) })
+	pctx := context.WithoutCancel(ctx) // the publish hook runs on the writer after the handler may have left
 	var stored statedb.TriageStored
-	if err := f.commitWatch(
-		func() error {
-			var err error
-			stored, err = statedb.SnoozeTriageItem(writeCtx, f.store, statedb.TriageSnooze{
-				Write: statedb.TriageWrite{
-					Principal: actor, RequestID: m.GetRequestId(),
-					RequestHash: hash, Actor: actorOf(who), Now: now,
-				},
-				ID: m.GetId().GetValue(), ExpectedVersion: m.GetExpectedVersion(), Until: until,
-			})
-			return err
-		},
-		func() {
-			item, err := triageItem(stored)
+	{
+		var err error
+		stored, err = statedb.SnoozeTriageItem(writeCtx, f.store, statedb.TriageSnooze{
+			Write: statedb.TriageWrite{
+				Principal: actor, RequestID: m.GetRequestId(),
+				RequestHash: hash, Actor: actorOf(who), Now: now,
+			},
+			ID: m.GetId().GetValue(), ExpectedVersion: m.GetExpectedVersion(), Until: until,
+		}, func(s statedb.TriageStored) {
+			// Runs on the writer in commit order (#393).
+			item, err := triageItem(s)
 			if err != nil {
-				f.tel.Logger.ErrorContext(ctx, "watch.publish_failed", "topic", "TRIAGE", "err_kind", "io")
+				f.tel.Logger.ErrorContext(pctx, "watch.publish_failed", "topic", "TRIAGE", "err_kind", "io")
 				return
 			}
-			f.publishTriageWatch(ctx, stored, item, triageOldItem(preItem, stored))
-		},
-	); err != nil {
-		return nil, triageStoreError(ctx, f, op, "snooze", actor, err)
+			f.publishTriageWatch(pctx, s, item, triageOldItem(preItem, s))
+		})
+		if err != nil {
+			return nil, triageStoreError(ctx, f, op, "snooze", actor, err)
+		}
 	}
 	item, err := triageItem(stored)
 	if err != nil {
@@ -227,29 +226,28 @@ func (f *Fleet) DismissTriageItem(ctx context.Context, req *connect.Request[hubv
 		preItem = &pre
 	}
 	writeCtx := statedb.WithValidatedWrite(ctx, func() error { return quotaCheckpoint(ctx, quotaWrite) })
+	pctx := context.WithoutCancel(ctx) // the publish hook runs on the writer after the handler may have left
 	var stored statedb.TriageStored
-	if err := f.commitWatch(
-		func() error {
-			var err error
-			stored, err = statedb.DismissTriageItem(writeCtx, f.store, statedb.TriageDismiss{
-				Write: statedb.TriageWrite{
-					Principal: actor, RequestID: m.GetRequestId(),
-					RequestHash: hash, Actor: actorOf(who), Now: now,
-				},
-				ID: m.GetId().GetValue(), ExpectedVersion: m.GetExpectedVersion(), Note: m.GetNote(),
-			})
-			return err
-		},
-		func() {
-			item, err := triageItem(stored)
+	{
+		var err error
+		stored, err = statedb.DismissTriageItem(writeCtx, f.store, statedb.TriageDismiss{
+			Write: statedb.TriageWrite{
+				Principal: actor, RequestID: m.GetRequestId(),
+				RequestHash: hash, Actor: actorOf(who), Now: now,
+			},
+			ID: m.GetId().GetValue(), ExpectedVersion: m.GetExpectedVersion(), Note: m.GetNote(),
+		}, func(s statedb.TriageStored) {
+			// Runs on the writer in commit order (#393).
+			item, err := triageItem(s)
 			if err != nil {
-				f.tel.Logger.ErrorContext(ctx, "watch.publish_failed", "topic", "TRIAGE", "err_kind", "io")
+				f.tel.Logger.ErrorContext(pctx, "watch.publish_failed", "topic", "TRIAGE", "err_kind", "io")
 				return
 			}
-			f.publishTriageWatch(ctx, stored, item, triageOldItem(preItem, stored))
-		},
-	); err != nil {
-		return nil, triageStoreError(ctx, f, op, "dismiss", actor, err)
+			f.publishTriageWatch(pctx, s, item, triageOldItem(preItem, s))
+		})
+		if err != nil {
+			return nil, triageStoreError(ctx, f, op, "dismiss", actor, err)
+		}
 	}
 	item, err := triageItem(stored)
 	if err != nil {

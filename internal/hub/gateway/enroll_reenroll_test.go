@@ -61,7 +61,7 @@ func revokeMachine(t *testing.T, h *hub, id string) {
 			}
 			return out, nil
 		},
-	})
+	}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -131,7 +131,7 @@ func TestReenrollAfterDeleteEnrollsFresh(t *testing.T) {
 			RequestHash: sha256.Sum256([]byte("del-" + id)), Now: h.clock.now(),
 		},
 		MachineID: id,
-	}); err != nil {
+	}, nil); err != nil {
 		t.Fatal(err)
 	}
 	fresh, err := h.enroll(t, enrollRequest(tok, newAgentKey(t), "install-2"))

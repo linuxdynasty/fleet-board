@@ -99,7 +99,7 @@ func TestALiveRowCloseMarksTheMachineOffline(t *testing.T) {
 			setState(t, s, renewMachineID, tc.from)
 			before, seq, audits := machineOf(t, s, renewMachineID), counter(t, s), auditCount(t, s)
 			end := helloAt.Add(time.Minute)
-			got, err := statedb.EndConnection(context.Background(), s, renewMachineID, out.Epoch, tc.reason, end)
+			got, err := statedb.EndConnection(context.Background(), s, renewMachineID, out.Epoch, tc.reason, end, nil)
 			if err != nil || !got.Live {
 				t.Fatalf("EndConnection = %+v, %v; want the live row closed", got, err)
 			}
@@ -140,7 +140,7 @@ func TestADisplacedStreamsCloseLeavesTheMachineAsItWas(t *testing.T) {
 			mustHello(t, s, hello(1, "boot-b", "192.0.2.7:51001", helloAt.Add(time.Second)))
 			before := machineOf(t, s, renewMachineID)
 			for _, r := range []statedb.EndReason{statedb.EndStreamClosed, statedb.EndAgentBye, statedb.EndIngestStalled} {
-				got, err := statedb.EndConnection(context.Background(), s, renewMachineID, 1, r, helloAt.Add(time.Minute))
+				got, err := statedb.EndConnection(context.Background(), s, renewMachineID, 1, r, helloAt.Add(time.Minute), nil)
 				if err != nil || got.Live || got.Change != nil {
 					t.Errorf("EndConnection(displaced, %s) = %+v, %v; want a no-op", r, got, err)
 				}
@@ -187,7 +187,7 @@ func TestMarkStateChecksTheStateAndTheLiveEpoch(t *testing.T) {
 			if tc.heardLater {
 				seen = seen.Add(-time.Millisecond)
 			}
-			got, err := statedb.MarkState(ctx, s, statedb.Mark{MachineID: renewMachineID, Epoch: tc.epoch, Seen: seen, To: tc.to, Now: at})
+			got, err := statedb.MarkState(ctx, s, statedb.Mark{MachineID: renewMachineID, Epoch: tc.epoch, Seen: seen, To: tc.to, Now: at}, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -217,7 +217,7 @@ func TestMarkStateWithNoLiveRow(t *testing.T) {
 	t.Parallel()
 	_, s := enrolledStore(t)
 	setState(t, s, renewMachineID, statedb.MachineStale)
-	got, err := statedb.MarkState(context.Background(), s, statedb.Mark{MachineID: renewMachineID, To: statedb.MachineOffline, Now: helloAt})
+	got, err := statedb.MarkState(context.Background(), s, statedb.Mark{MachineID: renewMachineID, To: statedb.MachineOffline, Now: helloAt}, nil)
 	if err != nil || got == nil || got.To != statedb.MachineOffline {
 		t.Fatalf("MarkState = %+v, %v; want OFFLINE", got, err)
 	}
@@ -248,7 +248,7 @@ func TestHeartbeatSeen(t *testing.T) {
 			mustHello(t, s, hello(0, "boot-a", "192.0.2.7:51000", helloAt))
 			setState(t, s, renewMachineID, tc.from)
 			before := machineOf(t, s, renewMachineID)
-			got, err := statedb.HeartbeatSeen(ctx, s, statedb.Beat{MachineID: renewMachineID, Epoch: tc.epoch, Promote: tc.promote, Now: at})
+			got, err := statedb.HeartbeatSeen(ctx, s, statedb.Beat{MachineID: renewMachineID, Epoch: tc.epoch, Promote: tc.promote, Now: at}, nil)
 			if err != nil {
 				t.Fatal(err)
 			}

@@ -65,7 +65,7 @@ func TestExportFoldsAShadowedPendingEntry(t *testing.T) {
 		},
 		MachineID: "01jimportmachine00000001", ExpectedVersion: 1,
 		Name: "field-laptop", HasName: true,
-	}); err != nil {
+	}, nil); err != nil {
 		t.Fatalf("rename onto the kept name: %v", err)
 	}
 	exported := exportConfig(t, e)

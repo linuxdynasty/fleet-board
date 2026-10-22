@@ -85,7 +85,7 @@ func enrollOther(t *testing.T, s *store.Store) {
 		t.Fatal(err)
 	}
 	key := statedb.EnrollKey{SecretHash: sha256.Sum256([]byte{2, 1, 2, 3}), InstallID: "install-2", CSRKeyHash: sha256.Sum256([]byte{9})}
-	if _, err := statedb.Enroll(ctx, s, newMachine(key, otherMachineID, beforeTTL)); err != nil {
+	if _, err := statedb.Enroll(ctx, s, newMachine(key, otherMachineID, beforeTTL), nil); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -110,7 +110,7 @@ func TestHelloForOneMachineNeverTouchesAnother(t *testing.T) {
 		}
 	}
 	// A's epoch 1 is closed already; B's epoch 1 is live and must stay so.
-	if ended, err := statedb.EndConnection(ctx, s, renewMachineID, 1, statedb.EndStreamClosed, helloAt.Add(time.Minute)); err != nil || ended.Live {
+	if ended, err := statedb.EndConnection(ctx, s, renewMachineID, 1, statedb.EndStreamClosed, helloAt.Add(time.Minute), nil); err != nil || ended.Live {
 		t.Errorf("EndConnection(A, epoch 1) = %+v, %v; want a no-op", ended, err)
 	}
 	if err := s.Close(); err != nil {

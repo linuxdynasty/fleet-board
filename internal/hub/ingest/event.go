@@ -77,13 +77,17 @@ func EventIn(s Stream, ev *agentv1.Event, prev uint64, now time.Time) (statedb.E
 // any error rolls the job back. It never waits for the commit, so a
 // stream can keep many events in flight and the writer batches them (row
 // 5 ruling, fork 6): ctx bounds only the wait for a place in the queue.
+//
+// onCommit is the post-commit publish hook of [SubmitSnapshot]: it runs
+// on the writer in commit order with what the job stamped, and a nil
+// onCommit submits a plain job.
 func SubmitEvent(ctx context.Context, st *store.Store, in statedb.EventIn, ev *agentv1.Event,
-	appliers []EventApplier,
+	appliers []EventApplier, onCommit func(out statedb.EventOut, goals []statedb.GoalRow),
 ) (*EventPending, error) {
 	jctx := context.WithoutCancel(ctx)
 	p := &EventPending{}
 	var err error
-	p.done, err = st.Submit(ctx, func(tx *sql.Tx) error {
+	apply := func(tx *sql.Tx) error {
 		var err error
 		if p.out, err = statedb.ApplyEvent(jctx, tx, in); err != nil {
 			return err
@@ -99,7 +103,14 @@ func SubmitEvent(ctx context.Context, st *store.Store, in statedb.EventIn, ev *a
 			p.goals = append(p.goals, goals...)
 		}
 		return nil
-	})
+	}
+	if onCommit == nil {
+		p.done, err = st.Submit(ctx, apply)
+	} else {
+		p.done, err = st.SubmitHook(ctx, apply, func() {
+			onCommit(p.out, p.goals)
+		})
+	}
 	if err != nil {
 		return nil, err
 	}

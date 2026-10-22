@@ -33,7 +33,7 @@ func seedWatchedRepo(t *testing.T, e *fleetEnv, host, path, codeHost, hooksMode 
 		},
 		Host: host, Path: path, CodeHost: codeHost, Enabled: enabled,
 		Spec: []byte(spec),
-	}); err != nil {
+	}, nil); err != nil {
 		t.Fatalf("CreateWatchedRepo %s/%s: %v", host, path, err)
 	}
 }

@@ -54,8 +54,15 @@ type Stream struct {
 // queue; once it returns a [Pending], the job runs and its result can be
 // read later, even after the caller stopped waiting. now is the hub clock:
 // observed_time, last_seen_time and an audit row's time.
+//
+// onCommit runs on the writer goroutine right after this job's batch
+// commits, in commit order (#393): the Watch publish for exactly this
+// job's writes, so concurrent committers can never publish out of order.
+// It receives what the job stamped. A nil onCommit submits a plain job.
+// Like every post-commit hook it must be short and non-blocking: no
+// Submit or Write, no network call.
 func SubmitSnapshot(ctx context.Context, st *store.Store, s Stream, snap *agentv1.Snapshot, appliers []Applier,
-	now time.Time,
+	now time.Time, onCommit func(out statedb.SnapshotOut, goals []statedb.GoalRow, expired []outbox.Closed),
 ) (*Pending, error) {
 	in, err := snapshotIn(s, snap, now)
 	if err != nil {
@@ -63,7 +70,7 @@ func SubmitSnapshot(ctx context.Context, st *store.Store, s Stream, snap *agentv
 	}
 	jctx := context.WithoutCancel(ctx) // the job runs on the writer; ctx only bounds the wait
 	p := &Pending{}
-	p.done, err = st.Submit(ctx, func(tx *sql.Tx) error {
+	apply := func(tx *sql.Tx) error {
 		var err error
 		if p.out, err = statedb.ApplySnapshot(jctx, tx, in); err != nil {
 			return err
@@ -80,7 +87,14 @@ func SubmitSnapshot(ctx context.Context, st *store.Store, s Stream, snap *agentv
 		}
 		_, p.out.Change, err = statedb.MarkOnline(jctx, tx, s.MachineID, now)
 		return err
-	})
+	}
+	if onCommit == nil {
+		p.done, err = st.Submit(ctx, apply)
+	} else {
+		p.done, err = st.SubmitHook(ctx, apply, func() {
+			onCommit(p.out, p.goals, p.expired)
+		})
+	}
 	if err != nil {
 		return nil, err
 	}

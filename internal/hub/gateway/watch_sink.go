@@ -12,11 +12,10 @@ import (
 // This file is the gateway's post-commit hook into Watch (plan row 12,
 // the Watch ingest slice): after an ingest, presence or lifecycle job
 // commits, the arm calls its sink so Watch subscribers see the
-// machine-driven change. Every call runs after the commit and never
-// publishes a rolled-back job; the Fleet serializes the publishes on its
-// watchMu with the in-package writes (the commitWatch discipline). The
-// zero WatchSink publishes nothing, so tests and tools that do not wire
-// Watch keep the ingest path pure.
+// machine-driven change. Every call runs in the committing job's
+// post-commit hook on the writer, in commit order (#393), and never
+// publishes a rolled-back job. The zero WatchSink publishes nothing, so
+// tests and tools that do not wire Watch keep the ingest path pure.
 
 // WatchSink publishes committed gateway changes to Watch subscribers. The
 // daemon wires each hook to a Fleet publish method; a nil hook skips its

@@ -26,7 +26,7 @@ func TestListSettingsLayersReadsEveryLayer(t *testing.T) {
 	first, err := statedb.UpdateFleetSettings(ctx, s, statedb.UpdateSettingsOp{
 		ConfigWrite: configWrite("local:alice", "req-1", 'a'),
 		Merge:       fleetMerge([]byte(`{"hub":{}}`)),
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("UpdateFleetSettings: %v", err)
 	}
@@ -58,7 +58,7 @@ func TestListSettingsLayersReadsEveryLayer(t *testing.T) {
 	if _, err := statedb.UpdateFleetSettings(ctx, s, statedb.UpdateSettingsOp{
 		ConfigWrite: configWrite("local:alice", "req-2", 'b'),
 		Merge:       fleetMerge([]byte(`{"hub":{"autoDispatch":true}}`)),
-	}); err != nil {
+	}, nil); err != nil {
 		t.Fatalf("second UpdateFleetSettings: %v", err)
 	}
 	rows, err = statedb.ListSettingsLayers(ctx, s)
@@ -88,7 +88,7 @@ func TestReadSettingsLayerFindsFleetAndMissesOthers(t *testing.T) {
 	if _, err := statedb.UpdateFleetSettings(ctx, s, statedb.UpdateSettingsOp{
 		ConfigWrite: configWrite("local:alice", "req-1", 'a'),
 		Merge:       fleetMerge([]byte(`{"hub":{}}`)),
-	}); err != nil {
+	}, nil); err != nil {
 		t.Fatalf("UpdateFleetSettings: %v", err)
 	}
 

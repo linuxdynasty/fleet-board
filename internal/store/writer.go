@@ -16,6 +16,7 @@ type ApplyFunc func(tx *sql.Tx) error
 
 type job struct {
 	apply    ApplyFunc
+	after    func()
 	enqueued time.Time
 	done     chan error // buffered: the writer never blocks on it
 }
@@ -25,6 +26,26 @@ type job struct {
 // batch's error. Submit waits while the queue is full, until ctx ends. Jobs
 // run in the order they were queued.
 func (s *Store) Submit(ctx context.Context, apply ApplyFunc) (<-chan error, error) {
+	return s.submit(ctx, apply, nil)
+}
+
+// SubmitHook queues a job like Submit, and registers a hook the writer runs
+// after the job's batch commits durably, in commit order (#393): the hook
+// publishes exactly this job's writes, so concurrent committers can never
+// publish out of order. A failed job's hook never runs: a rolled-back job
+// publishes nothing. The hook runs on the writer
+// goroutine, so it must be short and non-blocking: read-pool reads and
+// in-memory fan-out only, never another Submit or Write (the writer would
+// wait on itself), and it must not fail. A panicking hook is recovered and
+// logged; the writer lives on.
+func (s *Store) SubmitHook(ctx context.Context, apply ApplyFunc, after func()) (<-chan error, error) {
+	if after == nil {
+		return nil, errors.New("store: nil hook")
+	}
+	return s.submit(ctx, apply, after)
+}
+
+func (s *Store) submit(ctx context.Context, apply ApplyFunc, after func()) (<-chan error, error) {
 	if apply == nil {
 		return nil, errors.New("store: nil job")
 	}
@@ -33,7 +54,7 @@ func (s *Store) Submit(ctx context.Context, apply ApplyFunc) (<-chan error, erro
 	if s.closed {
 		return nil, ErrClosed
 	}
-	j := job{apply: apply, enqueued: time.Now(), done: make(chan error, 1)}
+	j := job{apply: apply, after: after, enqueued: time.Now(), done: make(chan error, 1)}
 	select {
 	case s.jobs <- j:
 		// This send may have filled the last slot: stamp the start of the
@@ -90,7 +111,21 @@ func (s *Store) OldestJobAge(now time.Time) time.Duration {
 // Write submits a job and waits for its outcome. A ctx error means the
 // outcome is unknown: the job may still commit.
 func (s *Store) Write(ctx context.Context, apply ApplyFunc) error {
-	done, err := s.Submit(ctx, apply)
+	return s.write(ctx, apply, nil)
+}
+
+// WriteHook submits a job like Write, with a post-commit hook for
+// SubmitHook's ordering. A ctx error means the outcome is unknown: the
+// job may still commit, and then its hook runs.
+func (s *Store) WriteHook(ctx context.Context, apply ApplyFunc, after func()) error {
+	if after == nil {
+		return errors.New("store: nil hook")
+	}
+	return s.write(ctx, apply, after)
+}
+
+func (s *Store) write(ctx context.Context, apply ApplyFunc, after func()) error {
+	done, err := s.submit(ctx, apply, after)
 	if err != nil {
 		return err
 	}
@@ -100,6 +135,32 @@ func (s *Store) Write(ctx context.Context, apply ApplyFunc) error {
 	case <-ctx.Done():
 		return ctx.Err()
 	}
+}
+
+// runHook runs one post-commit hook on the writer goroutine. A panicking
+// hook must never kill the single writer: it is recovered and logged,
+// and the writer moves on to the next job.
+func (s *Store) runHook(after func()) {
+	defer func() {
+		if r := recover(); r != nil {
+			// The panic's Go type only, never its value: a hook
+			// panics with a programming error, and the value could
+			// carry row text.
+			s.log.Error("store.hook_failed", "panic", fmt.Sprintf("%T", r))
+		}
+	}()
+	after()
+}
+
+// OnCommit registers a hook the writer runs after each committed batch's
+// own hooks, in commit order (#393). Only one hook fits: registering
+// again replaces the first. It must follow the hook rules (short,
+// non-blocking, never Submit or Write). Unset, commits run nothing extra.
+func (s *Store) OnCommit(after func()) {
+	if after == nil {
+		return
+	}
+	s.hook.Store(after)
 }
 
 // run is the single writer: it collects jobs until the batch holds BatchMax
@@ -145,7 +206,9 @@ func (s *Store) run() {
 }
 
 // flush applies each job under its own savepoint and commits once. Every
-// job's outcome is sent only after the commit returns.
+// job's outcome is sent only after the commit returns, and then the
+// successful jobs' hooks run in batch order (#393): commit order is
+// publish order, decided by the writer, never by waiter timing.
 func (s *Store) flush(batch []job) {
 	if len(batch) == 0 {
 		return
@@ -170,6 +233,15 @@ func (s *Store) flush(batch []job) {
 			results[i] = err
 		}
 	} else {
+		for i, j := range batch {
+			if j.after == nil || results[i] != nil {
+				continue
+			}
+			s.runHook(j.after)
+		}
+		if h, ok := s.hook.Load().(func()); ok && h != nil {
+			s.runHook(h)
+		}
 		// A hint needs no payload: the sole consumer re-reads committed state.
 		// Coalescing keeps the writer independent of a slow or absent consumer.
 		select {

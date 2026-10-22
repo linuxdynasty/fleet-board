@@ -135,7 +135,7 @@ func runBurst(b *testing.B, dur time.Duration) burstResult {
 			if err != nil {
 				b.Fatal(err)
 			}
-			p, err := ingest.SubmitEvent(ctx, st, in, ev, nil)
+			p, err := ingest.SubmitEvent(ctx, st, in, ev, nil, nil)
 			if err != nil {
 				b.Fatal(err)
 			}
@@ -207,7 +207,7 @@ func seedMachine(b *testing.B, st *store.Store) {
 		b.Fatal(err)
 	}
 	p, err := ingest.SubmitSnapshot(ctx, st, ingest.Stream{MachineID: burstMachID, Epoch: 1, InstallID: "install-1"},
-		&agentv1.Snapshot{Seq: 1000}, nil, now)
+		&agentv1.Snapshot{Seq: 1000}, nil, now, nil)
 	if err != nil {
 		b.Fatal(err)
 	}

@@ -30,7 +30,7 @@ func seedOwnerAccount(t *testing.T, e *fleetEnv, id, harness, provider, displayN
 		ID: id, Harness: harness, Provider: provider,
 		DisplayName: displayName, Origin: statedb.AccountOriginOwner,
 		Spec: []byte(spec),
-	}); err != nil {
+	}, nil); err != nil {
 		t.Fatalf("CreateOwnerAccount %s: %v", id, err)
 	}
 }

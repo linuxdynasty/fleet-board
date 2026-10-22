@@ -14,30 +14,13 @@ import (
 // publish nothing: the first commit already did.
 //
 // Commit order is the publish order: the store stamps hub_seq in commit
-// order, but handlers wake in goroutine order after their Write returns,
-// so two concurrent commits would publish backwards without [Fleet.commitWatch].
-// Every post-commit publish runs inside it; nothing else takes watchMu.
-
-// commitWatch runs one committed write and its Watch publish as a single
-// ordered step: the commit (a store Write) first, the publish only when
-// it succeeded. Concurrent writers queue here, so the bus appends in
-// commit order (02c "Order"). The critical section holds no other lock:
-// the commit runs its writer job, the publish reads the read pool at
-// most, and both are short and non-blocking.
-//
-// After the publish it tails the audit log: the commit may have appended
-// audit rows (every state-changing write does), and the tail publishes
-// them as AUDIT live with their stamps.
-func (f *Fleet) commitWatch(commit func() error, publish func()) error {
-	f.watchMu.Lock()
-	defer f.watchMu.Unlock()
-	if err := commit(); err != nil {
-		return err
-	}
-	publish()
-	f.publishAuditTail(context.Background())
-	return nil
-}
+// order, and every publish runs in a post-commit hook on the single
+// writer goroutine, so the hook for commit N always runs before the hook
+// for commit N+1 and the bus appends in commit order (02c "Order", #393).
+// A hook publishes only its own commit's rows; the publish tick tails the
+// audit log for rows no single hook sees. Hooks take watchMu briefly and
+// never wait on the writer; no path holds watchMu across a writer job, so
+// the discipline cannot wedge.
 
 // offerWatch logs one never-dropped change with the store stamp. A
 // non-positive seq means the write carried no stamp and stays unpublished.

@@ -19,7 +19,7 @@ func TestUpdateFleetSettingsCreatesAtVersion1AndAudits(t *testing.T) {
 	out, err := statedb.UpdateFleetSettings(ctx, s, statedb.UpdateSettingsOp{
 		ConfigWrite: configWrite("local:alice", "req-1", 'a'),
 		Merge:       fleetMerge([]byte(`{"hub":{"autoDispatch":true}}`)),
-	})
+	}, nil)
 	if err != nil || out.Replay {
 		t.Fatalf("update = %+v/%v, want success", out, err)
 	}
@@ -43,7 +43,7 @@ func TestUpdateFleetSettingsBumpsAndRefusesStale(t *testing.T) {
 		return statedb.UpdateFleetSettings(ctx, s, statedb.UpdateSettingsOp{
 			ConfigWrite: configWrite("local:alice", id, body), ExpectedVersion: expected,
 			Merge: fleetMerge([]byte(merged)),
-		})
+		}, nil)
 	}
 	if _, err := op("req-1", 'a', 0, `{"hub":{}}`); err != nil {
 		t.Fatalf("create: %v", err)
@@ -70,7 +70,7 @@ func TestUpdateFleetSettingsRefusesAVersionForAMissingLayer(t *testing.T) {
 	_, err := statedb.UpdateFleetSettings(ctx, s, statedb.UpdateSettingsOp{
 		ConfigWrite: configWrite("local:alice", "req-1", 'a'), ExpectedVersion: 4,
 		Merge: fleetMerge([]byte(`{"hub":{}}`)),
-	})
+	}, nil)
 	var staleErr *statedb.VersionStale
 	if !errors.As(err, &staleErr) {
 		t.Errorf("missing with expected_version = %v, want VersionStale", err)

@@ -115,14 +115,18 @@ func (s *Syncer) workItemsRound(ctx context.Context, a Adapter, id string, repo 
 	if ts := nextSince.GetUpdatedAfterTime(); ts != nil {
 		cursorOut.SinceMs, cursorOut.HasSince = ts.AsTime().UnixMilli(), true
 	}
-	changes, err := statedb.UpsertWorkItemPage(ctx, s.Store, id, mirrors,
-		[]statedb.CursorValue{cursorOut}, rateLimitValues(page.Meta), now.UnixMilli())
+	pctx := context.WithoutCancel(ctx) // the publish hook runs on the writer after the waiter may have left
+	_, err = statedb.UpsertWorkItemPage(ctx, s.Store, id, mirrors,
+		[]statedb.CursorValue{cursorOut}, rateLimitValues(page.Meta), now.UnixMilli(),
+		func(committed []statedb.WorkItemChange) {
+			// The page committed: its mirror changes publish to Watch (the
+			// Watch ingest slice). This runs on the writer in commit
+			// order (#393).
+			s.publishWorkItems(pctx, committed)
+		})
 	if err != nil {
 		return err
 	}
-	// The page committed: its mirror changes publish to Watch (the
-	// Watch ingest slice).
-	s.publishWorkItems(ctx, changes)
 	s.ok(ctx, id, ResourceWorkItems, "ok", start, now)
 	return nil
 }
@@ -360,14 +364,18 @@ func (s *Syncer) VerifyBranches(ctx context.Context, id, project string, branche
 		})
 	}
 	cursorOut := statedb.CursorValue{Resource: ResourceChangeRequests, Page: project}
-	changes, err := statedb.UpsertChangeRequestPage(ctx, s.Store, id, mirrors,
-		[]statedb.CursorValue{cursorOut}, rateLimitValues(out.Meta), now.UnixMilli())
+	pctx := context.WithoutCancel(ctx) // the publish hook runs on the writer after the waiter may have left
+	_, err = statedb.UpsertChangeRequestPage(ctx, s.Store, id, mirrors,
+		[]statedb.CursorValue{cursorOut}, rateLimitValues(out.Meta), now.UnixMilli(),
+		func(committed []statedb.ChangeRequestChange) {
+			// The page committed: its mirror changes publish to Watch (the
+			// Watch ingest slice). This runs on the writer in commit
+			// order (#393).
+			s.publishChangeRequests(pctx, committed)
+		})
 	if err != nil {
 		return nil, err
 	}
-	// The page committed: its mirror changes publish to Watch (the
-	// Watch ingest slice).
-	s.publishChangeRequests(ctx, changes)
 	if s.Metrics != nil {
 		s.Metrics.requests.Add(ctx, 1, metricWith("integration", id, "resource", ResourceChangeRequests, "status", "ok"))
 	}

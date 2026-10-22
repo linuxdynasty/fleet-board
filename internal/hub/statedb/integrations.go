@@ -205,10 +205,10 @@ type UpdateIntegrationOp struct {
 // [VersionStale]. Otherwise the merged spec replaces the stored one, the
 // version rises by 1 and the row is stamped, with its integration.update
 // audit row (target integrations/<id>, 02m).
-func UpdateIntegrationSpec(ctx context.Context, s *store.Store, in UpdateIntegrationOp) (IntegrationStored, error) {
+func UpdateIntegrationSpec(ctx context.Context, s *store.Store, in UpdateIntegrationOp, onCommit func(IntegrationStored)) (IntegrationStored, error) {
 	jctx := context.WithoutCancel(ctx) // see insertIdentity
 	var out IntegrationStored
-	err := s.Write(ctx, func(tx *sql.Tx) error {
+	err := writeOrdered(ctx, s, &out, onCommit, func(tx *sql.Tx) error {
 		if row, err := configReplay(jctx, tx, in.ConfigWrite, configKindIntegration); err != nil || row != nil {
 			if err == nil {
 				if err := validatedWrite(jctx); err != nil {

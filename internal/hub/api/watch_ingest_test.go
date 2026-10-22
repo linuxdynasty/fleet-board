@@ -420,7 +420,7 @@ func seedWorkMirror(t *testing.T, e *fleetEnv, title string, updateMs int64, sta
 			Integration: "github-1", Kind: "WORK_ITEM_KIND_ISSUE", Project: "acme/web", ItemKey: "7398",
 			ItemJSON: raw, UpdateMs: updateMs, Stage: int32(stage),
 			TrustJSON: []byte(`{"trusted":true}`),
-		}}, nil, nil, updateMs)
+		}}, nil, nil, updateMs, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

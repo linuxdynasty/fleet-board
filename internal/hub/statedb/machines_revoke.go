@@ -211,13 +211,13 @@ func precheckRevokeTx(ctx context.Context, tx *sql.Tx, w MachineWrite, machineID
 // land with the dispatch and attach rows that own them; Terminal and
 // SessionLog are unimplemented, so closing the live stream is the
 // caller's after-commit effect with Bye{REVOKED}.
-func RevokeMachine(ctx context.Context, s *store.Store, in MachineRevoke) (RevokedMachine, error) {
+func RevokeMachine(ctx context.Context, s *store.Store, in MachineRevoke, onCommit func(RevokedMachine)) (RevokedMachine, error) {
 	if in.CloseOpen == nil {
 		return RevokedMachine{}, errors.New("statedb: revoke needs its outbox closer")
 	}
 	jctx := context.WithoutCancel(ctx) // see insertIdentity
 	var out RevokedMachine
-	err := s.Write(ctx, func(tx *sql.Tx) error {
+	err := writeOrdered(ctx, s, &out, onCommit, func(tx *sql.Tx) error {
 		if replay, err := checkMachineReplay(jctx, tx, in.MachineWrite, machineKindRevoke, in.MachineID); err != nil || replay != nil {
 			if err == nil {
 				if err := validatedWrite(jctx); err != nil {
@@ -326,11 +326,11 @@ func actorOrPrincipal(w MachineWrite) Actor {
 // stamp (a resume orders the DELETED after every earlier change, as the
 // repo delete does), and the full list row beside it for the Watch
 // DELETED message; both carry Deleted.
-func DeleteMachine(ctx context.Context, s *store.Store, in MachineDelete) (MachineStored, MachineRow, error) {
+func DeleteMachine(ctx context.Context, s *store.Store, in MachineDelete, onCommit func(MachineStored, MachineRow)) (MachineStored, MachineRow, error) {
 	jctx := context.WithoutCancel(ctx) // see insertIdentity
 	var out MachineStored
 	var row MachineRow
-	err := s.Write(ctx, func(tx *sql.Tx) error {
+	apply := func(tx *sql.Tx) error {
 		if replay, err := checkMachineReplay(jctx, tx, in.MachineWrite, machineKindDelete, in.MachineID); err != nil || replay != nil {
 			if err == nil {
 				if err := validatedWrite(jctx); err != nil {
@@ -388,7 +388,13 @@ func DeleteMachine(ctx context.Context, s *store.Store, in MachineDelete) (Machi
 			return err
 		}
 		return logMachineRequest(jctx, tx, in.MachineWrite, machineKindDelete, out, true)
-	})
+	}
+	var err error
+	if onCommit == nil {
+		err = s.Write(ctx, apply)
+	} else {
+		err = s.WriteHook(ctx, apply, func() { onCommit(out, row) })
+	}
 	if err != nil {
 		return MachineStored{}, MachineRow{}, err
 	}

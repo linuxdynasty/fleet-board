@@ -16,6 +16,7 @@ import (
 
 	agentv1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/agent/v1"
 	"github.com/linuxdynasty/fleet-board/internal/hub/ingest"
+	"github.com/linuxdynasty/fleet-board/internal/hub/outbox"
 	"github.com/linuxdynasty/fleet-board/internal/hub/statedb"
 	"github.com/linuxdynasty/fleet-board/internal/telemetry"
 )
@@ -35,9 +36,6 @@ type helloMarks struct {
 // against at the teardown.
 type abandonedSnapshot struct {
 	pending *ingest.Pending
-	machine *statedb.MachineRow
-	goals   []statedb.GoalRow
-	goalsOK bool
 }
 
 func marksOf(h *agentv1.Hello) helloMarks {
@@ -125,10 +123,25 @@ func snapshotArm(ctx context.Context, a *agentService, s *stream, m *agentv1.Con
 	unwatch := context.AfterFunc(a.stopping, cancel)
 	defer unwatch()
 	at := a.now().UTC()
+	pctx := context.WithoutCancel(wctx) // the publish hook runs on the writer after the waiter may have left
 	p, err := ingest.SubmitSnapshot(wctx, a.store, ingest.Stream{
 		MachineID: s.machineID, Epoch: s.epoch, LastEventSeq: s.hello.lastEventSeq, Counters: s.hello.counters,
 		InstallID: s.hello.installID,
-	}, snap, a.appliers, at)
+	}, snap, a.appliers, at, func(out statedb.SnapshotOut, goals []statedb.GoalRow, _ []outbox.Closed) {
+		// The commit moved the observed goals and the machine row: publish
+		// them with their new stamps for the Watch ingest slice, goals
+		// first. This runs on the writer in commit order (#393), so no
+		// interleaving of commits can invert the bus. The before images
+		// above predate the submit and the goals are exactly this job's
+		// stamped after-images, so the diff sees only this job's writes.
+		if out.Change != nil {
+			a.publishMachineState(pctx, s.machineID, out.Change.From)
+		}
+		if goalsOK {
+			a.publishGoalsCommitted(pctx, s.machineID, beforeGoals, goals)
+		}
+		a.publishMachineCommitted(pctx, s.machineID, beforeMachine)
+	})
 	var out statedb.SnapshotOut
 	if err == nil {
 		out, err = p.Wait(wctx)
@@ -139,9 +152,7 @@ func snapshotArm(ctx context.Context, a *agentService, s *stream, m *agentv1.Con
 		// here; a queued job's result is read at the teardown, with the
 		// before images read above for its Watch publish.
 		if p != nil { // nil when Submit itself gave up: no job, nothing to read
-			s.abandoned = append(s.abandoned, abandonedSnapshot{
-				pending: p, machine: beforeMachine, goals: beforeGoals, goalsOK: goalsOK,
-			})
+			s.abandoned = append(s.abandoned, abandonedSnapshot{pending: p})
 		}
 		done("abandoned")
 		a.log.InfoContext(ctx, "snapshot.abandoned", "machine_id", s.machineID, "epoch", s.epoch, "seq", snap.GetSeq(),
@@ -179,18 +190,11 @@ func snapshotArm(ctx context.Context, a *agentService, s *stream, m *agentv1.Con
 	s.snapshotAt(at)
 	done("applied")
 	if out.Change != nil {
-		a.stateChanged(ctx, *out.Change)
+		a.logStateChanged(ctx, *out.Change)
 	}
-	// The commit moved the observed goals and the machine row: publish
-	// them with their new stamps for the Watch ingest slice, goals first.
-	// The goal appliers stamp before MarkOnline stamps the machine, so
-	// goals first is ascending stamp order: a client that resumes from a
-	// goal update never skips it. The before images above predate the
-	// submit, so the diff sees exactly this job's writes.
-	if goalsOK {
-		a.publishGoalsCommitted(ctx, s.machineID, beforeGoals, p.Goals())
-	}
-	a.publishMachineCommitted(ctx, s.machineID, beforeMachine)
+	// The commit's Watch publish already ran on the writer in commit
+	// order (the submit's hook); the goal appliers stamp before MarkOnline
+	// stamps the machine, so goals first stays ascending stamp order.
 	a.noteSnapshotPanes(s, snap)
 	a.log.InfoContext(ctx, "snapshot.applied", "machine_id", s.machineID, "epoch", s.epoch, "seq", snap.GetSeq(),
 		"bytes", size, "ms", time.Since(start).Milliseconds(), "event_generation", out.Generation,
@@ -269,18 +273,11 @@ func (a *agentService) abandonedSnapshots(ctx context.Context, s *stream) {
 		out, err := ab.pending.Wait(wctx)
 		if err == nil {
 			if out.Change != nil {
-				a.stateChanged(wctx, *out.Change)
+				a.logStateChanged(wctx, *out.Change)
 			}
-			// The job committed: publish its goal writes before its
-			// machine write for the Watch ingest slice, in ascending
-			// stamp order like the applied path. The abandoned entry
-			// carries the pre-submit before images and the job its
-			// stamped after-images, so the publish sees exactly this
-			// job's writes.
-			if ab.goalsOK {
-				a.publishGoalsCommitted(wctx, s.machineID, ab.goals, ab.pending.Goals())
-			}
-			a.publishMachineCommitted(wctx, s.machineID, ab.machine)
+			// The job's Watch publish already ran on the writer in
+			// commit order (the submit's hook), so the teardown only
+			// logs the change and releases the expired commands.
 		}
 		a.outbox.Closed(wctx, ab.pending.Expired())
 	}

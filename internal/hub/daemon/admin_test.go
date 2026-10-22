@@ -282,7 +282,7 @@ func enrollSocketMachine(t *testing.T, state string) {
 		MachineID: "m-sock-1", CertDER: []byte("cert-sock-1"), Serial: "aa07",
 		CertNotAfter: now.Add(90 * 24 * time.Hour), ReportedHostname: "laptop.lan",
 		Facts: `{"hostname":"laptop.lan","os":"linux","username":"ada"}`, Now: now,
-	}); err != nil {
+	}, nil); err != nil {
 		t.Fatal(err)
 	}
 }

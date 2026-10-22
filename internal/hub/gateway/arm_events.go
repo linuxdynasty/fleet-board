@@ -52,14 +52,6 @@ type inflightEvent struct {
 	p    *ingest.EventPending
 	kind string
 	seq  uint64
-	// goals is the goal_state job's before image for the Watch publish
-	// (nil for every other kind); goalsOK is false when the read
-	// failed, and the settle skips the publish. pane carries a
-	// PaneSummary event's attribution for the same publish, nil for
-	// every other kind.
-	goals   []statedb.GoalRow
-	goalsOK bool
-	pane    *PanePublication
 }
 
 // oldest is the result channel of the oldest job in flight, nil (never
@@ -121,7 +113,29 @@ func eventArm(ctx context.Context, a *agentService, s *stream, m *agentv1.Connec
 	defer cancel()
 	unwatch := context.AfterFunc(a.stopping, cancel)
 	defer unwatch()
-	p, err := ingest.SubmitEvent(wctx, a.store, in, ev, a.eventAppliers)
+	pctx := context.WithoutCancel(wctx) // the publish hook runs on the writer after the waiter may have left
+	pane := a.panePublication(s, ev)
+	p, err := ingest.SubmitEvent(wctx, a.store, in, ev, a.eventAppliers,
+		func(out statedb.EventOut, goals []statedb.GoalRow) {
+			// The job committed: publish its machine stamp, its goal
+			// writes and its pane summary (never a replayed one) for
+			// the Watch ingest slice. This runs on the writer in commit
+			// order (#393), so no interleaving of commits can invert
+			// the bus. The before images above predate the submit and
+			// the goals are exactly this job's stamped after-images.
+			if out.Outcome != statedb.EventApplied {
+				return
+			}
+			a.publishMachineEvent(pctx, s.machineID)
+			if !out.History && kind == "goal_state" && goalsOK {
+				a.publishGoalsCommitted(pctx, s.machineID, beforeGoals, goals)
+			}
+			if pane != nil && !out.History {
+				p := *pane
+				p.Seq = out.HubSeq
+				a.publishPane(pctx, p)
+			}
+		})
 	if err != nil {
 		// Not queued (the writer's queue was full and the stream is ending,
 		// or the store is closed): the stream must end so the agent sends
@@ -138,7 +152,7 @@ func eventArm(ctx context.Context, a *agentService, s *stream, m *agentv1.Connec
 		a.ev.cleaned.Add(ctx, int64(cleaned.Scrubbed+cleaned.Cut), metric.WithAttributes(attribute.String("kind", kind)))
 	}
 	e.inflight = append(e.inflight, inflightEvent{
-		p: p, kind: kind, seq: ev.GetSeq(), goals: beforeGoals, goalsOK: goalsOK, pane: a.panePublication(s, ev),
+		p: p, kind: kind, seq: ev.GetSeq(),
 	})
 	a.settleReady(ctx, s)
 	for len(e.inflight) >= maxInflight {
@@ -187,21 +201,8 @@ func (a *agentService) settle(ctx context.Context, s *stream, err error) {
 	if err == nil {
 		e.committed = max(e.committed, f.p.Out().HubLastEventSeq)
 		a.ackCommitted(ctx, s)
-		if out := f.p.Out(); out.Outcome == statedb.EventApplied {
-			// The job committed: publish its machine stamp, its goal
-			// writes and its pane summary (never a replayed one) for
-			// the Watch ingest slice. Settle runs in submission order
-			// per stream, so one machine's publishes keep commit order.
-			a.publishMachineEvent(ctx, s.machineID)
-			if !out.History && f.kind == "goal_state" && f.goalsOK {
-				a.publishGoalsCommitted(ctx, s.machineID, f.goals, f.p.Goals())
-			}
-			if f.pane != nil && !out.History {
-				pane := *f.pane
-				pane.Seq = out.HubSeq
-				a.publishPane(ctx, pane)
-			}
-		}
+		// The job's Watch publish already ran on the writer in commit
+		// order (the submit's hook); settle only moves the ack.
 		return
 	}
 	if e.broken {

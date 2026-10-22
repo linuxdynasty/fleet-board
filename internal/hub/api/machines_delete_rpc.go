@@ -46,27 +46,25 @@ func (f *Fleet) DeleteMachine(ctx context.Context, req *connect.Request[hubv1.De
 	}
 	now := f.hubNow()
 	writeCtx := statedb.WithValidatedWrite(ctx, func() error { return quotaCheckpoint(ctx, quotaWrite) })
+	pctx := context.WithoutCancel(ctx) // the publish hook runs on the writer after the handler may have left
 	var deleted statedb.MachineStored
-	var lastRow statedb.MachineRow
-	if err := f.commitWatch(
-		func() error {
-			var err error
-			deleted, lastRow, err = statedb.DeleteMachine(writeCtx, f.store, statedb.MachineDelete{
-				MachineWrite: statedb.MachineWrite{
-					Principal: actor, RequestID: m.GetRequestId(),
-					RequestHash: sum, Actor: actorOf(who), Now: now,
-				},
-				MachineID: id, ExpectedVersion: m.GetExpectedVersion(),
-			})
-			return err
-		},
-		func() {
+	{
+		var err error
+		deleted, _, err = statedb.DeleteMachine(writeCtx, f.store, statedb.MachineDelete{
+			MachineWrite: statedb.MachineWrite{
+				Principal: actor, RequestID: m.GetRequestId(),
+				RequestHash: sum, Actor: actorOf(who), Now: now,
+			},
+			MachineID: id, ExpectedVersion: m.GetExpectedVersion(),
+		}, func(deleted statedb.MachineStored, lastRow statedb.MachineRow) {
 			// The row carries the delete's own stamp with the last
 			// state, so a resume replays the DELETED in order.
-			f.publishMachineDeleted(ctx, lastRow, deleted.HubSeq, deleted.Replay)
-		},
-	); err != nil {
-		return nil, f.machineWriteError(ctx, opMachineDelete, "delete", actor, machineStoreError("delete", err))
+			// Runs on the writer in commit order (#393).
+			f.publishMachineDeleted(pctx, lastRow, deleted.HubSeq, deleted.Replay)
+		})
+		if err != nil {
+			return nil, f.machineWriteError(ctx, opMachineDelete, "delete", actor, machineStoreError("delete", err))
+		}
 	}
 	f.machineWrote(ctx, opMachineDelete, actor, id, deleted.Version, deleted.Replay)
 	return connect.NewResponse(&hubv1.DeleteMachineResponse{}), nil

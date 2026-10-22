@@ -67,78 +67,77 @@ func (f *Fleet) CreateSession(ctx context.Context, req *connect.Request[hubv1.Cr
 	// leave a "sent" count behind.
 	var emitKind, emitOutcome string
 	var sessOpSeq int64
-	commitErr := f.commitWatch(func() error {
-		return f.store.Write(ctx, func(tx *sql.Tx) error {
-			if op, replay, err := checkRequest(ctx, tx, actor, m.GetRequestId(), sum[:]); err != nil || replay {
-				if err != nil {
-					return err
-				}
-				sessID, err = sessionOfCommand(ctx, tx, op.GetId().GetValue())
-				if err != nil {
-					return err
-				}
-				if err := quotaCheckpoint(ctx, quotaWrite); err != nil {
-					return err
-				}
-				out = op
-				emitKind, emitOutcome = "ensure_session", "replayed"
-				return nil
-			}
-			id, err := mintSessionID()
+	pctx := context.WithoutCancel(ctx) // the publish hook runs on the writer after the handler may have left
+	if commitErr := f.store.WriteHook(ctx, func(tx *sql.Tx) error {
+		if op, replay, err := checkRequest(ctx, tx, actor, m.GetRequestId(), sum[:]); err != nil || replay {
 			if err != nil {
 				return err
 			}
-			cmd := &agentv1.Command{
-				Kind: &agentv1.Command_EnsureSession{EnsureSession: &agentv1.EnsureSession{
-					SessionId: &typev1.SessionId{Value: id}, Server: m.GetServer(), Name: m.GetName(),
-					Workdir: m.GetWorkdir(), Harness: m.GetHarness(), Reuse: m.GetReuse(),
-					WindowName: m.GetWindowName(), OwnerPrincipal: who, Profile: m.GetProfile(),
-				}},
-			}
-			cmd.RequestedBy = who
-			cmd.IssuedTime = timestamppb.New(now)
-			op, err := outbox.Enqueue(ctx, tx, outbox.In{
-				MachineID: m.GetMachine().GetValue(), Command: cmd, RequestID: m.GetRequestId(), Now: now,
-				Checkpoint: func() error { return quotaCheckpoint(ctx, quotaWrite) },
-			})
-			if err != nil {
-				return mapOutboxError(err)
-			}
-			st, err := statedb.NextStamp(ctx, tx, now)
+			sessID, err = sessionOfCommand(ctx, tx, op.GetId().GetValue())
 			if err != nil {
 				return err
 			}
-			if _, err := tx.ExecContext(ctx, `INSERT INTO hub_sessions(session_id, machine_id, create_time,
+			if err := quotaCheckpoint(ctx, quotaWrite); err != nil {
+				return err
+			}
+			out = op
+			emitKind, emitOutcome = "ensure_session", "replayed"
+			return nil
+		}
+		id, err := mintSessionID()
+		if err != nil {
+			return err
+		}
+		cmd := &agentv1.Command{
+			Kind: &agentv1.Command_EnsureSession{EnsureSession: &agentv1.EnsureSession{
+				SessionId: &typev1.SessionId{Value: id}, Server: m.GetServer(), Name: m.GetName(),
+				Workdir: m.GetWorkdir(), Harness: m.GetHarness(), Reuse: m.GetReuse(),
+				WindowName: m.GetWindowName(), OwnerPrincipal: who, Profile: m.GetProfile(),
+			}},
+		}
+		cmd.RequestedBy = who
+		cmd.IssuedTime = timestamppb.New(now)
+		op, err := outbox.Enqueue(ctx, tx, outbox.In{
+			MachineID: m.GetMachine().GetValue(), Command: cmd, RequestID: m.GetRequestId(), Now: now,
+			Checkpoint: func() error { return quotaCheckpoint(ctx, quotaWrite) },
+		})
+		if err != nil {
+			return mapOutboxError(err)
+		}
+		st, err := statedb.NextStamp(ctx, tx, now)
+		if err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO hub_sessions(session_id, machine_id, create_time,
 				name, server, owner_id, owner_kind, owner_name, hub_seq)
 				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, id, m.GetMachine().GetValue(), now.UnixMilli(),
-				m.GetName(), serverShort(m.GetServer()),
-				who.GetId().GetValue(), roleKindName(who.GetKind()), who.GetName(), st.HubSeq); err != nil {
-				return fmt.Errorf("record session: %w", err)
-			}
-			if err := logRequest(ctx, tx, actor, m.GetRequestId(), op.CommandID, sum[:], now); err != nil {
-				return err
-			}
-			if _, err := statedb.AppendAudit(ctx, tx, statedb.AuditEntry{
-				Actor: actorOf(who), Action: "session.create", Target: "sessions/" + id,
-				CommandID: op.CommandID, RequestID: m.GetRequestId(), Now: now,
-			}); err != nil {
-				return err
-			}
-			out, err = operationFromOp(ctx, tx, op, m.GetMachine().GetValue(), who, m.GetRequestId(), now)
-			if err != nil {
-				return err
-			}
-			sessID = id
-			sessOpSeq = op.HubSeq
-			emitKind, emitOutcome = op.Kind, "sent"
-			return nil
-		})
+			m.GetName(), serverShort(m.GetServer()),
+			who.GetId().GetValue(), roleKindName(who.GetKind()), who.GetName(), st.HubSeq); err != nil {
+			return fmt.Errorf("record session: %w", err)
+		}
+		if err := logRequest(ctx, tx, actor, m.GetRequestId(), op.CommandID, sum[:], now); err != nil {
+			return err
+		}
+		if _, err := statedb.AppendAudit(ctx, tx, statedb.AuditEntry{
+			Actor: actorOf(who), Action: "session.create", Target: "sessions/" + id,
+			CommandID: op.CommandID, RequestID: m.GetRequestId(), Now: now,
+		}); err != nil {
+			return err
+		}
+		out, err = operationFromOp(ctx, tx, op, m.GetMachine().GetValue(), who, m.GetRequestId(), now)
+		if err != nil {
+			return err
+		}
+		sessID = id
+		sessOpSeq = op.HubSeq
+		emitKind, emitOutcome = op.Kind, "sent"
+		return nil
 	}, func() {
+		// Runs on the writer in commit order (#393).
 		// A request_id replay sends nothing new: only a fresh create
 		// publishes its session and command.
-		f.publishSessionCreated(ctx, sessID, out, sessOpSeq, emitOutcome == "replayed")
-	})
-	if commitErr != nil {
+		f.publishSessionCreated(pctx, sessID, out, sessOpSeq, emitOutcome == "replayed")
+	}); commitErr != nil {
 		return nil, f.storeError(ctx, actor, commitErr)
 	}
 	f.countSession(ctx, emitKind, emitOutcome)

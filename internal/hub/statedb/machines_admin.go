@@ -343,10 +343,10 @@ func auditMachine(ctx context.Context, tx *sql.Tx, action string, stored Machine
 // masked fields replace the stored ones, the version rises by 1 and the
 // row is stamped, with its machine.update audit row. A REVOKED machine
 // stays revoked; only its name and labels change.
-func UpdateMachine(ctx context.Context, s *store.Store, in MachineUpdate) (MachineStored, error) {
+func UpdateMachine(ctx context.Context, s *store.Store, in MachineUpdate, onCommit func(MachineStored)) (MachineStored, error) {
 	jctx := context.WithoutCancel(ctx) // see insertIdentity
 	var out MachineStored
-	err := s.Write(ctx, func(tx *sql.Tx) error {
+	err := writeOrdered(ctx, s, &out, onCommit, func(tx *sql.Tx) error {
 		if replay, err := checkMachineReplay(jctx, tx, in.MachineWrite, machineKindUpdate, in.MachineID); err != nil || replay != nil {
 			if err == nil {
 				if err := validatedWrite(jctx); err != nil {

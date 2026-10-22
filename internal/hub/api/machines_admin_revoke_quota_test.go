@@ -274,7 +274,7 @@ func TestTCPRevokeLateRequestConflictRefunds(t *testing.T) {
 			Now: fleetNow,
 		},
 		MachineID: first, ExpectedVersion: 1, HasName: true, Name: "renamed",
-	})
+	}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

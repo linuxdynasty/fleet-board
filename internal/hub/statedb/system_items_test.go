@@ -221,7 +221,7 @@ func TestSystemItemWriterKeepsSnoozedItemsUpdated(t *testing.T) {
 	if _, err := statedb.SnoozeTriageItem(ctx, s, statedb.TriageSnooze{
 		Write: triageWrite("local:alice", "sn-sys-1", 's'), ID: id,
 		ExpectedVersion: 1, Until: now.Add(2 * time.Hour),
-	}); err != nil {
+	}, nil); err != nil {
 		t.Fatalf("SnoozeTriageItem: %v", err)
 	}
 

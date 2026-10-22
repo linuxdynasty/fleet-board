@@ -27,7 +27,7 @@ func TestInsertEnrollTokenPreviousMachineChecksEligibility(t *testing.T) {
 	if _, err := statedb.RevokeMachine(ctx, s, statedb.MachineRevoke{
 		MachineWrite: machineWrite("local:alice", "rev-1", 9, at),
 		MachineID:    id, CloseOpen: closeForRevoke,
-	}); err != nil {
+	}, nil); err != nil {
 		t.Fatal(err)
 	}
 	if err := statedb.InsertEnrollToken(ctx, s, previousToken("local:alice", "tok-1", 21, id)); err != nil {
@@ -65,7 +65,7 @@ func TestCheckEnrollPreviousMachineReturnsTheToken(t *testing.T) {
 	if _, err := statedb.RevokeMachine(ctx, s, statedb.MachineRevoke{
 		MachineWrite: machineWrite("local:alice", "rev-1", 9, at),
 		MachineID:    id, CloseOpen: closeForRevoke,
-	}); err != nil {
+	}, nil); err != nil {
 		t.Fatal(err)
 	}
 	tok := previousToken("local:alice", "tok-1", 21, id)
@@ -103,7 +103,7 @@ func TestEnrollPreviousMachineKeepsTheID(t *testing.T) {
 	if _, err := statedb.RevokeMachine(ctx, s, statedb.MachineRevoke{
 		MachineWrite: machineWrite("local:alice", "rev-1", 9, at),
 		MachineID:    id, CloseOpen: closeForRevoke,
-	}); err != nil {
+	}, nil); err != nil {
 		t.Fatal(err)
 	}
 	tok := previousToken("local:alice", "tok-1", 21, id)
@@ -111,7 +111,7 @@ func TestEnrollPreviousMachineKeepsTheID(t *testing.T) {
 		t.Fatal(err)
 	}
 	key := statedb.EnrollKey{SecretHash: tok.SecretHash, InstallID: "install-2", CSRKeyHash: sha256.Sum256([]byte{2})}
-	got, err := statedb.EnrollPrevious(ctx, s, reenrollMachine(key, id, "cd0001", at.Add(time.Minute)))
+	got, err := statedb.EnrollPrevious(ctx, s, reenrollMachine(key, id, "cd0001", at.Add(time.Minute)), nil)
 	if err != nil {
 		t.Fatalf("EnrollPrevious: %v", err)
 	}
@@ -163,7 +163,7 @@ func TestEnrollPreviousMismatchBurnsNothing(t *testing.T) {
 	if _, err := statedb.RevokeMachine(ctx, s, statedb.MachineRevoke{
 		MachineWrite: machineWrite("local:alice", "rev-1", 9, at),
 		MachineID:    id, CloseOpen: closeForRevoke,
-	}); err != nil {
+	}, nil); err != nil {
 		t.Fatal(err)
 	}
 	tok := previousToken("local:alice", "tok-1", 21, id)
@@ -173,7 +173,7 @@ func TestEnrollPreviousMismatchBurnsNothing(t *testing.T) {
 	key := statedb.EnrollKey{SecretHash: tok.SecretHash, InstallID: "install-2", CSRKeyHash: sha256.Sum256([]byte{2})}
 	in := reenrollMachine(key, id, "cd0001", at.Add(time.Minute))
 	in.RequestPrevious = other
-	if _, err := statedb.EnrollPrevious(ctx, s, in); !errors.Is(err, statedb.ErrPreviousMismatch) {
+	if _, err := statedb.EnrollPrevious(ctx, s, in, nil); !errors.Is(err, statedb.ErrPreviousMismatch) {
 		t.Fatalf("mismatch = %v, want ErrPreviousMismatch", err)
 	}
 	check, err := statedb.CheckEnroll(ctx, s, key, at.Add(time.Minute))
@@ -197,7 +197,7 @@ func TestEnrollPreviousGoneFallsBackToFresh(t *testing.T) {
 	if _, err := statedb.RevokeMachine(ctx, s, statedb.MachineRevoke{
 		MachineWrite: machineWrite("local:alice", "rev-1", 9, at),
 		MachineID:    id, CloseOpen: closeForRevoke,
-	}); err != nil {
+	}, nil); err != nil {
 		t.Fatal(err)
 	}
 	tok := previousToken("local:alice", "tok-1", 21, id)
@@ -207,11 +207,11 @@ func TestEnrollPreviousGoneFallsBackToFresh(t *testing.T) {
 	if _, _, err := statedb.DeleteMachine(ctx, s, statedb.MachineDelete{
 		MachineWrite: machineWrite("local:alice", "del-1", 12, at),
 		MachineID:    id,
-	}); err != nil {
+	}, nil); err != nil {
 		t.Fatal(err)
 	}
 	key := statedb.EnrollKey{SecretHash: tok.SecretHash, InstallID: "install-2", CSRKeyHash: sha256.Sum256([]byte{2})}
-	if _, err := statedb.EnrollPrevious(ctx, s, reenrollMachine(key, id, "cd0001", at.Add(time.Minute))); !errors.Is(
+	if _, err := statedb.EnrollPrevious(ctx, s, reenrollMachine(key, id, "cd0001", at.Add(time.Minute)), nil); !errors.Is(
 		err, statedb.ErrPreviousGone) {
 		t.Fatalf("gone = %v, want ErrPreviousGone", err)
 	}

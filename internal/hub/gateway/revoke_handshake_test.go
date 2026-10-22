@@ -43,7 +43,7 @@ func TestRevokeMachineRefusesTheNextHandshake(t *testing.T) {
 			}
 			return out, nil
 		},
-	})
+	}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

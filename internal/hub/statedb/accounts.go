@@ -193,10 +193,10 @@ func ListAccountRows(ctx context.Context, s *store.Store) ([]AccountRow, error) 
 // row lands at version 1, stamped, with its account.create audit row.
 // Nothing is written on any error. The unique key on (principal,
 // request_id) backs the replay check up.
-func CreateOwnerAccount(ctx context.Context, s *store.Store, in CreateAccount) (AccountStored, error) {
+func CreateOwnerAccount(ctx context.Context, s *store.Store, in CreateAccount, onCommit func(AccountStored)) (AccountStored, error) {
 	jctx := context.WithoutCancel(ctx) // see insertIdentity
 	var out AccountStored
-	err := s.Write(ctx, func(tx *sql.Tx) error {
+	err := writeOrdered(ctx, s, &out, onCommit, func(tx *sql.Tx) error {
 		if row, err := configReplay(jctx, tx, in.ConfigWrite, configKindAccount); err != nil || row != nil {
 			if err == nil {
 				if err := validatedWrite(jctx); err != nil {
@@ -270,10 +270,10 @@ func replayAccount(row *configLogRow) AccountStored {
 // missing row is [ErrAccountUnknown], a stale version is [VersionStale].
 // Otherwise the merged spec replaces the stored one, the version rises
 // by 1 and the row is stamped, with its account.update audit row.
-func UpdateOwnerAccount(ctx context.Context, s *store.Store, in UpdateAccountOp) (AccountStored, error) {
+func UpdateOwnerAccount(ctx context.Context, s *store.Store, in UpdateAccountOp, onCommit func(AccountStored)) (AccountStored, error) {
 	jctx := context.WithoutCancel(ctx) // see insertIdentity
 	var out AccountStored
-	err := s.Write(ctx, func(tx *sql.Tx) error {
+	err := writeOrdered(ctx, s, &out, onCommit, func(tx *sql.Tx) error {
 		if row, err := configReplay(jctx, tx, in.ConfigWrite, configKindAccount); err != nil || row != nil {
 			if err == nil {
 				if err := validatedWrite(jctx); err != nil {
@@ -352,10 +352,10 @@ func UpdateOwnerAccount(ctx context.Context, s *store.Store, in UpdateAccountOp)
 // The returned row keeps the last state with the delete's own Watch
 // stamp (a resume orders the DELETED after every earlier change, as the
 // repo delete does), so the Watch DELETED carries the exact last state.
-func DeleteOwnerAccount(ctx context.Context, s *store.Store, in DeleteAccountOp) (AccountStored, error) {
+func DeleteOwnerAccount(ctx context.Context, s *store.Store, in DeleteAccountOp, onCommit func(AccountStored)) (AccountStored, error) {
 	jctx := context.WithoutCancel(ctx) // see insertIdentity
 	var out AccountStored
-	err := s.Write(ctx, func(tx *sql.Tx) error {
+	err := writeOrdered(ctx, s, &out, onCommit, func(tx *sql.Tx) error {
 		if row, err := configReplay(jctx, tx, in.ConfigWrite, configKindAccount); err != nil || row != nil {
 			if err == nil {
 				if err := validatedWrite(jctx); err != nil {

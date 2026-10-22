@@ -325,20 +325,20 @@ func TestEndConnectionClosesTheLiveRowOnce(t *testing.T) {
 	ctx := context.Background()
 	mustHello(t, s, hello(0, "boot-a", "192.0.2.7:51000", helloAt))
 	end := helloAt.Add(time.Minute)
-	if ended, err := statedb.EndConnection(ctx, s, renewMachineID, 1, statedb.EndStreamClosed, end); err != nil || !ended.Live {
+	if ended, err := statedb.EndConnection(ctx, s, renewMachineID, 1, statedb.EndStreamClosed, end, nil); err != nil || !ended.Live {
 		t.Fatalf("EndConnection = %+v, %v; want the live row closed", ended, err)
 	}
 	// defaults.md: last_seen is written on disconnect.
 	if _, _, seen := machineMarks(t, rawDB(t, dir), renewMachineID); seen.Int64 != end.UnixMilli() {
 		t.Errorf("last_seen_time after the close %v, want %d", seen, end.UnixMilli())
 	}
-	if ended, err := statedb.EndConnection(ctx, s, renewMachineID, 1, statedb.EndAgentBye, end.Add(time.Minute)); err != nil || ended.Live {
+	if ended, err := statedb.EndConnection(ctx, s, renewMachineID, 1, statedb.EndAgentBye, end.Add(time.Minute), nil); err != nil || ended.Live {
 		t.Errorf("second EndConnection = %+v, %v; want a no-op", ended, err)
 	}
-	if ended, err := statedb.EndConnection(ctx, s, renewMachineID, 9, statedb.EndStreamClosed, end); err != nil || ended.Live {
+	if ended, err := statedb.EndConnection(ctx, s, renewMachineID, 9, statedb.EndStreamClosed, end, nil); err != nil || ended.Live {
 		t.Errorf("EndConnection of an epoch never seen = %+v, %v; want a no-op", ended, err)
 	}
-	if _, err := statedb.EndConnection(ctx, s, renewMachineID, 1, statedb.EndDisplaced, end); !errors.Is(err, statedb.ErrEndReasonInvalid) {
+	if _, err := statedb.EndConnection(ctx, s, renewMachineID, 1, statedb.EndDisplaced, end, nil); !errors.Is(err, statedb.ErrEndReasonInvalid) {
 		t.Errorf("EndConnection(displaced) = %v, want ErrEndReasonInvalid", err)
 	}
 	// The next Hello finds no live row, so it displaces nothing.
@@ -364,7 +364,7 @@ func TestEndConnectionOfADisplacedStreamIsANoOp(t *testing.T) {
 	dir, s := enrolledStore(t)
 	mustHello(t, s, hello(0, "boot-a", "192.0.2.7:51000", helloAt))
 	mustHello(t, s, hello(1, "boot-b", "192.0.2.7:51001", helloAt.Add(time.Second)))
-	ended, err := statedb.EndConnection(context.Background(), s, renewMachineID, 1, statedb.EndStreamClosed, helloAt.Add(time.Minute))
+	ended, err := statedb.EndConnection(context.Background(), s, renewMachineID, 1, statedb.EndStreamClosed, helloAt.Add(time.Minute), nil)
 	if err != nil || ended.Live {
 		t.Fatalf("EndConnection(displaced epoch 1) = %+v, %v; want false, nil", ended, err)
 	}
@@ -395,7 +395,7 @@ func TestEveryEndReasonIsStored(t *testing.T) {
 	for i, r := range reasons {
 		at := helloAt.Add(time.Duration(i) * time.Minute)
 		out := mustHello(t, s, hello(0, "boot-a", "192.0.2.7:51000", at))
-		if ended, err := statedb.EndConnection(context.Background(), s, renewMachineID, out.Epoch, r, at.Add(time.Second)); err != nil || !ended.Live {
+		if ended, err := statedb.EndConnection(context.Background(), s, renewMachineID, out.Epoch, r, at.Add(time.Second), nil); err != nil || !ended.Live {
 			t.Errorf("EndConnection(%s) = %+v, %v", r, ended, err)
 		}
 	}

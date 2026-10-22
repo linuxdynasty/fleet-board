@@ -154,10 +154,15 @@ type RateLimitValue struct {
 // the sync time. It reports the rows the page created or replaced with
 // their stamps, so Watch can publish them; a last_sync_ms touch and a
 // dropped page report nothing.
-func UpsertWorkItemPage(ctx context.Context, s *store.Store, integration string, items []WorkItemMirror, cursors []CursorValue, limits []RateLimitValue, nowMs int64) ([]WorkItemChange, error) {
+// onCommit runs on the store writer after this job's batch commits, in
+// commit order (#393): the Watch publish for exactly this page. It
+// receives what the job stamped; a nil onCommit writes without one. It
+// must follow the post-commit hook rules (short, non-blocking, never
+// Submit or Write).
+func UpsertWorkItemPage(ctx context.Context, s *store.Store, integration string, items []WorkItemMirror, cursors []CursorValue, limits []RateLimitValue, nowMs int64, onCommit func([]WorkItemChange)) ([]WorkItemChange, error) {
 	jctx := context.WithoutCancel(ctx)
 	var out []WorkItemChange
-	err := s.Write(ctx, func(tx *sql.Tx) error {
+	err := writeOrdered(ctx, s, &out, onCommit, func(tx *sql.Tx) error {
 		for _, it := range items {
 			c, err := upsertWorkItem(jctx, tx, integration, it, nowMs)
 			if err != nil {
@@ -294,10 +299,10 @@ type ChangeRequestMirror struct {
 // and rate limits, under the same guard and version rule as work items.
 // It reports the rows the page created or replaced, as
 // [UpsertWorkItemPage].
-func UpsertChangeRequestPage(ctx context.Context, s *store.Store, integration string, items []ChangeRequestMirror, cursors []CursorValue, limits []RateLimitValue, nowMs int64) ([]ChangeRequestChange, error) {
+func UpsertChangeRequestPage(ctx context.Context, s *store.Store, integration string, items []ChangeRequestMirror, cursors []CursorValue, limits []RateLimitValue, nowMs int64, onCommit func([]ChangeRequestChange)) ([]ChangeRequestChange, error) {
 	jctx := context.WithoutCancel(ctx)
 	var out []ChangeRequestChange
-	err := s.Write(ctx, func(tx *sql.Tx) error {
+	err := writeOrdered(ctx, s, &out, onCommit, func(tx *sql.Tx) error {
 		for _, it := range items {
 			c, err := upsertChangeRequest(jctx, tx, integration, it, nowMs)
 			if err != nil {

@@ -91,6 +91,10 @@ type Store struct {
 	// writer when it takes a job and the queue has room. The
 	// WRITER_QUEUE_FULL measure of 05b reads it through QueueFullSince.
 	fullSince atomic.Int64
+	// hook runs on the writer goroutine after each committed batch's own
+	// hooks, in commit order (#393). Set once via OnCommit before jobs
+	// that need it commit; unset it runs nothing.
+	hook atomic.Value
 
 	closeOnce sync.Once
 	closeErr  error

@@ -135,7 +135,7 @@ func TestEnrollConsumesAPendingEntry(t *testing.T) {
 	key := statedb.EnrollKey{SecretHash: tok.SecretHash, InstallID: "install-9", CSRKeyHash: sha256.Sum256([]byte{7})}
 	m := newMachine(key, "01jmachine0000000000000009", beforeTTL)
 	m.ReportedHostname = "laptop.lan"
-	if _, err := statedb.Enroll(ctx, s, m); err != nil {
+	if _, err := statedb.Enroll(ctx, s, m, nil); err != nil {
 		t.Fatalf("Enroll: %v", err)
 	}
 	var (
@@ -174,7 +174,7 @@ func TestEnrollWithoutPendingLeavesNoLayer(t *testing.T) {
 	t.Parallel()
 	dir, s := tokenStore(t)
 	key := enrollKey("install-1", 1)
-	if _, err := statedb.Enroll(context.Background(), s, newMachine(key, "01jmachine0000000000000001", beforeTTL)); err != nil {
+	if _, err := statedb.Enroll(context.Background(), s, newMachine(key, "01jmachine0000000000000001", beforeTTL), nil); err != nil {
 		t.Fatalf("Enroll: %v", err)
 	}
 	if _, found, err := statedb.ReadMachineLayer(context.Background(), s, "01jmachine0000000000000001"); err != nil || found {

@@ -71,7 +71,7 @@ func Seed(ctx context.Context, dir string) error {
 		if err := statedb.InsertEnrollToken(ctx, st, o.m.token); err != nil {
 			return fmt.Errorf("seed: insert %s token: %w", o.name, err)
 		}
-		if _, err := statedb.Enroll(ctx, st, o.m.new); err != nil {
+		if _, err := statedb.Enroll(ctx, st, o.m.new, nil); err != nil {
 			return fmt.Errorf("seed: enroll %s: %w", o.name, err)
 		}
 	}

@@ -15,10 +15,10 @@ import (
 // This file publishes machine-driven (ingest) commits to Watch streams
 // (02c): the snapshot and event jobs (goals, machines, pane summaries),
 // the syncer pages (work items, change requests) and hub-started sessions.
-// Every method runs after the commit and holds only watchMu (the
-// commitWatch discipline): a rolled-back job publishes nothing, and
-// concurrent publishers serialize in one place. In-package writes keep
-// using commitWatch; these hooks cover the commits other packages make.
+// Every method runs in the committing job's post-commit hook on the
+// writer, in commit order (#393), and takes watchMu briefly: a rolled-back
+// job publishes nothing, and concurrent publishers serialize in commit
+// order.
 //
 // reads re-read the row List serves, so live filtering can never disagree
 // with the initial state; offerWatch drops a non-positive stamp, so rows
@@ -237,8 +237,8 @@ func (f *Fleet) PublishGoalsCommitted(ctx context.Context, machineID string, bef
 // the queued EnsureSession command as OPERATIONS CREATED first, then the
 // session with its create write as SESSIONS CREATED, in ascending stamp
 // order. A request_id replay publishes nothing: the first call already
-// did. The caller holds watchMu (it runs in the CreateSession commitWatch
-// publish step, which serializes commit and publish as one ordered step).
+// did. It runs in the CreateSession post-commit hook on the writer, in
+// commit order (#393), and takes watchMu briefly.
 func (f *Fleet) publishSessionCreated(ctx context.Context, sessID string, op *hubv1.Operation, opSeq int64, replay bool) {
 	if replay {
 		return

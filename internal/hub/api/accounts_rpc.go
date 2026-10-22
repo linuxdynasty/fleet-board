@@ -277,24 +277,20 @@ func (f *Fleet) CreateAccount(ctx context.Context, req *connect.Request[hubv1.Cr
 	}
 	now := f.hubNow()
 	writeCtx := statedb.WithValidatedWrite(ctx, func() error { return quotaCheckpoint(ctx, quotaWrite) })
+	pctx := context.WithoutCancel(ctx) // the publish hook runs on the writer after the handler may have left
 	var stored statedb.AccountStored
-	if err := f.commitWatch(
-		func() error {
-			var err error
-			stored, err = statedb.CreateOwnerAccount(writeCtx, f.store, statedb.CreateAccount{
-				ConfigWrite: statedb.ConfigWrite{
-					Principal: actor, RequestID: m.GetRequestId(),
-					RequestHash: sum, Actor: actorOf(who), Now: now,
-				},
-				ID: id, Harness: m.GetHarness().GetName(), Provider: m.GetProvider(),
-				DisplayName: spec.GetDisplayName(), Origin: statedb.AccountOriginOwner, Spec: specJSON,
-			})
-			return err
+	stored, err = statedb.CreateOwnerAccount(writeCtx, f.store, statedb.CreateAccount{
+		ConfigWrite: statedb.ConfigWrite{
+			Principal: actor, RequestID: m.GetRequestId(),
+			RequestHash: sum, Actor: actorOf(who), Now: now,
 		},
-		func() {
-			f.publishAccountWatch(ctx, stored, hubv1.ChangeType_CHANGE_TYPE_CREATED, nil, stored.Replay)
-		},
-	); err != nil {
+		ID: id, Harness: m.GetHarness().GetName(), Provider: m.GetProvider(),
+		DisplayName: spec.GetDisplayName(), Origin: statedb.AccountOriginOwner, Spec: specJSON,
+	}, func(s statedb.AccountStored) {
+		// Runs on the writer in commit order (#393).
+		f.publishAccountWatch(pctx, s, hubv1.ChangeType_CHANGE_TYPE_CREATED, nil, s.Replay)
+	})
+	if err != nil {
 		return nil, f.configOpWriteError(ctx, opAccountCreate, "create", actor, accountStoreError("create", err))
 	}
 	var outSpec hubv1.AccountSpec
@@ -353,47 +349,46 @@ func (f *Fleet) UpdateAccount(ctx context.Context, req *connect.Request[hubv1.Up
 	// oldSpec keeps the pre-update spec for UNMATCHED evaluation.
 	var oldSpec []byte
 	writeCtx := statedb.WithValidatedWrite(ctx, func() error { return quotaCheckpoint(ctx, quotaWrite) })
+	pctx := context.WithoutCancel(ctx) // the publish hook runs on the writer after the handler may have left
 	var stored statedb.AccountStored
-	if err := f.commitWatch(
-		func() error {
-			var err error
-			stored, err = statedb.UpdateOwnerAccount(writeCtx, f.store, statedb.UpdateAccountOp{
-				ConfigWrite: statedb.ConfigWrite{
-					Principal: actor, RequestID: m.GetRequestId(),
-					RequestHash: sum, Actor: actorOf(who), Now: now,
-				},
-				ID: inAccountID(m), ExpectedVersion: m.GetExpectedVersion(),
-				Merge: func(current []byte) ([]byte, string, error) {
-					oldSpec = current
-					var currentSpec hubv1.AccountSpec
-					if err := protojson.Unmarshal(current, &currentSpec); err != nil {
-						return nil, "", err
-					}
-					merged, err := applyMaskedFields(&currentSpec, patch, paths, "spec")
-					if err != nil {
-						return nil, "", err
-					}
-					mergedSpec := merged.(*hubv1.AccountSpec) //nolint:forcetypeassert // applyMaskedFields clones the stored type
-					// Only the merged result is validated: fields outside the
-					// mask are ignored, even when the request carries invalid
-					// values for them.
-					if err := checkAccountSpec(mergedSpec); err != nil {
-						return nil, "", err
-					}
-					mergedJSON, err := protojson.Marshal(mergedSpec)
-					if err != nil {
-						return nil, "", err
-					}
-					return mergedJSON, mergedSpec.GetDisplayName(), nil
-				},
-			})
-			return err
-		},
-		func() {
-			f.publishAccountWatch(ctx, stored, hubv1.ChangeType_CHANGE_TYPE_UPDATED, oldSpec, stored.Replay)
-		},
-	); err != nil {
-		return nil, f.configOpWriteError(ctx, opAccountUpdate, "update", actor, accountStoreError("update", err))
+	{
+		var err error
+		stored, err = statedb.UpdateOwnerAccount(writeCtx, f.store, statedb.UpdateAccountOp{
+			ConfigWrite: statedb.ConfigWrite{
+				Principal: actor, RequestID: m.GetRequestId(),
+				RequestHash: sum, Actor: actorOf(who), Now: now,
+			},
+			ID: inAccountID(m), ExpectedVersion: m.GetExpectedVersion(),
+			Merge: func(current []byte) ([]byte, string, error) {
+				oldSpec = current
+				var currentSpec hubv1.AccountSpec
+				if err := protojson.Unmarshal(current, &currentSpec); err != nil {
+					return nil, "", err
+				}
+				merged, err := applyMaskedFields(&currentSpec, patch, paths, "spec")
+				if err != nil {
+					return nil, "", err
+				}
+				mergedSpec := merged.(*hubv1.AccountSpec) //nolint:forcetypeassert // applyMaskedFields clones the stored type
+				// Only the merged result is validated: fields outside the
+				// mask are ignored, even when the request carries invalid
+				// values for them.
+				if err := checkAccountSpec(mergedSpec); err != nil {
+					return nil, "", err
+				}
+				mergedJSON, err := protojson.Marshal(mergedSpec)
+				if err != nil {
+					return nil, "", err
+				}
+				return mergedJSON, mergedSpec.GetDisplayName(), nil
+			},
+		}, func(s statedb.AccountStored) {
+			// Runs on the writer in commit order (#393).
+			f.publishAccountWatch(pctx, s, hubv1.ChangeType_CHANGE_TYPE_UPDATED, oldSpec, s.Replay)
+		})
+		if err != nil {
+			return nil, f.configOpWriteError(ctx, opAccountUpdate, "update", actor, accountStoreError("update", err))
+		}
 	}
 	var outSpec hubv1.AccountSpec
 	if err := protojson.Unmarshal(stored.Spec, &outSpec); err != nil {
@@ -439,25 +434,21 @@ func (f *Fleet) DeleteAccount(ctx context.Context, req *connect.Request[hubv1.De
 	}
 	now := f.hubNow()
 	writeCtx := statedb.WithValidatedWrite(ctx, func() error { return quotaCheckpoint(ctx, quotaWrite) })
+	pctx := context.WithoutCancel(ctx) // the publish hook runs on the writer after the handler may have left
 	var stored statedb.AccountStored
-	if err := f.commitWatch(
-		func() error {
-			var err error
-			stored, err = statedb.DeleteOwnerAccount(writeCtx, f.store, statedb.DeleteAccountOp{
-				ConfigWrite: statedb.ConfigWrite{
-					Principal: actor, RequestID: m.GetRequestId(),
-					RequestHash: sum, Actor: actorOf(who), Now: now,
-				},
-				ID: m.GetId().GetValue(), ExpectedVersion: m.GetExpectedVersion(),
-			})
-			return err
+	stored, err = statedb.DeleteOwnerAccount(writeCtx, f.store, statedb.DeleteAccountOp{
+		ConfigWrite: statedb.ConfigWrite{
+			Principal: actor, RequestID: m.GetRequestId(),
+			RequestHash: sum, Actor: actorOf(who), Now: now,
 		},
-		func() {
-			// The row keeps the last state with the delete's own
-			// stamp, so a resume replays the DELETED in order.
-			f.publishAccountWatch(ctx, stored, hubv1.ChangeType_CHANGE_TYPE_DELETED, nil, stored.Replay)
-		},
-	); err != nil {
+		ID: m.GetId().GetValue(), ExpectedVersion: m.GetExpectedVersion(),
+	}, func(s statedb.AccountStored) {
+		// The row keeps the last state with the delete's own
+		// stamp, so a resume replays the DELETED in order.
+		// Runs on the writer in commit order (#393).
+		f.publishAccountWatch(pctx, s, hubv1.ChangeType_CHANGE_TYPE_DELETED, nil, s.Replay)
+	})
+	if err != nil {
 		return nil, f.configOpWriteError(ctx, opAccountDelete, "delete", actor, accountStoreError("delete", err))
 	}
 	// A replayed delete answers the same empty outcome.

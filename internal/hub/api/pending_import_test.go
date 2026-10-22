@@ -163,7 +163,7 @@ func TestImportApplyAfterAConcurrentMachineWrite(t *testing.T) {
 		},
 		MachineID: "01jimportmachine00000001", ExpectedVersion: 1,
 		Labels: []string{"desk"}, HasLabels: true,
-	}); err != nil {
+	}, nil); err != nil {
 		t.Fatalf("concurrent UpdateMachine: %v", err)
 	}
 	plan := dryRun(t, e, "dry-2", doc)
@@ -208,7 +208,7 @@ func TestImportPendingAppliedAtEnroll(t *testing.T) {
 		Key: key, MachineID: "01jpendingmachine000001", CertDER: []byte("cert"), Serial: "ab0001",
 		CertNotAfter: fleetNow.Add(90 * 24 * time.Hour), ReportedHostname: "field-laptop",
 		Facts: `{"hostname":"field-laptop"}`, Now: fleetNow,
-	}); err != nil {
+	}, nil); err != nil {
 		t.Fatalf("Enroll: %v", err)
 	}
 	identities, err := statedb.ListMachineIdentities(ctx, e.st)

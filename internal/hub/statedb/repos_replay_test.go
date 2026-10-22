@@ -31,7 +31,7 @@ func TestRepoReplayReturnsTheOriginalResponse(t *testing.T) {
 		RepoWrite: repoWrite("local:alice", "req-1", 1),
 		Host:      "github.com", Path: "acme/api", CodeHost: "github",
 		Enabled: true, Spec: []byte(`{"enabled":true}`),
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("replay create: %v", err)
 	}
@@ -56,7 +56,7 @@ func TestRepoReplayExpiresAfter24h(t *testing.T) {
 	if _, err := statedb.DeleteWatchedRepo(context.Background(), s, statedb.DeleteRepo{
 		RepoWrite: repoWrite("local:alice", "req-2", 6),
 		Host:      "github.com", Path: "acme/api", ExpectedVersion: 1,
-	}); err != nil {
+	}, nil); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
 	late := repoTime.Add(25 * time.Hour)
@@ -64,7 +64,7 @@ func TestRepoReplayExpiresAfter24h(t *testing.T) {
 		RepoWrite: repoWriteAt("local:alice", "req-1", 1, late),
 		Host:      "github.com", Path: "acme/api", CodeHost: "github",
 		Enabled: true, Spec: []byte(`{"enabled":true}`),
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("recreate past the window: %v", err)
 	}
@@ -89,7 +89,7 @@ func TestExpiredRepoRequestsArePruned(t *testing.T) {
 		RepoWrite: repoWriteAt("local:alice", "req-9", 9, late),
 		Host:      "github.com", Path: "acme/other", CodeHost: "github",
 		Enabled: true, Spec: []byte(`{"enabled":true}`),
-	}); err != nil {
+	}, nil); err != nil {
 		t.Fatalf("later create: %v", err)
 	}
 	if n := rawCount(t, statedb.Path(dir), `SELECT COUNT(*) FROM repo_request_log`); n != 1 {
@@ -132,7 +132,7 @@ func TestDeleteUnreadiesWorkItems(t *testing.T) {
 	if _, err := statedb.DeleteWatchedRepo(context.Background(), s, statedb.DeleteRepo{
 		RepoWrite: repoWrite("local:alice", "req-2", 6),
 		Host:      "github.com", Path: "acme/api", ExpectedVersion: 1,
-	}); err != nil {
+	}, nil); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
 	if got := workItemStage(t, dir, "7"); got != 1 {

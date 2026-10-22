@@ -50,7 +50,7 @@ func TestEnrollBurnsTheTokenAndWritesMachineSerialAndResponse(t *testing.T) {
 	t.Parallel()
 	dir, s := tokenStore(t)
 	key := enrollKey("install-1", 1)
-	got, err := statedb.Enroll(context.Background(), s, newMachine(key, "01jmachine0000000000000001", beforeTTL))
+	got, err := statedb.Enroll(context.Background(), s, newMachine(key, "01jmachine0000000000000001", beforeTTL), nil)
 	if err != nil {
 		t.Fatalf("Enroll: %v", err)
 	}
@@ -156,7 +156,7 @@ func TestCheckEnrollOrder(t *testing.T) {
 			_, s := tokenStore(t)
 			ctx := context.Background()
 			if tc.enroll {
-				if _, err := statedb.Enroll(ctx, s, newMachine(first, "01jmachine0000000000000001", beforeTTL)); err != nil {
+				if _, err := statedb.Enroll(ctx, s, newMachine(first, "01jmachine0000000000000001", beforeTTL), nil); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -192,7 +192,7 @@ func TestAReplayForARevokedMachineIsUsed(t *testing.T) {
 	t.Parallel()
 	dir, s := tokenStore(t)
 	key := enrollKey("install-1", 1)
-	if _, err := statedb.Enroll(context.Background(), s, newMachine(key, "01jmachine0000000000000001", beforeTTL)); err != nil {
+	if _, err := statedb.Enroll(context.Background(), s, newMachine(key, "01jmachine0000000000000001", beforeTTL), nil); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.Close(); err != nil {
@@ -232,7 +232,7 @@ func TestATokenWithAGonePreviousMachineIsNotBurned(t *testing.T) {
 		CertNotAfter: beforeTTL.Add(90 * 24 * time.Hour), ReportedHostname: "laptop.lan",
 		Facts: `{"hostname":"laptop.lan"}`, Now: beforeTTL,
 	}
-	if _, err := statedb.EnrollPrevious(context.Background(), s, prev); !errors.Is(err, statedb.ErrPreviousGone) {
+	if _, err := statedb.EnrollPrevious(context.Background(), s, prev, nil); !errors.Is(err, statedb.ErrPreviousGone) {
 		t.Errorf("EnrollPrevious = %v, want ErrPreviousGone", err)
 	}
 	if err := s.Close(); err != nil {
@@ -273,7 +273,7 @@ func TestHostnameMismatchIsSetOnTheRow(t *testing.T) {
 			}
 			m := newMachine(enrollKey("install-1", 1), "01jmachine0000000000000001", beforeTTL)
 			m.ReportedHostname = tc.reported
-			got, err := statedb.Enroll(ctx, s, m)
+			got, err := statedb.Enroll(ctx, s, m, nil)
 			if err != nil {
 				t.Fatal(err)
 			}

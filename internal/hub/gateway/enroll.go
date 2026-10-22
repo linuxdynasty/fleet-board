@@ -128,7 +128,7 @@ func (s *agentService) enrollPrevious(ctx context.Context, peer string, key stat
 		Key: key, PreviousMachine: previous, RequestPrevious: m.GetPreviousMachineId().GetValue(),
 		CertDER: cert.CertDER, Serial: ca.SerialHex(cert.Serial), CertNotAfter: cert.NotAfter,
 		ReportedHostname: facts.GetHostname(), Facts: string(factsJSON), Now: now,
-	})
+	}, nil)
 	if errors.Is(err, statedb.ErrPreviousGone) {
 		// Raw, so the caller enrolls fresh instead of refusing.
 		return statedb.Enrolled{}, err
@@ -160,16 +160,19 @@ func (s *agentService) enrollNew(ctx context.Context, peer string, key statedb.E
 	if err != nil {
 		return statedb.Enrolled{}, s.failed(ctx, "encode", err)
 	}
+	pctx := context.WithoutCancel(ctx) // the publish hook runs on the writer after the waiter may have left
 	e, err := statedb.Enroll(ctx, s.store, statedb.NewMachine{
 		Key: key, MachineID: id, CertDER: cert.CertDER, Serial: ca.SerialHex(cert.Serial), CertNotAfter: cert.NotAfter,
 		ReportedHostname: facts.GetHostname(), Facts: string(factsJSON), Now: now,
+	}, func(enrolled statedb.Enrolled) {
+		// The enroll job committed: the machine is new to Watch
+		// subscribers (a replay publishes nothing; the first enroll
+		// already did). This runs on the writer in commit order (#393).
+		s.publishMachineCreated(pctx, id, enrolled.Replayed)
 	})
 	if err != nil {
 		return statedb.Enrolled{}, s.storeOutcome(ctx, peer, err)
 	}
-	// The enroll job committed: the machine is new to Watch subscribers
-	// (a replay publishes nothing; the first enroll already did).
-	s.publishMachineCreated(ctx, id, e.Replayed)
 	return e, nil
 }
 

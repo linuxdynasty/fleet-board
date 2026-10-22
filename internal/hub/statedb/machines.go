@@ -201,10 +201,15 @@ type NewMachine struct {
 // classifies again in the same transaction: the winner's response as a
 // replay for the same key, or the [CheckEnroll] error. A ctx error means
 // the outcome is unknown; a retry finds the replay.
-func Enroll(ctx context.Context, s *store.Store, m NewMachine) (Enrolled, error) {
+// onCommit runs on the store writer after this job's batch commits, in
+// commit order (#393): the Watch publish for exactly this enroll. It
+// receives what the job stamped; a nil onCommit writes without one. It
+// must follow the post-commit hook rules (short, non-blocking, never
+// Submit or Write).
+func Enroll(ctx context.Context, s *store.Store, m NewMachine, onCommit func(Enrolled)) (Enrolled, error) {
 	jctx := context.WithoutCancel(ctx) // see insertIdentity
 	var out Enrolled
-	err := s.Write(ctx, func(tx *sql.Tx) error {
+	err := writeOrdered(ctx, s, &out, onCommit, func(tx *sql.Tx) error {
 		res, err := tx.ExecContext(jctx, `UPDATE enroll_tokens SET used_time = ?
 			WHERE secret_hash = ? AND used_time IS NULL AND not_after_time > ? AND previous_machine IS NULL`,
 			m.Now.UnixMilli(), m.Key.SecretHash[:], m.Now.UnixMilli())
@@ -349,13 +354,13 @@ type ReenrollMachine struct {
 // 1 and the row is stamped, with its machine.enroll audit row. The
 // revoked serials stay revoked. A ctx error means the outcome is
 // unknown; a retry finds the replay.
-func EnrollPrevious(ctx context.Context, s *store.Store, m ReenrollMachine) (Enrolled, error) {
+func EnrollPrevious(ctx context.Context, s *store.Store, m ReenrollMachine, onCommit func(Enrolled)) (Enrolled, error) {
 	jctx := context.WithoutCancel(ctx) // see insertIdentity
 	var (
 		out  Enrolled
 		gone bool
 	)
-	err := s.Write(ctx, func(tx *sql.Tx) error {
+	err := writeOrdered(ctx, s, &out, onCommit, func(tx *sql.Tx) error {
 		var (
 			previous sql.NullString
 			notAfter int64

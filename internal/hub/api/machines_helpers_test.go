@@ -41,7 +41,7 @@ func enrollNamedMachine(t *testing.T, e *fleetEnv, body byte, name, id string, d
 		MachineID: id, CertDER: []byte("cert-" + id), Serial: fmt.Sprintf("aa%02x", body),
 		CertNotAfter: at.Add(90 * 24 * time.Hour), ReportedHostname: name + ".lan",
 		Facts: facts, Now: at,
-	}); err != nil {
+	}, nil); err != nil {
 		t.Fatalf("Enroll: %v", err)
 	}
 }

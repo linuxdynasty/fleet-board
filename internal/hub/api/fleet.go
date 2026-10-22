@@ -121,14 +121,13 @@ type Fleet struct {
 	// checkpoint is the idle-stream CHECKPOINT interval
 	// (watchCheckpointInterval by default).
 	checkpoint time.Duration
-	// watchMu serializes one committed write with its Watch publish, so
-	// concurrent handlers publish in commit order (02c "Order"). See
-	// commitWatch: the only lock it nests is the bus or store lock. The
-	// ingest path (gateway, syncer) publishes through the same lock from
-	// its post-commit hooks, so every publish below is serialized here.
+	// watchMu guards the volatile holds, the summary state and the audit
+	// tail position. It never nests a writer job: every publish takes it
+	// briefly, either in a writer commit hook (commit order, 02c "Order",
+	// #393) or in the publish tick, so the discipline cannot wedge.
 	watchMu sync.Mutex
 	// auditSeq is the highest audit hub_seq published as AUDIT live; the
-	// tail (commitWatch and the publish tick) moves it forward only.
+	// publish tick moves it forward only.
 	auditSeq int64
 	// summaryDirty is set by every never-dropped publish; the publish
 	// tick recomputes the fleet summary when it is set. summarySeq is the

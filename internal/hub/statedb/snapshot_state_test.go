@@ -90,7 +90,7 @@ func TestAMarkJudgedBeforeTheSnapshotIsRefused(t *testing.T) {
 			}
 			got, err := statedb.MarkState(context.Background(), s, statedb.Mark{
 				MachineID: renewMachineID, Epoch: judged.Epoch, Seen: judged.LastSeen, To: to, Now: helloAt.Add(time.Hour),
-			})
+			}, nil)
 			if err != nil {
 				t.Fatal(err)
 			}

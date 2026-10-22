@@ -115,14 +115,14 @@ func (a *agentService) judge(ctx context.Context, m statedb.MachineLive, now tim
 		if err != nil || c == nil {
 			return err
 		}
-		a.stateChanged(ctx, *c)
+		a.logStateChanged(ctx, *c)
 		a.cut(ctx, m.MachineID, m.Epoch, statedb.EndOffline, now)
 	case m.State == statedb.MachineOnline && silence >= StaleAfter:
 		c, err := a.mark(ctx, m, statedb.MachineStale, now)
 		if err != nil || c == nil {
 			return err
 		}
-		a.stateChanged(ctx, *c)
+		a.logStateChanged(ctx, *c)
 		if s != nil {
 			s.staled.Store(true)
 			s.wake() // a Heartbeat that raced the mark brings it back now
@@ -140,7 +140,16 @@ func (a *agentService) mark(ctx context.Context, m statedb.MachineLive, to strin
 	if a.beforeMark != nil {
 		a.beforeMark(m.MachineID)
 	}
-	return statedb.MarkState(ctx, a.store, statedb.Mark{MachineID: m.MachineID, Epoch: m.Epoch, Seen: m.LastSeen, To: to, Now: now})
+	pctx := context.WithoutCancel(ctx) // the publish hook runs on the writer after the waiter may have left
+	return statedb.MarkState(ctx, a.store, statedb.Mark{MachineID: m.MachineID, Epoch: m.Epoch, Seen: m.LastSeen, To: to, Now: now},
+		func(c *statedb.StateChange) {
+			// The mark committed: publish the state change in commit
+			// order (#393). A nil change means the row was already in
+			// the target state and publishes nothing.
+			if c != nil {
+				a.publishMachineState(pctx, m.MachineID, c.From)
+			}
+		})
 }
 
 // cutStalled cuts s when its reader has been stalled for [StaleAfter].
@@ -194,7 +203,16 @@ func (a *agentService) heartbeat(ctx context.Context, s *stream) {
 		return
 	}
 	// last_seen is the Heartbeat's receive time, never later.
-	c, err := statedb.HeartbeatSeen(ctx, a.store, statedb.Beat{MachineID: s.machineID, Epoch: s.epoch, Promote: promote, Now: hb.UTC()})
+	pctx := context.WithoutCancel(ctx) // the publish hook runs on the writer after the waiter may have left
+	c, err := statedb.HeartbeatSeen(ctx, a.store, statedb.Beat{MachineID: s.machineID, Epoch: s.epoch, Promote: promote, Now: hb.UTC()},
+		func(c *statedb.StateChange) {
+			// The promote committed: publish the state change in commit
+			// order (#393). Heartbeats that only move last_seen_time
+			// change nothing and publish nothing.
+			if c != nil {
+				a.publishMachineState(pctx, s.machineID, c.From)
+			}
+		})
 	if err != nil {
 		a.log.ErrorContext(ctx, "connect.failed", "step", "heartbeat", "err_kind", errKind(err), "machine_id", s.machineID,
 			"epoch", s.epoch)
@@ -205,7 +223,7 @@ func (a *agentService) heartbeat(ctx context.Context, s *stream) {
 		s.staled.Store(false)
 	}
 	if c != nil {
-		a.stateChanged(ctx, *c)
+		a.logStateChanged(ctx, *c)
 	}
 }
 
@@ -218,14 +236,13 @@ func (s *Server) RecordStates(ctx context.Context, changes []statedb.StateChange
 	}
 }
 
-// stateChanged logs machine.state_changed and moves the state gauge. It
-// also publishes the committed change for the Watch ingest slice: a state
-// change is never volatile, so it publishes at once, with the state the
-// job left for UNMATCHED evaluation.
-func (a *agentService) stateChanged(ctx context.Context, c statedb.StateChange) {
+// logStateChanged logs machine.state_changed and moves the state gauge.
+// The Watch publish for the change runs separately as the commit's
+// post-commit hook on the writer (#393), so logging here never implies
+// the bus order.
+func (a *agentService) logStateChanged(ctx context.Context, c statedb.StateChange) {
 	a.log.InfoContext(ctx, "machine.state_changed", "machine_id", c.MachineID, "from", c.From, "to", c.To, "reason", c.Reason)
 	a.recordState(ctx, c.MachineID, c.To)
-	a.publishMachineState(ctx, c.MachineID, c.From)
 }
 
 // recordState sets fleet_hub_machine_state{machine, state} to 1 for state

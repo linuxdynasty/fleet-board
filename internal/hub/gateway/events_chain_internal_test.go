@@ -57,7 +57,7 @@ func chainStore(t *testing.T) *store.Store {
 		t.Fatal(err)
 	}
 	p, err := ingest.SubmitSnapshot(ctx, st, ingest.Stream{MachineID: chainMachine, Epoch: 1, InstallID: "install-1"},
-		&agentv1.Snapshot{Seq: 10}, nil, now)
+		&agentv1.Snapshot{Seq: 10}, nil, now, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

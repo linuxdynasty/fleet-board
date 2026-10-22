@@ -240,7 +240,7 @@ func TestRollup_ReserveComesFromTheAccountSpec(t *testing.T) {
 		ID: "acct-1", Harness: "claude", Provider: "anthropic",
 		DisplayName: "work", Origin: statedb.AccountOriginOwner,
 		Spec: []byte(`{"displayName":"work","reservePercent":20}`),
-	}); err != nil {
+	}, nil); err != nil {
 		t.Fatalf("CreateOwnerAccount: %v", err)
 	}
 	r, err := rollup.New(rollup.Options{Telemetry: testTelemetry(t)})
@@ -284,7 +284,7 @@ func TestRollup_ReserveHistoryAppliesPerWindow(t *testing.T) {
 		ID: "acct-1", Harness: "claude", Provider: "anthropic",
 		DisplayName: "work", Origin: statedb.AccountOriginOwner,
 		Spec: []byte(`{"displayName":"work","reservePercent":20}`),
-	}); err != nil {
+	}, nil); err != nil {
 		t.Fatalf("CreateOwnerAccount: %v", err)
 	}
 	raised := weekReset.Add(7*24*time.Hour + 12*time.Hour)
@@ -298,7 +298,7 @@ func TestRollup_ReserveHistoryAppliesPerWindow(t *testing.T) {
 			Now: raised,
 		},
 		ID: "acct-1", Merge: merge,
-	}); err != nil {
+	}, nil); err != nil {
 		t.Fatalf("UpdateOwnerAccount: %v", err)
 	}
 	r, err := rollup.New(rollup.Options{Telemetry: testTelemetry(t)})
