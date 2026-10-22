@@ -92,6 +92,22 @@ func TestExportFoldsAShadowedPendingEntry(t *testing.T) {
 	}
 }
 
+// TestExportConfigOmitsStampedCodeHost is the #395 contract: the export
+// holds no ids, so a stored code host stamp must not ride along.
+func TestExportConfigOmitsStampedCodeHost(t *testing.T) {
+	t.Parallel()
+	e := newFleetEnv(t, localUser("alice"), trusted(false))
+	seedGitHub(t, e)
+	createWatchedRepo(t, e, "req-1", "github.com", "acme/api")
+	got := exportConfig(t, e)
+	if len(got.GetRepos()) != 1 {
+		t.Fatalf("repos = %+v, want the one watched repo", got.GetRepos())
+	}
+	if id := got.GetRepos()[0].GetRepo().GetCodeHost(); id != nil {
+		t.Errorf("repo code_host = %+v, want omitted", id)
+	}
+}
+
 func TestExportConfigNeedsSettingsScope(t *testing.T) {
 	t.Parallel()
 	e := newFleetEnv(t, nil, trusted(false))

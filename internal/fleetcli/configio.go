@@ -54,20 +54,13 @@ func (i *invocation) addImportCommand(root *cobra.Command) {
 	root.AddCommand(importCmd)
 }
 
-// portableConfig drops the server-stamped ids the exchange document must
-// not carry. The hub stamps repo.code_host (an integration id) on export,
-// but a document carries ids nowhere and import re-derives the host by
-// matching, so clearing it is lossless; --json keeps the raw response.
-// Anything else unportable (tracker or binding machine ids) still fails,
-// loudly and by name: dropping those would silently lose them on
-// re-import, and portable references with hub-side translation are #48's
-// work, so export names the gap instead of an opaque codec error.
+// portableConfig refuses the hub ids the exchange document must not
+// carry. ExportConfig already omits them (#395); anything still present
+// (tracker or binding machine ids) fails loudly and by name: dropping
+// those would silently lose them on re-import, and portable references
+// with hub-side translation are #397's work, so export names the gap
+// instead of an opaque codec error.
 func portableConfig(cfg *hubv1.FleetConfig) (*hubv1.FleetConfig, error) {
-	for _, r := range cfg.GetRepos() {
-		if repo := r.GetRepo(); repo != nil {
-			repo.CodeHost = nil
-		}
-	}
 	if unportable := fleetconfig.UnportableIDs(cfg); len(unportable) > 0 {
 		return nil, fmt.Errorf("%w: %s", errNotPortable, unportable[0])
 	}
