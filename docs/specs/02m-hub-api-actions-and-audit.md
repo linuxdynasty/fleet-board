@@ -146,13 +146,14 @@ listed in [defaults](defaults.md#offline-fleetconfig-yaml). The codec has no
 CLI caller yet.
 
 The current `FleetConfig` contract embeds some hub ID wrappers in repo,
-account, routine, and trust fields. `ExportConfig` currently copies stored repo
-and account specs with those wrappers. Until #48 defines portable references
-and hub-side translation, the codec refuses every present hub ID wrapper,
-including an empty wrapper, on both read and write. Exported configurations
-that contain one cannot be rendered as portable YAML yet. The provider's own
-`TrustedUser.provider_user_id` is retained. #43 and #48 still require a working
-same-hub and cross-hub export/import walk after that translation lands.
+account, routine, and trust fields. `ExportConfig` omits the stored repo code
+host stamp (import re-derives the host by matching), but still copies the
+other stored wrappers. Until portable references and hub-side translation
+land (#397), the codec refuses every present hub ID wrapper, including an
+empty wrapper, on both read and write. Exported configurations that contain
+one cannot be rendered as portable YAML yet. The provider's own
+`TrustedUser.provider_user_id` is retained. The same-hub and cross-hub
+export/import walk still requires that translation.
 
 **Import with a machine that has not enrolled yet, as messages.** Import applies what it can
 now and keeps the rest for when the machine joins. The mark "drained" is recorded at once and
