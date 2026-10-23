@@ -25,21 +25,26 @@ func WriteHooked(ctx context.Context, s *store.Store, apply func(tx *sql.Tx) err
 // writeOrdered (WriteAudit, import, restore) so no audit publishes late
 // through the tick tail below an already-published seq.
 func writeHooked(ctx context.Context, s *store.Store, apply func(tx *sql.Tx) error) error {
+	// The capture reads run in-tx on the writer, which can outlive the
+	// caller (a job committing during hub shutdown): they use a context
+	// that survives cancellation, like every other tx read. A cancelled
+	// caller bounds only the wait, never the write.
+	jctx := context.WithoutCancel(ctx)
 	var audits []AuditStored
 	wrapped := func(tx *sql.Tx) error {
-		start, err := counterTx(ctx, tx)
+		start, err := counterTx(jctx, tx)
 		if err != nil {
 			return err
 		}
 		if err := apply(tx); err != nil {
 			return err
 		}
-		end, err := counterTx(ctx, tx)
+		end, err := counterTx(jctx, tx)
 		if err != nil {
 			return err
 		}
 		if end > start {
-			if audits, err = listAuditRangeTx(ctx, tx, start, end); err != nil {
+			if audits, err = listAuditRangeTx(jctx, tx, start, end); err != nil {
 				return err
 			}
 		}
@@ -51,13 +56,16 @@ func writeHooked(ctx context.Context, s *store.Store, apply func(tx *sql.Tx) err
 // WithAuditCapture wraps a custom-hook job's apply so its hook can publish
 // exactly the audits its own tx stamped, in writer order (#403): the range
 // brackets the apply in-tx, and the hook publishes the captured rows after
-// its resource through the store's audit publisher. Pass the context the
-// apply uses for its tx work. A failed apply captures nothing (its hook
+// its resource through the store's audit publisher. The capture reads run
+// in-tx on the writer, which can outlive the caller (a job committing
+// during hub shutdown): they use a context that survives cancellation,
+// like every other tx read. A failed apply captures nothing (its hook
 // never runs); an apply that stamps nothing leaves audits empty.
 func WithAuditCapture(ctx context.Context, apply func(tx *sql.Tx) error, audits *[]AuditStored) func(tx *sql.Tx) error {
+	jctx := context.WithoutCancel(ctx)
 	return func(tx *sql.Tx) (err error) {
 		var start int64
-		if start, err = AuditCounterTx(ctx, tx); err != nil {
+		if start, err = AuditCounterTx(jctx, tx); err != nil {
 			return err
 		}
 		defer func() {
@@ -65,11 +73,11 @@ func WithAuditCapture(ctx context.Context, apply func(tx *sql.Tx) error, audits 
 				return
 			}
 			var end int64
-			if end, err = AuditCounterTx(ctx, tx); err != nil {
+			if end, err = AuditCounterTx(jctx, tx); err != nil {
 				return
 			}
 			if end > start {
-				*audits, err = ListAuditRangeTx(ctx, tx, start, end)
+				*audits, err = ListAuditRangeTx(jctx, tx, start, end)
 			}
 		}()
 		return apply(tx)
@@ -115,21 +123,24 @@ func writeOrdered[T any](ctx context.Context, s *store.Store, out *T, onCommit f
 	if onCommit == nil {
 		return s.Write(ctx, apply)
 	}
+	// In-tx capture reads use a context that survives caller cancellation:
+	// the job can commit during hub shutdown after its caller is gone.
+	jctx := context.WithoutCancel(ctx)
 	var audits []AuditStored
 	wrapped := func(tx *sql.Tx) error {
-		start, err := counterTx(ctx, tx)
+		start, err := counterTx(jctx, tx)
 		if err != nil {
 			return err
 		}
 		if err := apply(tx); err != nil {
 			return err
 		}
-		end, err := counterTx(ctx, tx)
+		end, err := counterTx(jctx, tx)
 		if err != nil {
 			return err
 		}
 		if end > start {
-			if audits, err = listAuditRangeTx(ctx, tx, start, end); err != nil {
+			if audits, err = listAuditRangeTx(jctx, tx, start, end); err != nil {
 				return err
 			}
 		}
