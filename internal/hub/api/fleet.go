@@ -189,6 +189,13 @@ func NewFleet(opts FleetOptions) (*Fleet, error) {
 		return nil, fmt.Errorf("api: audit tail position: %w", serr)
 	}
 	f.auditSeq = seq
+	// Per-job audit publish (#403): writeOrdered jobs capture the audit
+	// rows they stamped and publish them in their post-commit hook right
+	// after their resource, so one writer-serialized sequence covers
+	// resources and audits in hub_seq order. The hook advances auditSeq,
+	// so the tick tail below only sees rows no job hook published (plain
+	// writes outside writeOrdered, being converted).
+	f.store.SetAuditPublisher(f.publishAudits)
 	f.checkpoint = opts.WatchCheckpoint
 	if f.checkpoint <= 0 {
 		f.checkpoint = watchCheckpointInterval

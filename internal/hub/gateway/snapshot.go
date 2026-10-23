@@ -135,12 +135,12 @@ func snapshotArm(ctx context.Context, a *agentService, s *stream, m *agentv1.Con
 		// above predate the submit and the goals are exactly this job's
 		// stamped after-images, so the diff sees only this job's writes.
 		if out.Change != nil {
-			a.publishMachineState(pctx, s.machineID, out.Change.From)
+			a.publishMachineState(pctx, out.Change.Row, out.Change.From)
 		}
 		if goalsOK {
 			a.publishGoalsCommitted(pctx, s.machineID, beforeGoals, goals)
 		}
-		a.publishMachineCommitted(pctx, s.machineID, beforeMachine)
+		a.publishMachineCommitted(pctx, out.Row, beforeMachine)
 	})
 	var out statedb.SnapshotOut
 	if err == nil {

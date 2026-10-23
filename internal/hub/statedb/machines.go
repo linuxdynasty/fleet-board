@@ -94,6 +94,9 @@ type Enrolled struct {
 	ExpectedHostname string
 	HostnameMismatch bool
 	Replayed         bool
+	// Row is the machines row the job captured in its tx for the Watch
+	// publish (#403). Empty on replays, which publish nothing.
+	Row MachineRow
 }
 
 // EnrollCheck is the outcome of [CheckEnroll] that is not an error: either
@@ -315,8 +318,14 @@ func insertMachine(ctx context.Context, tx *sql.Tx, m NewMachine) (Enrolled, err
 	}); err != nil {
 		return Enrolled{}, err
 	}
+	// Capture the after-image in-tx for the Watch publish (#403).
+	row, err := readMachineRowTx(ctx, tx, m.MachineID)
+	if err != nil {
+		return Enrolled{}, err
+	}
 	return Enrolled{
 		MachineID: m.MachineID, CertDER: m.CertDER, MachineName: name, ExpectedHostname: expected, HostnameMismatch: mismatch,
+		Row: row,
 	}, nil
 }
 

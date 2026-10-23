@@ -67,6 +67,7 @@ func (f *Fleet) CreateSession(ctx context.Context, req *connect.Request[hubv1.Cr
 	// leave a "sent" count behind.
 	var emitKind, emitOutcome string
 	var sessOpSeq int64
+	var sessRow statedb.SessionRow
 	pctx := context.WithoutCancel(ctx) // the publish hook runs on the writer after the handler may have left
 	if commitErr := f.store.WriteHook(ctx, func(tx *sql.Tx) error {
 		if op, replay, err := checkRequest(ctx, tx, actor, m.GetRequestId(), sum[:]); err != nil || replay {
@@ -130,13 +131,21 @@ func (f *Fleet) CreateSession(ctx context.Context, req *connect.Request[hubv1.Cr
 		}
 		sessID = id
 		sessOpSeq = op.HubSeq
+		// Capture the row in-tx for the Watch publish (#403): a
+		// post-commit re-read would see the batch-final row.
+		sessRow = statedb.SessionRow{
+			SessionID: id, MachineID: m.GetMachine().GetValue(), Name: m.GetName(),
+			Server: serverShort(m.GetServer()), OwnerID: who.GetId().GetValue(),
+			OwnerKind: roleKindName(who.GetKind()), OwnerName: who.GetName(),
+			CreatedMillis: now.UnixMilli(), HubSeq: st.HubSeq,
+		}
 		emitKind, emitOutcome = op.Kind, "sent"
 		return nil
 	}, func() {
 		// Runs on the writer in commit order (#393).
 		// A request_id replay sends nothing new: only a fresh create
 		// publishes its session and command.
-		f.publishSessionCreated(pctx, sessID, out, sessOpSeq, emitOutcome == "replayed")
+		f.publishSessionCreated(pctx, sessRow, out, sessOpSeq, emitOutcome == "replayed")
 	}); commitErr != nil {
 		return nil, f.storeError(ctx, actor, commitErr)
 	}

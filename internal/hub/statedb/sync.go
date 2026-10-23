@@ -191,13 +191,15 @@ const mirrorHubSeqSQL = `ALTER TABLE work_items ADD COLUMN hub_seq INTEGER NOT N
 ALTER TABLE change_requests ADD COLUMN hub_seq INTEGER NOT NULL DEFAULT 0 CHECK (hub_seq >= 0);`
 
 // WorkItemChange is one mirror row an upsert created or replaced: the key,
-// whether it is new, the stamp the write took, and the row it replaced
-// (nil when created) for UNMATCHED evaluation.
+// whether it is new, the stamp the write took, the row it replaced (nil
+// when created) for UNMATCHED evaluation, and the after-image the job
+// captured in its tx for the Watch publish (#403).
 type WorkItemChange struct {
 	Key     string
 	Created bool
 	HubSeq  int64
 	Before  *WorkItemRow
+	After   WorkItemRow
 }
 
 // ChangeRequestChange is one change-request row an upsert created or
@@ -207,6 +209,7 @@ type ChangeRequestChange struct {
 	Created bool
 	HubSeq  int64
 	Before  *ChangeRequestRow
+	After   ChangeRequestRow
 }
 
 // upsertWorkItem writes one mirror row and reports the change, or nil when
@@ -253,7 +256,11 @@ func upsertWorkItem(ctx context.Context, tx *sql.Tx, integration string, it Work
 		if err != nil {
 			return nil, err
 		}
-		return &WorkItemChange{Key: key, Created: true, HubSeq: st.HubSeq}, nil
+		after, err := readWorkItemRowTx(ctx, tx, key)
+		if err != nil {
+			return nil, err
+		}
+		return &WorkItemChange{Key: key, Created: true, HubSeq: st.HubSeq, After: after}, nil
 	}
 	before := stored.stored
 	before.Key, before.Integration, before.Kind = key, integration, it.Kind
@@ -283,7 +290,11 @@ func upsertWorkItem(ctx context.Context, tx *sql.Tx, integration string, it Work
 	if err != nil {
 		return nil, err
 	}
-	return &WorkItemChange{Key: key, HubSeq: st.HubSeq, Before: &before}, nil
+	after, err := readWorkItemRowTx(ctx, tx, key)
+	if err != nil {
+		return nil, err
+	}
+	return &WorkItemChange{Key: key, HubSeq: st.HubSeq, Before: &before, After: after}, nil
 }
 
 // ChangeRequestMirror is one provider change request for the mirror.
@@ -355,7 +366,11 @@ func upsertChangeRequest(ctx context.Context, tx *sql.Tx, integration string, it
 		if err != nil {
 			return nil, err
 		}
-		return &ChangeRequestChange{Key: key, Created: true, HubSeq: st.HubSeq}, nil
+		after, err := readChangeRequestRowTx(ctx, tx, key)
+		if err != nil {
+			return nil, err
+		}
+		return &ChangeRequestChange{Key: key, Created: true, HubSeq: st.HubSeq, After: after}, nil
 	}
 	stored.Key, stored.Integration, stored.Project, stored.ItemKey = key, integration, it.Project, it.ItemKey
 	if it.UpdateMs < stored.UpdateMs {
@@ -376,7 +391,11 @@ func upsertChangeRequest(ctx context.Context, tx *sql.Tx, integration string, it
 		return nil, err
 	}
 	before := stored
-	return &ChangeRequestChange{Key: key, HubSeq: st.HubSeq, Before: &before}, nil
+	after, err := readChangeRequestRowTx(ctx, tx, key)
+	if err != nil {
+		return nil, err
+	}
+	return &ChangeRequestChange{Key: key, HubSeq: st.HubSeq, Before: &before, After: after}, nil
 }
 
 func upsertCursors(ctx context.Context, tx *sql.Tx, integration string, cursors []CursorValue, nowMs int64) error {

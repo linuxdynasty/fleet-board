@@ -83,6 +83,31 @@ func scanWorkItemRows(rows *sql.Rows) (WorkItemRow, error) {
 	return w, nil
 }
 
+// readWorkItemRowTx reads one mirror row in the writer job's tx for the
+// Watch publish (#403). A post-commit hook must publish the capture, never
+// re-read: the batch-final row would lose this job's transition.
+func readWorkItemRowTx(ctx context.Context, tx *sql.Tx, key string) (WorkItemRow, error) {
+	var w WorkItemRow
+	var stage, reason int64
+	err := tx.QueryRowContext(ctx, `SELECT `+workItemColumns+` FROM work_items WHERE key = ?`, key).
+		Scan(&w.Key, &w.Integration, &w.Kind, &w.Project, &w.ItemKey,
+			&w.ItemJSON, &w.UpdateMs, &stage, &w.TrustJSON, &reason,
+			&w.Version, &w.CreateMs, &w.LastSyncMs, &w.HubSeq)
+	if err != nil {
+		return WorkItemRow{}, fmt.Errorf("statedb: read work item row: %w", err)
+	}
+	stage32, err := int32Range(stage)
+	if err != nil {
+		return WorkItemRow{}, err
+	}
+	reason32, err := int32Range(reason)
+	if err != nil {
+		return WorkItemRow{}, err
+	}
+	w.Stage, w.ManualReason = stage32, reason32
+	return w, nil
+}
+
 // ReadWorkItemRow reads one mirror row on the read pool
 // ([ErrWorkItemUnknown] when there is no row).
 func ReadWorkItemRow(ctx context.Context, s *store.Store, key string) (WorkItemRow, error) {

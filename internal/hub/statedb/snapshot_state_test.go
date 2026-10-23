@@ -48,8 +48,13 @@ func TestMarkOnlineReportsTheStateItLeft(t *testing.T) {
 				return
 			}
 			want := statedb.StateChange{MachineID: renewMachineID, From: from, To: statedb.MachineOnline, Reason: statedb.ReasonSnapshot, Stamp: st}
-			if change == nil || *change != want {
+			if change == nil || change.MachineID != want.MachineID || change.From != want.From ||
+				change.To != want.To || change.Reason != want.Reason || change.Stamp != want.Stamp {
 				t.Errorf("change %+v, want %+v", change, want)
+			}
+			if change != nil && (change.Row.MachineID != renewMachineID ||
+				change.Row.State != statedb.MachineOnline || change.Row.HubSeq != st.HubSeq) {
+				t.Errorf("change row %+v, want ONLINE at hub_seq %d", change.Row, st.HubSeq)
 			}
 		})
 	}

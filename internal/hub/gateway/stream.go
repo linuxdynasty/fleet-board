@@ -401,7 +401,7 @@ func (a *agentService) closed(ctx context.Context, s *stream) {
 				// commit order (#393). Closes that change no state (a
 				// displaced or already-closed row) publish nothing.
 				if e.Change != nil {
-					a.publishMachineState(ctx, s.machineID, e.Change.From)
+					a.publishMachineState(ctx, e.Change.Row, e.Change.From)
 				}
 			})
 	}

@@ -291,9 +291,14 @@ func (f *Fleet) UpdateMachine(ctx context.Context, req *connect.Request[hubv1.Up
 	{
 		var err error
 		stored, err = statedb.UpdateMachine(writeCtx, f.store, in, func(s statedb.MachineStored) {
-			// Runs on the writer in commit order (#393).
-			f.publishMachineWatch(pctx, id, hubv1.ChangeType_CHANGE_TYPE_UPDATED,
-				machineOldRow(preRow, s), s.Replay)
+			// Runs on the writer in commit order (#393). The row was
+			// captured in-tx: publishing it never touches the read pool,
+			// so the hook cannot deadlock the writer, and a later job in
+			// the same batch cannot steal this job's transition (#403).
+			if s.Replay {
+				return
+			}
+			f.publishMachineWatchRow(pctx, s.Row, hubv1.ChangeType_CHANGE_TYPE_UPDATED, machineOldRow(preRow, s))
 		})
 		if err != nil {
 			return nil, f.machineWriteError(ctx, opMachineUpdate, "update", actor, machineStoreError("update", err))
@@ -429,9 +434,13 @@ func (f *Fleet) RevokeMachine(ctx context.Context, req *connect.Request[hubv1.Re
 			ExpectedVersion: m.GetExpectedVersion(), Reason: m.GetReason(),
 			CloseOpen: closeOpenForRevoke,
 		}, func(r statedb.RevokedMachine) {
-			// Runs on the writer in commit order (#393).
-			f.publishMachineWatch(pctx, id, hubv1.ChangeType_CHANGE_TYPE_UPDATED,
-				machineOldRow(preRow, r.Machine), r.Machine.Replay)
+			// Runs on the writer in commit order (#393). The row was
+			// captured in-tx (#403).
+			if r.Machine.Replay {
+				return
+			}
+			f.publishMachineWatchRow(pctx, r.Machine.Row, hubv1.ChangeType_CHANGE_TYPE_UPDATED,
+				machineOldRow(preRow, r.Machine))
 		})
 		if err != nil {
 			var stale *statedb.VersionStale

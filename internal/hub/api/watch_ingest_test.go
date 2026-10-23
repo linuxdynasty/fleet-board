@@ -320,7 +320,11 @@ func TestWatchIngestMachinesVolatileGate(t *testing.T) {
 	pump := pumpWatch(stream)
 	// Prime the interval with a state publish, then hold a volatile-only
 	// stamp on the second write.
-	e.fleet.PublishMachineState(context.Background(), "m-mvol", "ENROLLED")
+	mvolRow, err := statedb.ReadMachineRow(context.Background(), e.st, "m-mvol")
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.fleet.PublishMachineState(context.Background(), mvolRow, "ENROLLED")
 	primed := pump.recvLive(t)
 	if primed.GetChangeType() != hubv1.ChangeType_CHANGE_TYPE_UPDATED {
 		t.Fatalf("primed = %v, want the state change at once", primed.GetChangeType())
@@ -330,7 +334,11 @@ func TestWatchIngestMachinesVolatileGate(t *testing.T) {
 		t.Fatal(err)
 	}
 	touchMachine(t, e, "m-mvol", "observed_time = ?", []any{cur.Add(time.Second).UnixMilli()}, cur.Add(time.Second))
-	e.fleet.PublishMachineCommitted(context.Background(), "m-mvol", &before)
+	afterMvol, err := statedb.ReadMachineRow(context.Background(), e.st, "m-mvol")
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.fleet.PublishMachineCommitted(context.Background(), afterMvol, &before)
 	pump.expectNone(t)
 	cur = cur.Add(31 * time.Second)
 	if err := e.fleet.PublishTick(context.Background()); err != nil {

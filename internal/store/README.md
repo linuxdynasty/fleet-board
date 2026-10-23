@@ -39,6 +39,22 @@ wake := s.CommitWake() // one future Watch dispatcher reads this hint
   arrives only after its batch commits. A job that returns an error is rolled
   back to its own savepoint and the rest of the batch commits. If the
   transaction itself breaks, every job in the batch gets the error.
+- **Post-commit hooks run on the writer, in commit order.** `WriteHook` and
+  `SubmitHook` carry one callback each (`Write`/`Submit` carry none). After
+  the batch commits, the writer runs each job's hook in commit order, then
+  the single `OnCommit` hook. A failed job's hook never runs. `SetAuditPublisher`
+  records the per-job audit publish function `writeOrdered` jobs call in
+  their hook after their resource publish, so resources and audits share one
+  writer-ordered sequence (#403).
+- **A hook never waits.** It is short and never calls back into the store
+  (`Read`, `Write`, `Submit`), never calls the network, and never waits on
+  another goroutine. It publishes rows its job captured inside its own
+  transaction, never by reading them again: a later job in the same batch
+  may already have overwritten the row. Breaking this rule can wedge the
+  writer (reads wait for the writer while the writer waits for a read).
+- **A panicking hook never kills the writer.** The writer catches it, logs
+  `store.hook_failed` with only the panic's type (never its message, which
+  could hold row text), and moves on.
 - **Commit wake.** Each successful outer batch commit offers a nonblocking
   hint on `CommitWake` before job outcomes. The capacity-one channel coalesces
   hints; one hub Watch dispatcher reads committed rows to find changes. A
@@ -89,7 +105,8 @@ or `fleet_agent`): `_writer_batch_messages`, `_writer_batch_seconds`,
 `_writer_queue_full_total` (submits that gave up on a full queue),
 `_read_pool_wait_seconds`, `_store_bytes`, `_store_wal_bytes`. Log events: `store.opened`, `store.migrated`,
 `store.batch_failed` (with `err_kind` and `sqlite_code`, SQLite's numeric
-result code), `store.closed`. No paths or SQL text
+result code), `store.hook_failed` (a post-commit hook panicked; carries only
+the panic's Go type, never its message), `store.closed`. No paths or SQL text
 are logged.
 
 No-Observability-Change: `fleet_hub_writer_batch_messages`,

@@ -54,6 +54,37 @@ func scanAuditListRow(rows *sql.Rows) (AuditStored, error) {
 	return out, nil
 }
 
+// listAuditRangeTx reads the audit rows this writer job stamped, in
+// hub_seq order: the rows with hub_seq past from up to to, read in the
+// job's own tx. writeOrdered captures them here so the job's hook can
+// publish its own audits after its resource, in batch order (#403).
+func listAuditRangeTx(ctx context.Context, tx *sql.Tx, from, to int64) ([]AuditStored, error) {
+	var out []AuditStored
+	rows, err := tx.QueryContext(ctx, `SELECT `+auditListColumns+` FROM audit_log WHERE hub_seq > ? AND hub_seq <= ? ORDER BY hub_seq`, from, to)
+	if err != nil {
+		return nil, fmt.Errorf("statedb: list audit range: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		r, err := scanAuditListRow(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// counterTx reads the current hub_seq counter in the writer job's tx,
+// without taking a stamp.
+func counterTx(ctx context.Context, tx *sql.Tx) (int64, error) {
+	var out int64
+	if err := tx.QueryRowContext(ctx, `SELECT hub_seq FROM hub_counters WHERE id = 1`).Scan(&out); err != nil {
+		return 0, fmt.Errorf("statedb: read hub counter: %w", err)
+	}
+	return out, nil
+}
+
 // MaxAuditSeq reads the highest stamped audit row, 0 when the log is
 // empty. A Watch publisher starts its tail here, so rows committed before
 // it started serving never publish as live.

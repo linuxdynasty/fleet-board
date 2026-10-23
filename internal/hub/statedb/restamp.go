@@ -24,19 +24,26 @@ import (
 // Submit or Write).
 func RestampMachine(ctx context.Context, s *store.Store, id string, now time.Time, onCommit func(MachineRow)) (MachineRow, error) {
 	jctx := context.WithoutCancel(ctx)
-	pctx := context.WithoutCancel(ctx)
 	var err error
+	var captured MachineRow
 	if onCommit == nil {
 		err = s.Write(ctx, func(tx *sql.Tx) error {
 			return restampMachine(jctx, tx, id, now)
 		})
 	} else {
 		err = s.WriteHook(ctx, func(tx *sql.Tx) error {
-			return restampMachine(jctx, tx, id, now)
-		}, func() {
-			if row, rerr := ReadMachineRow(pctx, s, id); rerr == nil {
-				onCommit(row)
+			if err := restampMachine(jctx, tx, id, now); err != nil {
+				return err
 			}
+			// Capture the after-image in-tx (#403): the hook must not
+			// re-read on the writer.
+			var rerr error
+			if captured, rerr = readMachineRowTx(jctx, tx, id); rerr != nil {
+				return rerr
+			}
+			return nil
+		}, func() {
+			onCommit(captured)
 		})
 	}
 	if err != nil {
@@ -72,19 +79,25 @@ func restampMachine(ctx context.Context, tx *sql.Tx, id string, now time.Time) e
 // gone, with the stamp rolled back.
 func RestampGoal(ctx context.Context, s *store.Store, id string, now time.Time, onCommit func(GoalRow)) (GoalRow, error) {
 	jctx := context.WithoutCancel(ctx)
-	pctx := context.WithoutCancel(ctx)
 	var err error
+	var captured GoalRow
 	if onCommit == nil {
 		err = s.Write(ctx, func(tx *sql.Tx) error {
 			return restampGoal(jctx, tx, id, now)
 		})
 	} else {
 		err = s.WriteHook(ctx, func(tx *sql.Tx) error {
-			return restampGoal(jctx, tx, id, now)
-		}, func() {
-			if row, rerr := ReadGoalRow(pctx, s, id); rerr == nil {
-				onCommit(row)
+			if err := restampGoal(jctx, tx, id, now); err != nil {
+				return err
 			}
+			// Capture the after-image in-tx (#403).
+			var rerr error
+			if captured, rerr = ReadGoalTx(jctx, tx, id); rerr != nil {
+				return rerr
+			}
+			return nil
+		}, func() {
+			onCommit(captured)
 		})
 	}
 	if err != nil {

@@ -114,8 +114,13 @@ func TestALiveRowCloseMarksTheMachineOffline(t *testing.T) {
 				MachineID: renewMachineID, From: tc.from, To: tc.want, Reason: string(tc.reason),
 				Stamp: statedb.Stamp{HubSeq: seq + 1, ObservedTime: end},
 			}
-			if got.Change == nil || *got.Change != want {
+			if got.Change == nil || got.Change.MachineID != want.MachineID || got.Change.From != want.From ||
+				got.Change.To != want.To || got.Change.Reason != want.Reason || got.Change.Stamp != want.Stamp {
 				t.Errorf("change %+v, want %+v", got.Change, want)
+			}
+			if got.Change != nil && (got.Change.Row.MachineID != renewMachineID || got.Change.Row.State != tc.want ||
+				got.Change.Row.HubSeq != seq+1) {
+				t.Errorf("change row %+v, want %s at hub_seq %d", got.Change.Row, tc.want, seq+1)
 			}
 			if after.state != tc.want || after.hubSeq != seq+1 || after.observe != end.UnixMilli() {
 				t.Errorf("row %+v, want %s stamped hub_seq %d at %d", after, tc.want, seq+1, end.UnixMilli())
@@ -291,8 +296,14 @@ func TestStartSweep(t *testing.T) {
 		MachineID: renewMachineID, From: statedb.MachineOnline, To: statedb.MachineStale, Reason: "hub_start",
 		Stamp: statedb.Stamp{HubSeq: seq + 1, ObservedTime: start},
 	}
-	if got.RowsClosed != 2 || len(got.Changes) != 1 || got.Changes[0] != want {
+	if got.RowsClosed != 2 || len(got.Changes) != 1 || got.Changes[0].MachineID != want.MachineID ||
+		got.Changes[0].From != want.From || got.Changes[0].To != want.To ||
+		got.Changes[0].Reason != want.Reason || got.Changes[0].Stamp != want.Stamp {
 		t.Errorf("StartSweep = %+v, want two rows closed and %+v", got, want)
+	}
+	if len(got.Changes) == 1 && (got.Changes[0].Row.MachineID != renewMachineID ||
+		got.Changes[0].Row.State != statedb.MachineStale || got.Changes[0].Row.HubSeq != seq+1) {
+		t.Errorf("StartSweep row %+v, want %s at hub_seq %d", got.Changes[0].Row, statedb.MachineStale, seq+1)
 	}
 	if st := machineOf(t, s, otherMachineID).state; st != statedb.MachineOffline {
 		t.Errorf("an OFFLINE machine became %s", st)

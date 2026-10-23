@@ -147,7 +147,7 @@ func (a *agentService) mark(ctx context.Context, m statedb.MachineLive, to strin
 			// order (#393). A nil change means the row was already in
 			// the target state and publishes nothing.
 			if c != nil {
-				a.publishMachineState(pctx, m.MachineID, c.From)
+				a.publishMachineState(pctx, c.Row, c.From)
 			}
 		})
 }
@@ -210,7 +210,7 @@ func (a *agentService) heartbeat(ctx context.Context, s *stream) {
 			// order (#393). Heartbeats that only move last_seen_time
 			// change nothing and publish nothing.
 			if c != nil {
-				a.publishMachineState(pctx, s.machineID, c.From)
+				a.publishMachineState(pctx, c.Row, c.From)
 			}
 		})
 	if err != nil {

@@ -46,24 +46,24 @@ type goalsCall struct {
 
 func (r *watchRecorder) sink() gateway.WatchSink {
 	return gateway.WatchSink{
-		MachineState: func(_ context.Context, id, from string) {
+		MachineState: func(_ context.Context, row statedb.MachineRow, from string) {
 			r.mu.Lock()
-			r.states = append(r.states, stateCall{id, from})
+			r.states = append(r.states, stateCall{row.MachineID, from})
 			r.mu.Unlock()
 		},
-		MachineCreated: func(_ context.Context, id string, replay bool) {
+		MachineCreated: func(_ context.Context, row statedb.MachineRow, replay bool) {
 			r.mu.Lock()
-			r.created = append(r.created, createdCall{id, replay})
+			r.created = append(r.created, createdCall{row.MachineID, replay})
 			r.mu.Unlock()
 		},
-		MachineCommitted: func(_ context.Context, id string, _ *statedb.MachineRow) {
+		MachineCommitted: func(_ context.Context, after statedb.MachineRow, _ *statedb.MachineRow) {
 			r.mu.Lock()
-			r.committed = append(r.committed, id)
+			r.committed = append(r.committed, after.MachineID)
 			r.mu.Unlock()
 		},
-		MachineEvent: func(_ context.Context, id string) {
+		MachineEvent: func(_ context.Context, row statedb.MachineRow) {
 			r.mu.Lock()
-			r.events = append(r.events, id)
+			r.events = append(r.events, row.MachineID)
 			r.mu.Unlock()
 		},
 		GoalsCommitted: func(_ context.Context, id string, before, after []statedb.GoalRow) {
@@ -358,7 +358,7 @@ func TestWatchSinkSnapshotPublishesGoalsBeforeMachine(t *testing.T) {
 		}
 		mu.Unlock()
 	}
-	sink.MachineCommitted = func(_ context.Context, _ string, _ *statedb.MachineRow) {
+	sink.MachineCommitted = func(_ context.Context, _ statedb.MachineRow, _ *statedb.MachineRow) {
 		mu.Lock()
 		order = append(order, "machine")
 		if len(order) == 2 {

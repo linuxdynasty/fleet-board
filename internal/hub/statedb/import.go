@@ -343,7 +343,7 @@ func validateImportPlan(ctx context.Context, tx *sql.Tx, in ConfigImport) error 
 // a bounded sweep of its peers, and its key is free again.
 func ApplyConfigImport(ctx context.Context, s *store.Store, in ConfigImport) (resp []byte, replay bool, err error) {
 	jctx := context.WithoutCancel(ctx) // see insertIdentity
-	err = s.Write(ctx, func(tx *sql.Tx) error {
+	err = writeHooked(ctx, s, func(tx *sql.Tx) error {
 		hash, createMs, stored, rerr := readImportLog(jctx, tx, in.Principal, in.RequestID)
 		switch {
 		case errors.Is(rerr, sql.ErrNoRows):

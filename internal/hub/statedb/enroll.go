@@ -93,7 +93,7 @@ func InsertEnrollToken(ctx context.Context, s *store.Store, t EnrollToken) error
 		return fmt.Errorf("statedb: token labels: %w", err)
 	}
 	jctx := context.WithoutCancel(ctx) // see insertIdentity
-	return s.Write(ctx, func(tx *sql.Tx) error {
+	return writeHooked(ctx, s, func(tx *sql.Tx) error {
 		var prior []byte
 		err := tx.QueryRowContext(jctx, `SELECT request_hash FROM enroll_tokens WHERE principal = ? AND request_id = ?`,
 			t.Principal, t.RequestID).Scan(&prior)

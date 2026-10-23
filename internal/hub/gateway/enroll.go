@@ -168,7 +168,7 @@ func (s *agentService) enrollNew(ctx context.Context, peer string, key statedb.E
 		// The enroll job committed: the machine is new to Watch
 		// subscribers (a replay publishes nothing; the first enroll
 		// already did). This runs on the writer in commit order (#393).
-		s.publishMachineCreated(pctx, id, enrolled.Replayed)
+		s.publishMachineCreated(pctx, enrolled.Row, enrolled.Replayed)
 	})
 	if err != nil {
 		return statedb.Enrolled{}, s.storeOutcome(ctx, peer, err)

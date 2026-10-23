@@ -112,6 +112,27 @@ and `agent.db` (plan row 2):
   committed rows in order. Hints may coalesce, including no-op batches; a
   failed outer commit sends none. The writer closes the channel after its
   final flush at shutdown. The wake carries no rows or callbacks.
+- **Post-commit hooks run on the writer, in commit order.** `WriteHook` and
+  `SubmitHook` carry one callback each. After the batch commits, the writer
+  runs each job's hook in the order the jobs committed, then the single
+  `OnCommit` hook. A failed job's hook never runs. This is how the Watch
+  feed publishes: each hook sends only its own job's rows, so the feed
+  follows the same order the disk committed (#393).
+- **A hook never waits.** It is short and never calls back into the store
+  (`Read`, `Write`, `Submit`), never calls the network, and never waits on
+  another goroutine. It publishes rows its job captured inside its own
+  transaction, never by reading them again after the commit: a later job in
+  the same batch may already have overwritten the row (#403). A hook that
+  breaks this rule can wedge the writer: reads wait for the writer while
+  the writer waits for a read.
+- **A panicking hook never kills the writer.** The writer catches it, logs
+  `store.hook_failed` with only the panic's type (never its message, which
+  could hold row text), and moves on to the next hook.
+- **Audits publish with their job.** Each `writeOrdered` job records the
+  audit rows it stamped; its hook sends its resource rows first and then
+  its audits. Jobs in one batch stamp one after another, so job after job
+  in hook order is the exact `hub_seq` order. A reader that resumes from a
+  position never skips (#403).
 - **The queue is bounded** (the writer queue in [defaults](defaults.md));
   submitting waits while it is full. This is where the ingest channel's
   backpressure reaches the writer. The submit that fills the last slot, or

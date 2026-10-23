@@ -252,6 +252,11 @@ func RevokeMachine(ctx context.Context, s *store.Store, in MachineRevoke, onComm
 				return err
 			}
 			out = RevokedMachine{Machine: rev, Serials: serials}
+			// No new stamp here; capture the current row so the hook
+			// publishes the same state a re-read would have (#403).
+			if row, rerr := readMachineRowTx(jctx, tx, in.MachineID); rerr == nil {
+				out.Machine.Row = row
+			}
 			return logMachineRequest(jctx, tx, in.MachineWrite, machineKindRevoke, rev, false)
 		}
 		if err := checkVersion(got.Version, in.ExpectedVersion, "machine"); err != nil {
@@ -288,6 +293,12 @@ func RevokeMachine(ctx context.Context, s *store.Store, in MachineRevoke, onComm
 				RevokeReason: in.Reason,
 			},
 			Serials: serials, Closed: closed,
+		}
+		// Capture the after-image in-tx for the Watch publish (#403).
+		if row, rerr := readMachineRowTx(jctx, tx, in.MachineID); rerr != nil {
+			return rerr
+		} else {
+			out.Machine.Row = row
 		}
 		if err := auditMachine(jctx, tx, ActionMachineRevoke, out.Machine, in.MachineWrite,
 			map[string]string{"reason": in.Reason}); err != nil {

@@ -36,6 +36,9 @@ const (
 type StateChange struct {
 	MachineID, From, To, Reason string
 	Stamp                       Stamp
+	// Row is the full machines row the job captured in its tx for the
+	// Watch publish: the after-image at this job's stamps (#403).
+	Row MachineRow
 }
 
 // Ended is what [EndConnection] did: Live is true when it closed the
@@ -140,7 +143,12 @@ func changeState(ctx context.Context, tx *sql.Tx, machineID string, from []strin
 		to, st.ObservedTime.UnixMilli(), st.HubSeq, machineID); err != nil {
 		return nil, fmt.Errorf("statedb: store machine state: %w", err)
 	}
-	return &StateChange{MachineID: machineID, From: cur, To: to, Reason: reason, Stamp: st}, nil
+	// Capture the after-image in-tx for the Watch publish (#403).
+	row, err := readMachineRowTx(ctx, tx, machineID)
+	if err != nil {
+		return nil, err
+	}
+	return &StateChange{MachineID: machineID, From: cur, To: to, Reason: reason, Stamp: st, Row: row}, nil
 }
 
 // liveEpoch is machineID's live connection epoch, 0 when it has none.

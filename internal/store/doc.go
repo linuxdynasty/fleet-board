@@ -16,6 +16,14 @@
 // outcome is sent only after the commit is durable, so an acknowledgement
 // that follows it is never ahead of the disk. A job that fails is rolled back
 // alone; a batch whose transaction breaks fails every job in it.
+// [Store.WriteHook] and [Store.SubmitHook] carry one post-commit hook each,
+// run on the writer in commit order after the batch commits, then the single
+// [Store.OnCommit] hook; a failed job's hook never runs. [Store.SetAuditPublisher]
+// records the per-job audit publish function writeOrdered jobs call after
+// their resource publish (#403). A hook is short and never calls back into
+// the store, the network, or another goroutine: it publishes rows its job
+// captured in its own transaction. A panicking hook is caught, logged as
+// store.hook_failed with only the panic's type, and skipped.
 // After each successful outer commit, before job outcomes, the writer offers
 // a nonblocking hint on [Store.CommitWake]. One future hub Watch dispatcher
 // consumes it and reads committed state; hints can coalesce. The writer closes

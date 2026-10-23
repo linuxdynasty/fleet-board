@@ -95,6 +95,10 @@ type Store struct {
 	// hooks, in commit order (#393). Set once via OnCommit before jobs
 	// that need it commit; unset it runs nothing.
 	hook atomic.Value
+	// audits is the per-job audit publish function SetAuditPublisher
+	// records (as any; see writer.go). Only the writer reads it, inside
+	// job hooks.
+	audits atomic.Value
 
 	closeOnce sync.Once
 	closeErr  error

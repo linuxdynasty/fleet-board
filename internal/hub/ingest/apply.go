@@ -86,7 +86,14 @@ func SubmitSnapshot(ctx context.Context, st *store.Store, s Stream, snap *agentv
 			return err
 		}
 		_, p.out.Change, err = statedb.MarkOnline(jctx, tx, s.MachineID, now)
-		return err
+		if err != nil {
+			return err
+		}
+		// Capture the after-image in-tx for the Watch publish (#403).
+		if p.out.Row, err = statedb.ReadMachineRowTx(jctx, tx, s.MachineID); err != nil {
+			return err
+		}
+		return nil
 	}
 	if onCommit == nil {
 		p.done, err = st.Submit(ctx, apply)

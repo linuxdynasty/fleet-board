@@ -126,7 +126,7 @@ func eventArm(ctx context.Context, a *agentService, s *stream, m *agentv1.Connec
 			if out.Outcome != statedb.EventApplied {
 				return
 			}
-			a.publishMachineEvent(pctx, s.machineID)
+			a.publishMachineEvent(pctx, out.Row)
 			if !out.History && kind == "goal_state" && goalsOK {
 				a.publishGoalsCommitted(pctx, s.machineID, beforeGoals, goals)
 			}

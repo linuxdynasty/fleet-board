@@ -92,6 +92,9 @@ type SnapshotIn struct {
 
 // SnapshotOut is what [ApplySnapshot] decided.
 type SnapshotOut struct {
+	// Row is the machines row the job captured after MarkOnline for the
+	// Watch publish: the after-image at this job's stamps (#403).
+	Row MachineRow
 	// Generation is the machine's event_generation after the Snapshot.
 	Generation uint64
 	// Rollback names the 02i rule 3 causes found on the epoch's first
@@ -295,5 +298,10 @@ func MarkOnline(ctx context.Context, tx *sql.Tx, machineID string, now time.Time
 	if from == MachineOnline {
 		return st, nil, nil
 	}
-	return st, &StateChange{MachineID: machineID, From: from, To: MachineOnline, Reason: ReasonSnapshot, Stamp: st}, nil
+	// Capture the after-image in-tx for the Watch publish (#403).
+	row, err := readMachineRowTx(ctx, tx, machineID)
+	if err != nil {
+		return Stamp{}, nil, err
+	}
+	return st, &StateChange{MachineID: machineID, From: from, To: MachineOnline, Reason: ReasonSnapshot, Stamp: st, Row: row}, nil
 }

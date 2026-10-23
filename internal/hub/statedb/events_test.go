@@ -90,14 +90,16 @@ func TestAnEventIsStoredAsHistoryAtOrBelowTheSnapshotFloorAndLiveAbove(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	if out != (statedb.EventOut{Outcome: statedb.EventApplied, History: true, Generation: 1, HubLastEventSeq: 100, Stored: true, HubSeq: before + 1}) {
+	if out.Outcome != statedb.EventApplied || !out.History || out.Generation != 1 ||
+		out.HubLastEventSeq != 100 || !out.Stored || out.HubSeq != before+1 {
 		t.Errorf("seq 100: %+v, want applied, history only", out)
 	}
 	out, err = applyEvent(t, s, evIn(105, 100))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if out != (statedb.EventOut{Outcome: statedb.EventApplied, Generation: 1, HubLastEventSeq: 105, Stored: true, HubSeq: before + 2}) {
+	if out.Outcome != statedb.EventApplied || out.History || out.Generation != 1 ||
+		out.HubLastEventSeq != 105 || !out.Stored || out.HubSeq != before+2 {
 		t.Errorf("seq 105: %+v, want applied live", out)
 	}
 	got := eventRows(t, dir)

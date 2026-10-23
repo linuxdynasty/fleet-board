@@ -18,15 +18,25 @@ import (
 // writer goroutine, so the hook for commit N always runs before the hook
 // for commit N+1 and the bus appends in commit order (02c "Order", #393).
 // A hook publishes only its own commit's rows; the publish tick tails the
-// audit log for rows no single hook sees. Hooks take watchMu briefly and
-// never wait on the writer; no path holds watchMu across a writer job, so
-// the discipline cannot wedge.
+// audit log for rows no single hook sees. Every publish takes watchMu
+// briefly through offerWatch and never waits on the writer; no path holds
+// watchMu across a writer job, so the discipline cannot wedge (#403).
 
-// offerWatch logs one never-dropped change with the store stamp. A
+// offerWatch logs one never-dropped change with the store stamp. It takes
+// watchMu; callers that already hold it use offerWatchLocked. A
 // non-positive seq means the write carried no stamp and stays unpublished.
 // Every published change dirties the fleet summary: the publish tick
 // recomputes it at most once per second (02c).
 func (f *Fleet) offerWatch(seq int64, change watchChange) {
+	f.watchMu.Lock()
+	defer f.watchMu.Unlock()
+	f.offerWatchLocked(seq, change)
+}
+
+// offerWatchLocked logs one never-dropped change as offerWatch does. The
+// caller holds watchMu, so a hook's several publishes stay atomic and a
+// concurrent tick cannot interleave between them.
+func (f *Fleet) offerWatchLocked(seq int64, change watchChange) {
 	if seq <= 0 {
 		return
 	}
@@ -78,22 +88,6 @@ func machineOldRow(pre *statedb.MachineRow, stored statedb.MachineStored) *state
 		return pre
 	}
 	return nil
-}
-
-// publishMachineWatch offers a machine write: the row is re-read so live
-// filtering sees exactly what ListMachines serves. old is the pre-update
-// row for UNMATCHED evaluation, nil when unknown; replay publishes
-// nothing.
-func (f *Fleet) publishMachineWatch(ctx context.Context, id string, change hubv1.ChangeType, old *statedb.MachineRow, replay bool) {
-	if replay {
-		return
-	}
-	row, err := statedb.ReadMachineRow(ctx, f.store, id)
-	if err != nil {
-		f.tel.Logger.ErrorContext(ctx, "watch.publish_failed", "topic", "MACHINES", "err_kind", "io")
-		return
-	}
-	f.publishMachineWatchRow(ctx, row, change, old)
 }
 
 // publishMachineWatchRow offers a machine write from its already-read

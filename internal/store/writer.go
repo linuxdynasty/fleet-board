@@ -163,6 +163,29 @@ func (s *Store) OnCommit(after func()) {
 	s.hook.Store(after)
 }
 
+// SetAuditPublisher records the per-job audit publish function the writer
+// runs inside each writeOrdered job's hook, after that job's resource
+// publish (#403). It holds any so the store never imports the audit row
+// type: the setter and the hook agree on func([]statedb.AuditStored).
+// Set once before jobs that need it commit; unset, job hooks publish no
+// audits. Only one fits: registering again replaces the first.
+func (s *Store) SetAuditPublisher(publisher any) {
+	if publisher == nil {
+		return
+	}
+	s.audits.Store(publisher)
+}
+
+// AuditPublisher returns the publisher SetAuditPublisher recorded, or nil.
+// Only the writer reads it, inside job hooks (#403).
+func (s *Store) AuditPublisher() any {
+	v := s.audits.Load()
+	if v == nil {
+		return nil
+	}
+	return v
+}
+
 // run is the single writer: it collects jobs until the batch holds BatchMax
 // of them or BatchWindow has passed since its first job, then commits the
 // batch as one transaction. It exits after Close, once the queue is drained.

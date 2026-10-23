@@ -100,6 +100,23 @@ func ReadMachineRow(ctx context.Context, s *store.Store, id string) (MachineRow,
 	return out, err
 }
 
+// readMachineRowTx reads one machine row in the writer job's tx: the
+// after-image the job just wrote, for the Watch publish. Unlike
+// ReadMachineRow it never touches the read pool, so a post-commit hook
+// must not use it (the hook runs after the commit); the job captures the
+// row here and the hook publishes the capture (#403).
+func readMachineRowTx(ctx context.Context, tx *sql.Tx, id string) (MachineRow, error) {
+	return scanMachineRow(tx.QueryRowContext(ctx,
+		`SELECT `+machineColumns+` FROM machines WHERE machine_id = ?`, id))
+}
+
+// ReadMachineRowTx reads one machine row in the writer job's tx, for
+// packages that queue writer jobs (ingest): the after-image the job just
+// wrote. It never touches the read pool (#403).
+func ReadMachineRowTx(ctx context.Context, tx *sql.Tx, id string) (MachineRow, error) {
+	return readMachineRowTx(ctx, tx, id)
+}
+
 // ListMachineRows reads every machine row on the read pool. Fleets hold
 // tens of machines, so the API filters, sorts and pages in memory over
 // this snapshot instead of building per-field SQL.

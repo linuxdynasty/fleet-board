@@ -36,14 +36,22 @@ func TestWatchFlushRetainsHeldOnTransientFailure(t *testing.T) {
 		t.Fatalf("%d INITIAL machines, want 1", len(initial))
 	}
 	pump := pumpWatch(stream)
-	e.fleet.PublishMachineState(context.Background(), "m-retain", "ENROLLED")
+	retainRow, err := statedb.ReadMachineRow(context.Background(), e.st, "m-retain")
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.fleet.PublishMachineState(context.Background(), retainRow, "ENROLLED")
 	pump.recvLive(t)
 	before, err := statedb.ReadMachineRow(context.Background(), e.st, "m-retain")
 	if err != nil {
 		t.Fatal(err)
 	}
 	touchMachine(t, e, "m-retain", "observed_time = ?", []any{cur.Add(time.Second).UnixMilli()}, cur.Add(time.Second))
-	e.fleet.PublishMachineCommitted(context.Background(), "m-retain", &before)
+	afterRetain, err := statedb.ReadMachineRow(context.Background(), e.st, "m-retain")
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.fleet.PublishMachineCommitted(context.Background(), afterRetain, &before)
 	pump.expectNone(t)
 	cur = cur.Add(31 * time.Second)
 	// A cancelled store read fails transiently: nothing publishes, and the
@@ -129,14 +137,22 @@ func TestWatchFlushTakesAFreshPosition(t *testing.T) {
 		t.Fatalf("%d INITIAL machines, want 2", len(initial))
 	}
 	pump := pumpWatch(stream)
-	e.fleet.PublishMachineState(context.Background(), "m-flush", "ENROLLED")
+	flushRow, err := statedb.ReadMachineRow(context.Background(), e.st, "m-flush")
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.fleet.PublishMachineState(context.Background(), flushRow, "ENROLLED")
 	pump.recvLive(t)
 	before, err := statedb.ReadMachineRow(context.Background(), e.st, "m-flush")
 	if err != nil {
 		t.Fatal(err)
 	}
 	touchMachine(t, e, "m-flush", "observed_time = ?", []any{cur.Add(time.Second).UnixMilli()}, cur.Add(time.Second))
-	e.fleet.PublishMachineCommitted(context.Background(), "m-flush", &before)
+	afterFlush, err := statedb.ReadMachineRow(context.Background(), e.st, "m-flush")
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.fleet.PublishMachineCommitted(context.Background(), afterFlush, &before)
 	pump.expectNone(t)
 	// An unrelated newer change moves the token past the held row's stamp:
 	// a non-volatile write publishes at once with a fresh stamp.
@@ -145,7 +161,11 @@ func TestWatchFlushTakesAFreshPosition(t *testing.T) {
 		t.Fatal(err)
 	}
 	touchMachine(t, e, "m-newer", "name = ?", []any{"renamed"}, cur.Add(2*time.Second))
-	e.fleet.PublishMachineCommitted(context.Background(), "m-newer", &newerBefore)
+	afterNewer, err := statedb.ReadMachineRow(context.Background(), e.st, "m-newer")
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.fleet.PublishMachineCommitted(context.Background(), afterNewer, &newerBefore)
 	newer := pump.recvLive(t)
 	cur = cur.Add(31 * time.Second)
 	if err := e.fleet.PublishTick(context.Background()); err != nil {
@@ -196,7 +216,11 @@ func TestWatchFlushGoalTakesAFreshPosition(t *testing.T) {
 		t.Fatal(err)
 	}
 	touchMachine(t, e, "m-newer-g", "name = ?", []any{"renamed"}, cur.Add(2*time.Second))
-	e.fleet.PublishMachineCommitted(context.Background(), "m-newer-g", &newerBefore)
+	afterNewerG, err := statedb.ReadMachineRow(context.Background(), e.st, "m-newer-g")
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.fleet.PublishMachineCommitted(context.Background(), afterNewerG, &newerBefore)
 	newer := pump.recvLive(t)
 	cur = cur.Add(6 * time.Second)
 	if err := e.fleet.PublishTick(context.Background()); err != nil {

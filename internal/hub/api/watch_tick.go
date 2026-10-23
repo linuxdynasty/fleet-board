@@ -112,7 +112,7 @@ func (f *Fleet) flushMachine(ctx context.Context, id, key string) {
 		}
 		delete(f.volatile.held, key)
 		f.volatile.last[key] = f.now()
-		f.offerWatch(row.HubSeq, watchChange{
+		f.offerWatchLocked(row.HubSeq, watchChange{
 			topic: hubv1.WatchTopic_WATCH_TOPIC_MACHINES, change: hubv1.ChangeType_CHANGE_TYPE_UPDATED,
 			msg: &hubv1.WatchResponse{
 				Topic: hubv1.WatchTopic_WATCH_TOPIC_MACHINES, ChangeType: hubv1.ChangeType_CHANGE_TYPE_UPDATED,
@@ -159,7 +159,7 @@ func (f *Fleet) flushGoal(ctx context.Context, id, key string) {
 		}
 		delete(f.volatile.held, key)
 		f.volatile.last[key] = f.now()
-		f.offerWatch(row.HubSeq, watchChange{
+		f.offerWatchLocked(row.HubSeq, watchChange{
 			topic: hubv1.WatchTopic_WATCH_TOPIC_GOALS, change: hubv1.ChangeType_CHANGE_TYPE_UPDATED,
 			msg: &hubv1.WatchResponse{
 				Topic: hubv1.WatchTopic_WATCH_TOPIC_GOALS, ChangeType: hubv1.ChangeType_CHANGE_TYPE_UPDATED,

@@ -114,6 +114,11 @@ type MachineStored struct {
 	// Deleted marks the tombstone of a replayed delete.
 	Replay  bool
 	Deleted bool
+	// Row is the full machines row the job captured in its tx for the
+	// Watch publish: the after-image at this job's stamps, not the
+	// batch-final row a post-commit re-read would see (#403). Empty on
+	// replays, which publish nothing.
+	Row MachineRow
 }
 
 // machineLogRow is one machine_request_log row.
@@ -402,6 +407,14 @@ func UpdateMachine(ctx context.Context, s *store.Store, in MachineUpdate, onComm
 		var err2 error
 		if out, err2 = withRevocation(jctx, tx, out); err2 != nil {
 			return err2
+		}
+		// Capture the after-image in-tx for the Watch publish: a
+		// post-commit re-read would see the batch-final row when a later
+		// job in the same batch overwrote this one (#403).
+		if row, rerr := readMachineRowTx(jctx, tx, in.MachineID); rerr != nil {
+			return rerr
+		} else {
+			out.Row = row
 		}
 		if err := auditMachine(jctx, tx, ActionMachineUpdate, out, in.MachineWrite,
 			map[string]string{"display_name": name}); err != nil {

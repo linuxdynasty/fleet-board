@@ -35,7 +35,7 @@ func enrollOrderedMachine(e *fleetEnv, id, name string) error {
 		ReportedHostname: name + ".lan",
 		Facts:            `{"hostname":"` + name + `.lan"}`, Now: fleetNow,
 	}, func(enrolled statedb.Enrolled) {
-		e.fleet.PublishMachineCreated(pctx, id, enrolled.Replayed)
+		e.fleet.PublishMachineCreated(pctx, enrolled.Row, enrolled.Replayed)
 	})
 	return err
 }
