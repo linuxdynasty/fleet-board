@@ -44,6 +44,11 @@ enum PacingState {
 message AccountBindingSpec {
   fleet.type.v1.MachineId machine = 1;
   string profile = 2;
+  // Portable key for the machine, used in FleetConfig documents instead of
+  // machine (02m): export fills the display name and leaves machine unset,
+  // import resolves it to the local machine. Live RPCs keep using machine
+  // and ignore this field.
+  string machine_display_name = 3;
 }
 
 // AccountBinding is one machine where the account is signed in, and the

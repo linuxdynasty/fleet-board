@@ -145,15 +145,23 @@ features outside that mapping. Its input, output, depth, and node limits are
 listed in [defaults](defaults.md#offline-fleetconfig-yaml). The codec has no
 CLI caller yet.
 
-The current `FleetConfig` contract embeds some hub ID wrappers in repo,
-account, routine, and trust fields. `ExportConfig` omits the stored repo code
-host stamp (import re-derives the host by matching), but still copies the
-other stored wrappers. Until portable references and hub-side translation
-land (#397), the codec refuses every present hub ID wrapper, including an
-empty wrapper, on both read and write. Exported configurations that contain
-one cannot be rendered as portable YAML yet. The provider's own
-`TrustedUser.provider_user_id` is retained. The same-hub and cross-hub
-export/import walk still requires that translation.
+The `FleetConfig` contract still embeds hub ID wrappers in repo, account,
+routine, and trust fields for the live RPCs, but exchange documents carry
+portable refs instead (#397): `IntegrationRef` (provider plus base URL) beside
+every integration wrapper, and `machine_display_name` beside every binding
+machine wrapper. `ExportConfig` translates stored ids to those refs and leaves
+the wrappers unset; `ImportConfig` resolves the refs against the target hub
+(a code-host ref wins over the host match; an unknown integration plans the
+entry as skipped, an unknown machine blocks the line) before diffing, so the
+same document plans unchanged on its own hub and on any hub with matching
+integrations and machines. Live calls keep writing ids and refuse the ref
+fields instead of silently ignoring them. The codec still refuses every present
+hub ID wrapper, including an empty one, on both read and write, so a document
+with raw ids cannot be rendered as portable YAML. The provider's own
+`TrustedUser.provider_user_id` is retained. Routine and owner-identity refs
+are not translated: routines are not exported and their imports are not
+applied yet, so their wrappers stay unportable. The same-hub and cross-hub
+export/import walk is covered by the portable-refs round-trip tests.
 
 **Import with a machine that has not enrolled yet, as messages.** Import applies what it can
 now and keeps the rest for when the machine joins. The mark "drained" is recorded at once and

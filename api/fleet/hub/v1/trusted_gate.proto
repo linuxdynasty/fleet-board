@@ -19,6 +19,7 @@ syntax = "proto3";
 
 package fleet.hub.v1;
 
+import "fleet/hub/v1/refs.proto";
 import "fleet/integration/v1/model.proto";
 import "fleet/type/v1/ids.proto";
 import "google/protobuf/timestamp.proto";
@@ -28,6 +29,11 @@ import "google/protobuf/timestamp.proto";
 // not "alice" on Jira.
 message TrustedUser {
   fleet.type.v1.IntegrationId integration = 1;
+  // Portable key for the integration, used in FleetConfig documents instead
+  // of integration (02m): export fills it and leaves integration unset,
+  // import resolves it to the local integration id. Live RPCs keep using
+  // integration and ignore this field.
+  IntegrationRef integration_ref = 4;
   // Compared case-insensitively. 64 bytes.
   string login = 2;
   // Pins the account: when set the id is compared and the login is only a
@@ -40,6 +46,12 @@ message TrustedUser {
 message TrustedLabel {
   // Empty = the default for every integration without its own entry.
   fleet.type.v1.IntegrationId integration = 1;
+  // Portable key for the integration, used in FleetConfig documents instead
+  // of integration (02m): export fills it and leaves integration unset,
+  // import resolves it to the local integration id. An unset ref keeps the
+  // empty-means-default rule. Live RPCs keep using integration and ignore
+  // this field.
+  IntegrationRef integration_ref = 3;
   // 64 bytes. Where a tracker's signal is a status (Jira), the status name.
   string name = 2;
 }

@@ -189,7 +189,7 @@ func equalTrackerProjects(a, b []*hubv1.TrackerProject) bool {
 // host to its integration id; a missing host has no code host. seen holds
 // the document names already planned, to refuse duplicates.
 func classifyRepo(r *hubv1.RepoSpec, i int, existing map[string]*hubv1.RepoSpec,
-	codeHosts map[string]string, seen map[string]bool,
+	codeHosts map[string]string, tables *refTables, seen map[string]bool,
 ) (kind hubv1.ConfigChangeKind, name string, normalized *hubv1.RepoSpec, changed []string, problem *hubv1.ConfigChange) {
 	field := fmt.Sprintf("config.repos[%d]", i)
 	host, path, err := checkRepoIdentity(&hubv1.Repo{Spec: r})
@@ -207,18 +207,24 @@ func classifyRepo(r *hubv1.RepoSpec, i int, existing map[string]*hubv1.RepoSpec,
 		return 0, name, nil, nil,
 			blockedImportLine(hubv1.ConfigEntity_CONFIG_ENTITY_REPO, name, field, firstViolationText(err))
 	}
-	codeHost, ok := codeHosts[host]
-	if !ok {
-		// A missing integration is a skip, not a validation failure
-		// (config.proto): allow_skipped applies the lines that can apply,
-		// and the owner connects the integration first.
-		return 0, name, nil, nil,
-			invalidImportLine(hubv1.ConfigEntity_CONFIG_ENTITY_REPO, name, field,
-				typev1.ReasonCode_REASON_CODE_RESOURCE_NOT_FOUND,
-				"no code-host integration reaches this repo; connect it first")
+	if r.GetCodeHostRef() == nil {
+		if _, ok := codeHosts[host]; !ok {
+			// A missing integration is a skip, not a validation failure
+			// (config.proto): allow_skipped applies the lines that can apply,
+			// and the owner connects the integration first.
+			return 0, name, nil, nil,
+				invalidImportLine(hubv1.ConfigEntity_CONFIG_ENTITY_REPO, name, field,
+					typev1.ReasonCode_REASON_CODE_RESOURCE_NOT_FOUND,
+					"no code-host integration reaches this repo; connect it first")
+		}
 	}
 	normalized = proto.Clone(r).(*hubv1.RepoSpec) //nolint:forcetypeassert // Clone keeps the message type
-	normalized.Repo.CodeHost = &typev1.IntegrationId{Value: codeHost}
+	if tables == nil {
+		tables = newRefTables(nil)
+	}
+	if p := tables.normalizeRepoRefs(field, name, host, normalized, codeHosts); p != nil {
+		return 0, name, nil, nil, p
+	}
 	stored, ok := existing[name]
 	if !ok {
 		return hubv1.ConfigChangeKind_CONFIG_CHANGE_KIND_CREATE, name, normalized, nil, nil
@@ -269,9 +275,12 @@ type configRest struct {
 	hub          *hubv1.HubSettings
 	fleetValues  *typev1.SettingValues
 	integrations map[string]*hubv1.IntegrationConfig
-	accounts     map[string]*hubv1.AccountConfig
-	machines     map[string][]machineBaseline
-	pending      map[string]pendingBaseline
+	// integrationIDs resolves a document integration ref to the local
+	// id, by the same provider/base-URL key as integrations (#397).
+	integrationIDs map[string]string
+	accounts       map[string]*hubv1.AccountConfig
+	machines       map[string][]machineBaseline
+	pending        map[string]pendingBaseline
 }
 
 // restHub is the stored hub settings, or an empty one when the owner
@@ -320,9 +329,10 @@ func planConfigImport(doc *hubv1.FleetConfig, existing map[string]*hubv1.RepoSpe
 		return nil, errImportPlanTooLarge
 	}
 	var changes []*hubv1.ConfigChange
+	tables := newRefTables(rest)
 	seen := map[string]bool{}
 	for i, r := range doc.GetRepos() {
-		kind, name, _, changed, problem := classifyRepo(r, i, existing, codeHosts, seen)
+		kind, name, _, changed, problem := classifyRepo(r, i, existing, codeHosts, tables, seen)
 		if problem != nil {
 			changes = append(changes, problem)
 			continue
@@ -333,8 +343,11 @@ func planConfigImport(doc *hubv1.FleetConfig, existing map[string]*hubv1.RepoSpe
 		})
 	}
 	if !isEmptyHub(doc.GetHub()) {
-		if line := diffStoredLine(hubv1.ConfigEntity_CONFIG_ENTITY_HUB_SETTINGS, "hub",
-			proto.Equal(doc.GetHub(), restHub(rest))); line != nil {
+		hubClone := proto.Clone(doc.GetHub()).(*hubv1.HubSettings) //nolint:forcetypeassert // Clone keeps the message type
+		if p := tables.normalizeGateRefs("config.hub", hubClone.GetTrustedGate()); p != nil {
+			changes = append(changes, p)
+		} else if line := diffStoredLine(hubv1.ConfigEntity_CONFIG_ENTITY_HUB_SETTINGS, "hub",
+			proto.Equal(hubClone, restHub(rest))); line != nil {
 			changes = append(changes, line)
 		} else {
 			changes = append(changes, unsupportedImportLine(
@@ -400,16 +413,22 @@ func planConfigImport(doc *hubv1.FleetConfig, existing map[string]*hubv1.RepoSpe
 		if name == "" {
 			name = fmt.Sprintf("accounts[%d]", i)
 		}
+		field := fmt.Sprintf("config.accounts[%d]", i)
+		acClone := proto.Clone(ac).(*hubv1.AccountConfig) //nolint:forcetypeassert // Clone keeps the message type
+		if p := tables.normalizeAccountRefs(name, field, acClone.GetSpec()); p != nil {
+			changes = append(changes, p)
+			continue
+		}
 		var stored *hubv1.AccountConfig
 		if rest != nil {
 			stored = rest.accounts[ac.GetHarness().GetName()+"\x00"+ac.GetSpec().GetDisplayName()]
 		}
 		if line := diffStoredLine(hubv1.ConfigEntity_CONFIG_ENTITY_ACCOUNT, name,
-			stored != nil && proto.Equal(ac, stored)); line != nil {
+			stored != nil && proto.Equal(acClone, stored)); line != nil {
 			changes = append(changes, line)
 		} else {
 			changes = append(changes, unsupportedImportLine(
-				hubv1.ConfigEntity_CONFIG_ENTITY_ACCOUNT, name, fmt.Sprintf("config.accounts[%d]", i), "account"))
+				hubv1.ConfigEntity_CONFIG_ENTITY_ACCOUNT, name, field, "account"))
 		}
 	}
 	return changes, nil

@@ -77,6 +77,40 @@ func checkRepoIdentity(repo *hubv1.Repo) (host, path string, err error) {
 }
 
 // checkRepoSpec applies the 02b spec rules: the branch pattern names its
+// rejectRepoDocRefs refuses the FleetConfig portable refs on the live
+// paths (#397): code_host_ref, tracker integration refs and trusted-gate
+// integration refs belong to exchange documents, where import resolves
+// them. Live calls keep writing hub ids; silently ignoring a ref would
+// drop the owner's intent.
+func rejectRepoDocRefs(spec *hubv1.RepoSpec) error {
+	var v violations
+	if spec.GetCodeHostRef() != nil {
+		v.add("repo.spec.code_host_ref", typev1.ReasonCode_REASON_CODE_INVALID_ARGUMENT,
+			"code_host_ref is for fleet.yaml documents; live calls write repo.code_host")
+	}
+	for i, tp := range spec.GetTrackerProjects() {
+		if tp.GetIntegrationRef() != nil {
+			v.add("repo.spec.tracker_projects["+strconv.Itoa(i)+"].integration_ref",
+				typev1.ReasonCode_REASON_CODE_INVALID_ARGUMENT,
+				"integration_ref is for fleet.yaml documents; live calls write integration ids")
+			break
+		}
+	}
+	for i, u := range spec.GetTrustedGate().GetUsers() {
+		if u.GetIntegrationRef() != nil {
+			v.add("repo.spec.trusted_gate.users["+strconv.Itoa(i)+"].integration_ref",
+				typev1.ReasonCode_REASON_CODE_INVALID_ARGUMENT,
+				"integration_ref is for fleet.yaml documents; live calls write integration ids")
+			break
+		}
+	}
+	if len(v) > 0 {
+		return apiError(connect.CodeInvalidArgument, v[0].GetReason(),
+			"the request has invalid fields", nil, v)
+	}
+	return nil
+}
+
 // placeholder, and the spec stays inside the size-limits table.
 func checkRepoSpec(spec *hubv1.RepoSpec) error {
 	var v violations

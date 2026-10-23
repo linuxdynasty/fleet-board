@@ -60,8 +60,9 @@ func (f *Fleet) importBaseline(ctx context.Context, doc *hubv1.FleetConfig) (map
 // and accounts by their document keys.
 func (f *Fleet) configRestBaseline(ctx context.Context) (*configRest, error) {
 	rest := &configRest{
-		integrations: map[string]*hubv1.IntegrationConfig{},
-		accounts:     map[string]*hubv1.AccountConfig{},
+		integrations:   map[string]*hubv1.IntegrationConfig{},
+		integrationIDs: map[string]string{},
+		accounts:       map[string]*hubv1.AccountConfig{},
 	}
 	if spec, _, found, err := statedb.ReadFleetSettings(ctx, f.store); err != nil {
 		return nil, err
@@ -81,10 +82,12 @@ func (f *Fleet) configRestBaseline(ctx context.Context) (*configRest, error) {
 		if err := protojson.Unmarshal(r.Spec, &spec); err != nil {
 			return nil, err
 		}
-		rest.integrations[r.Provider+"\x00"+r.BaseURL] = &hubv1.IntegrationConfig{
+		key := r.Provider + "\x00" + r.BaseURL
+		rest.integrations[key] = &hubv1.IntegrationConfig{
 			ProviderName: r.Provider, BaseUrl: r.BaseURL,
 			Label: spec.GetLabel(), TrackerProjects: spec.GetTrackerProjects(),
 		}
+		rest.integrationIDs[key] = r.ID
 	}
 	accountRows, err := statedb.ListAccountRows(ctx, f.store)
 	if err != nil {
@@ -118,8 +121,9 @@ func importOps(doc *hubv1.FleetConfig, existing map[string]*hubv1.RepoSpec,
 	pendingOps []statedb.ImportPendingOp, created, updated int, err error,
 ) {
 	seen := map[string]bool{}
+	tables := newRefTables(rest)
 	for i, r := range doc.GetRepos() {
-		kind, name, normalized, _, problem := classifyRepo(r, i, existing, codeHosts, seen)
+		kind, name, normalized, _, problem := classifyRepo(r, i, existing, codeHosts, tables, seen)
 		if problem != nil {
 			if problem.GetProblem().GetReason() != typev1.ReasonCode_REASON_CODE_CONFIG_INVALID {
 				continue

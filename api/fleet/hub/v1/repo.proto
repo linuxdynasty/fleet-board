@@ -20,6 +20,7 @@ package fleet.hub.v1;
 
 import "fleet/hub/v1/common.proto";
 import "fleet/hub/v1/dispatch_block.proto";
+import "fleet/hub/v1/refs.proto";
 import "fleet/hub/v1/trusted_gate.proto";
 import "fleet/hub/v1/work.proto";
 import "fleet/type/v1/consent.proto";
@@ -77,6 +78,11 @@ message TrackerProject {
   fleet.type.v1.IntegrationId integration = 1;
   // The provider's project key ("PROJ").
   string project = 2;
+  // Portable key for the integration, used in FleetConfig documents instead
+  // of integration (02m): export fills it and leaves integration unset,
+  // import resolves it to the local integration id. Live RPCs keep using
+  // integration and ignore this field.
+  IntegrationRef integration_ref = 3;
 }
 
 // RepoTrustedGate overrides the trusted-issues gate for one repo
@@ -124,6 +130,11 @@ message RepoSpec {
   RepoHooksMode hooks_mode = 9;
   repeated TrackerProject tracker_projects = 10;
   RepoTrustedGate trusted_gate = 11;
+  // Portable key for the code host, used in FleetConfig documents instead of
+  // repo.code_host (02m): export fills it and strips code_host, import
+  // resolves it to the local integration id, falling back to the host match
+  // when it is unset. Live RPCs keep using repo.code_host and ignore this.
+  IntegrationRef code_host_ref = 12;
 }
 
 // RepoCheckoutState is what one machine reports about its checkout of the

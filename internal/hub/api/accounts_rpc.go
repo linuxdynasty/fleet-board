@@ -117,6 +117,10 @@ func checkAccountSpec(spec *hubv1.AccountSpec) error {
 	}
 	for i, b := range spec.GetBindings() {
 		field := "spec.bindings[" + strconv.Itoa(i) + "]"
+		if b.GetMachineDisplayName() != "" {
+			v.add(field+".machine_display_name", typev1.ReasonCode_REASON_CODE_INVALID_ARGUMENT,
+				"machine_display_name is for fleet.yaml documents; live calls write the machine id")
+		}
 		if b.GetMachine().GetValue() == "" {
 			v.add(field+".machine", typev1.ReasonCode_REASON_CODE_INVALID_ARGUMENT,
 				"a binding names the machine it maps")

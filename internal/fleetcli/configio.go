@@ -55,11 +55,11 @@ func (i *invocation) addImportCommand(root *cobra.Command) {
 }
 
 // portableConfig refuses the hub ids the exchange document must not
-// carry. ExportConfig already omits them (#395); anything still present
-// (tracker or binding machine ids) fails loudly and by name: dropping
-// those would silently lose them on re-import, and portable references
-// with hub-side translation are #397's work, so export names the gap
-// instead of an opaque codec error.
+// carry. ExportConfig already translates stored ids to portable refs
+// (#397); anything still present is an orphan (a stored id with no live
+// row to name) and fails loudly and by name: dropping it would silently
+// lose it on re-import, so export names the gap instead of an opaque
+// codec error.
 func portableConfig(cfg *hubv1.FleetConfig) (*hubv1.FleetConfig, error) {
 	if unportable := fleetconfig.UnportableIDs(cfg); len(unportable) > 0 {
 		return nil, fmt.Errorf("%w: %s", errNotPortable, unportable[0])
