@@ -322,7 +322,8 @@ stream cut. Signals: `fleet_hub_config_writes_total{op, outcome}` (`op`
 `ExportConfig` renders the whole `FleetConfig` as stored: the watched
 repos, integrations, hub and fleet settings, owner accounts and machines
 (one entry per enrolled machine with its layer's values, one per kept
-machine entry; a kept row shadowing an enrolled name folds into it).
+machine entry; a kept row shadowing an enrolled name folds into it;
+repo entries omit the stamped code host, re-derived on import, #395).
 `ImportConfig` diffs a document and applies it in one writer transaction
 or not at all: today only the repo and machine sections apply (other
 sections plan a blocking "not built yet" line). A machine entry matching

@@ -29,7 +29,8 @@
 // DeleteMachine (each with its machine.* audit row), the config import
 // and export ImportConfig and ExportConfig (repos and machines apply in
 // one writer transaction with a config.import audit row; other sections
-// are not built yet), the hub-state triage writes SnoozeTriageItem and
+// are not built yet; repo entries omit the stamped code host, re-derived
+// on import by host match), the hub-state triage writes SnoozeTriageItem and
 // DismissTriageItem (each with its triage.* audit row), the
 // session-control and approvals calls (their fresh Operation deadlines
 // come from the queued commands; new session commands wake the outbox only
