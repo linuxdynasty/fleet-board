@@ -36,14 +36,18 @@ func (f *Fleet) exportFailed(ctx context.Context, actor, step string) error {
 		"the hub could not export the configuration", nil, nil)
 }
 
-// exportRepos renders the watched repos as stored: what the reads show,
-// with the code host the last write stamped.
+// exportRepos renders the watched repos without their stored code host
+// stamp: the export holds no ids (#395), and import re-derives the host
+// by matching, so omitting it here is lossless.
 func exportRepos(rows []statedb.RepoSpecRow) ([]*hubv1.RepoSpec, error) {
 	var out []*hubv1.RepoSpec
 	for _, r := range rows {
 		var spec hubv1.RepoSpec
 		if err := protojson.Unmarshal(r.Spec, &spec); err != nil {
 			return nil, err
+		}
+		if repo := spec.GetRepo(); repo != nil {
+			repo.CodeHost = nil
 		}
 		out = append(out, &spec)
 	}
