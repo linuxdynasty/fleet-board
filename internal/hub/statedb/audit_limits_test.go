@@ -32,7 +32,7 @@ func TestTheLargestAcceptedNamesFitTheAuditDetail(t *testing.T) {
 				t.Fatalf("InsertEnrollToken: %v", err)
 			}
 			key := statedb.EnrollKey{SecretHash: tok.SecretHash, InstallID: "i", CSRKeyHash: sha256.Sum256([]byte{1})}
-			if _, err := statedb.Enroll(ctx, s, newMachine(key, renewMachineID, beforeTTL)); err != nil {
+			if _, err := statedb.Enroll(ctx, s, newMachine(key, renewMachineID, beforeTTL), nil); err != nil {
 				t.Fatalf("Enroll: %v", err)
 			}
 			if err := s.Close(); err != nil {

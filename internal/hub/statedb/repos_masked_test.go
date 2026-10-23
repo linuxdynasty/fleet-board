@@ -24,7 +24,7 @@ func TestMaskedUpdateMergesAgainstTheCurrentRow(t *testing.T) {
 			saw = string(current)
 			return []byte(`{"enabled":false,"note":"merged"}`), false, nil
 		},
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("masked update: %v", err)
 	}

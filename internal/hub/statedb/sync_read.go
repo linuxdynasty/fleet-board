@@ -139,13 +139,13 @@ func ListClaimCandidates(ctx context.Context, s *store.Store, integration string
 // caller recomputed from them, bumping version with the row. The write
 // takes a hub_seq stamp and reports the change, so Watch publishes a claim
 // move with its commit position.
-func UpdateWorkItemClaims(ctx context.Context, s *store.Store, key string, claims []byte, stage, reason int32, nowMs int64) (WorkItemChange, error) {
+func UpdateWorkItemClaims(ctx context.Context, s *store.Store, key string, claims []byte, stage, reason int32, nowMs int64, onCommit func(WorkItemChange)) (WorkItemChange, error) {
 	if len(claims) == 0 {
 		claims = []byte("[]")
 	}
 	jctx := context.WithoutCancel(ctx)
 	var out WorkItemChange
-	err := s.Write(ctx, func(tx *sql.Tx) error {
+	err := writeOrdered(ctx, s, &out, onCommit, func(tx *sql.Tx) error {
 		var before WorkItemRow
 		var storedStage, storedReason int64
 		err := tx.QueryRowContext(jctx, `SELECT `+workItemColumns+` FROM work_items WHERE key = ?`,

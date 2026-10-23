@@ -22,7 +22,7 @@ func TestValidatedWriteFollowsRepoChecksAndPrecedesEffects(t *testing.T) {
 			RepoWrite: repoWrite("local:alice", request, body),
 			Host:      "github.com", Path: "acme/api", CodeHost: "github", Enabled: true,
 			Spec: []byte(`{"enabled":true}`),
-		})
+		}, nil)
 		return err
 	}
 	if err := create("first", 1); !errors.Is(err, deny) {

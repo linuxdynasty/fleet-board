@@ -94,67 +94,67 @@ func (f *Fleet) sendOne(ctx context.Context, who *typev1.Principal, req proto.Me
 	// leave a "sent" count or log behind.
 	var emitKind, emitOutcome, emitMachine, emitCommand string
 	var queued outbox.Op
-	commitErr := f.commitWatch(
-		func() error {
-			done, err := f.store.Submit(ctx, func(tx *sql.Tx) error {
-				machine, err := resolveSession(ctx, tx, sessionID)
-				if err != nil {
-					return err
-				}
-				if op, replay, err := checkRequest(ctx, tx, actor, requestID, sum[:]); err != nil || replay {
-					if err != nil {
-						return err
-					}
-					if err := quotaCheckpoint(ctx, quotaWrite); err != nil {
-						return err
-					}
-					out = op
-					emitKind, emitOutcome = outbox.KindName(cmd), "replayed"
-					return nil
-				}
-				cmd.RequestedBy = who
-				cmd.IssuedTime = timestamppb.New(now)
-				op, err := outbox.Enqueue(ctx, tx, outbox.In{
-					MachineID: machine, Command: cmd, RequestID: requestID, Now: now,
-					Checkpoint: func() error { return quotaCheckpoint(ctx, quotaWrite) },
-				})
-				if err != nil {
-					return mapOutboxError(err)
-				}
-				if err := logRequest(ctx, tx, actor, requestID, op.CommandID, sum[:], now); err != nil {
-					return err
-				}
-				if _, err := statedb.AppendAudit(ctx, tx, statedb.AuditEntry{
-					Actor: actorOf(who), Action: auditAction, Target: "sessions/" + sessionID,
-					CommandID: op.CommandID, RequestID: requestID, Now: now,
-				}); err != nil {
-					return err
-				}
-				out, err = operationFromOp(ctx, tx, op, machine, who, requestID, now)
-				if err != nil {
-					return err
-				}
-				queued = op
-				emitKind, emitOutcome, emitMachine, emitCommand = op.Kind, "sent", machine, op.CommandID
-				return nil
-			})
+	var sessAudits []statedb.AuditStored
+	doneCh, submitErr := f.store.SubmitHook(ctx, statedb.WithAuditCapture(ctx, func(tx *sql.Tx) error {
+		machine, err := resolveSession(ctx, tx, sessionID)
+		if err != nil {
+			return err
+		}
+		if op, replay, err := checkRequest(ctx, tx, actor, requestID, sum[:]); err != nil || replay {
 			if err != nil {
 				return err
 			}
-			// A submitted job can commit after the RPC context is cancelled.
-			// Always await the writer's definitive outcome before reading its
-			// outputs and waking delivery of a new row.
-			return <-done
-		},
-		func() {
-			// A replayed gating sends nothing new: only a fresh
-			// queue publishes its operation.
-			if queued.Created {
-				f.publishOperationWatch(queued.HubSeq, out)
+			if err := quotaCheckpoint(ctx, quotaWrite); err != nil {
+				return err
 			}
-		},
-	)
-	if commitErr != nil {
+			out = op
+			emitKind, emitOutcome = outbox.KindName(cmd), "replayed"
+			return nil
+		}
+		cmd.RequestedBy = who
+		cmd.IssuedTime = timestamppb.New(now)
+		op, err := outbox.Enqueue(ctx, tx, outbox.In{
+			MachineID: machine, Command: cmd, RequestID: requestID, Now: now,
+			Checkpoint: func() error { return quotaCheckpoint(ctx, quotaWrite) },
+		})
+		if err != nil {
+			return mapOutboxError(err)
+		}
+		if err := logRequest(ctx, tx, actor, requestID, op.CommandID, sum[:], now); err != nil {
+			return err
+		}
+		if _, err := statedb.AppendAudit(ctx, tx, statedb.AuditEntry{
+			Actor: actorOf(who), Action: auditAction, Target: "sessions/" + sessionID,
+			CommandID: op.CommandID, RequestID: requestID, Now: now,
+		}); err != nil {
+			return err
+		}
+		out, err = operationFromOp(ctx, tx, op, machine, who, requestID, now)
+		if err != nil {
+			return err
+		}
+		queued = op
+		emitKind, emitOutcome, emitMachine, emitCommand = op.Kind, "sent", machine, op.CommandID
+		return nil
+	}, &sessAudits), func() {
+		// Runs on the writer in commit order (#393).
+		// A replayed gating sends nothing new: only a fresh
+		// queue publishes its operation.
+		if queued.Created {
+			f.publishOperationWatch(queued.HubSeq, out)
+		}
+		// The job's own audits publish here, after its resources, in
+		// batch order: a resume never skips them (#403).
+		f.publishAudits(sessAudits)
+	})
+	if submitErr != nil {
+		return nil, f.storeError(ctx, actor, submitErr)
+	}
+	// A submitted job can commit after the RPC context is cancelled.
+	// Always await the writer's definitive outcome before reading its
+	// outputs and waking delivery of a new row. The hook already ran:
+	// flush publishes before it signals done.
+	if commitErr := <-doneCh; commitErr != nil {
 		return nil, f.storeError(ctx, actor, commitErr)
 	}
 	if queued.Created && f.onCommandQueued != nil {

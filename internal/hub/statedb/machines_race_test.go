@@ -46,7 +46,7 @@ func TestConcurrentFirstEnrollsMakeOneMachine(t *testing.T) {
 			errs := make([]error, 2)
 			var wg sync.WaitGroup
 			for i := range 2 {
-				wg.Go(func() { results[i], errs[i] = statedb.Enroll(ctx, s, newMachine(keys[i], ids[i], beforeTTL)) })
+				wg.Go(func() { results[i], errs[i] = statedb.Enroll(ctx, s, newMachine(keys[i], ids[i], beforeTTL), nil) })
 			}
 			wg.Wait()
 			won := 0
@@ -82,7 +82,7 @@ func TestTheWriterJobRechecksExpiry(t *testing.T) {
 	t.Parallel()
 	dir, s := tokenStore(t)
 	key := enrollKey("install-1", 1)
-	if _, err := statedb.Enroll(context.Background(), s, newMachine(key, "01jmachine0000000000000001", notAfter)); !errors.Is(err, statedb.ErrTokenExpired) {
+	if _, err := statedb.Enroll(context.Background(), s, newMachine(key, "01jmachine0000000000000001", notAfter), nil); !errors.Is(err, statedb.ErrTokenExpired) {
 		t.Fatalf("Enroll at not_after = %v, want ErrTokenExpired", err)
 	}
 	if err := s.Close(); err != nil {
@@ -166,7 +166,7 @@ func TestOpenMigratesAStoreFromTheEnrollTokenSchema(t *testing.T) {
 	if err := statedb.InsertEnrollToken(context.Background(), s, sampleToken("local:a", "r", 1)); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := statedb.Enroll(context.Background(), s, newMachine(enrollKey("i", 1), "01jmachine0000000000000001", beforeTTL)); err != nil {
+	if _, err := statedb.Enroll(context.Background(), s, newMachine(enrollKey("i", 1), "01jmachine0000000000000001", beforeTTL), nil); err != nil {
 		t.Errorf("Enroll after migration: %v", err)
 	}
 }

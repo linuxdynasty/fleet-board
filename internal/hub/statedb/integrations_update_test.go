@@ -31,7 +31,7 @@ func TestUpdateIntegrationSpecStampsAuditsAndLists(t *testing.T) {
 	stored, err := statedb.UpdateIntegrationSpec(ctx, s, statedb.UpdateIntegrationOp{
 		ConfigWrite: configWrite("local:alice", "req-1", 'a'), ID: "github",
 		Merge: integrationMerge("GitHub", `{"label":"GitHub"}`),
-	})
+	}, nil)
 	if err != nil || stored.Replay {
 		t.Fatalf("update = %+v/%v, want success", stored, err)
 	}
@@ -59,7 +59,7 @@ func TestUpdateIntegrationSpecRefusesUnknownStaleAndConflict(t *testing.T) {
 		_, err := statedb.UpdateIntegrationSpec(ctx, s, statedb.UpdateIntegrationOp{
 			ConfigWrite: configWrite("local:alice", req, body), ID: id,
 			ExpectedVersion: expected, Merge: integrationMerge("GitHub", `{"label":"GitHub"}`),
-		})
+		}, nil)
 		return err
 	}
 	if err := op("gitlab", "req-1", 'a', 0); !errors.Is(err, statedb.ErrIntegrationUnknown) {
@@ -75,14 +75,14 @@ func TestUpdateIntegrationSpecRefusesUnknownStaleAndConflict(t *testing.T) {
 	replayed, err := statedb.UpdateIntegrationSpec(ctx, s, statedb.UpdateIntegrationOp{
 		ConfigWrite: configWrite("local:alice", "req-2", 'b'), ID: "github",
 		Merge: integrationMerge("GitHub", `{"label":"GitHub"}`),
-	})
+	}, nil)
 	if err != nil || !replayed.Replay || replayed.Version != 2 {
 		t.Errorf("replay = %+v/%v, want version 2 marked replay", replayed, err)
 	}
 	if _, err := statedb.UpdateIntegrationSpec(ctx, s, statedb.UpdateIntegrationOp{
 		ConfigWrite: configWrite("local:alice", "req-2", 'd'), ID: "github",
 		Merge: integrationMerge("GitHub", `{"label":"GitHub"}`),
-	}); !errors.Is(err, statedb.ErrRequestConflict) {
+	}, nil); !errors.Is(err, statedb.ErrRequestConflict) {
 		t.Errorf("conflict = %v, want ErrRequestConflict", err)
 	}
 }
@@ -103,7 +103,7 @@ func TestUpdateIntegrationReplayReturnsTheOriginalStatus(t *testing.T) {
 		return statedb.UpdateIntegrationSpec(ctx, s, statedb.UpdateIntegrationOp{
 			ConfigWrite: configWrite("local:alice", req, body), ID: "github",
 			Merge: integrationMerge("GitHub", `{"label":"GitHub"}`),
-		})
+		}, nil)
 	}
 	first, err := op("req-1", 'a')
 	if err != nil || first.Replay {

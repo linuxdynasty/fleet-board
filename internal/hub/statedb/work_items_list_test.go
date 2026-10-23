@@ -27,7 +27,7 @@ func TestWorkItemListAndRead(t *testing.T) {
 		}
 	}
 	if _, err := statedb.UpsertWorkItemPage(ctx, s, "github-1",
-		[]statedb.WorkItemMirror{mirror("7398", 2), mirror("7400", 9)}, nil, nil, 60); err != nil {
+		[]statedb.WorkItemMirror{mirror("7398", 2), mirror("7400", 9)}, nil, nil, 60, nil); err != nil {
 		t.Fatal(err)
 	}
 

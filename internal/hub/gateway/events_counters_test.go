@@ -27,6 +27,15 @@ func TestARiseOfEvictedInAHeartbeatAsksForASnapshotAtMostEveryFiveMinutes(t *tes
 	h.waitRow(t, m.id, "ONLINE", func(r machineRow) bool { return r.state == "ONLINE" })
 	s.send(t, eventMsg(11, false))
 	h.waitSeq(t, m.id, 11)
+	// The backlog gauge reads the stream's settled seq, which the settle
+	// loop updates just before it sends the ack: wait for the ack, not
+	// just the store row, or a fast Heartbeat is judged against a stale
+	// zero and the backlog reads 25 instead of 14.
+	for {
+		if a := s.nextAny(t).GetEventAck(); a != nil && a.GetLastEventSeq() >= 11 {
+			break
+		}
+	}
 	s.send(t, beatWith(25, 2))
 	if r := s.next(t).GetSnapshotRequest(); r.GetReason() != "event_lost" {
 		t.Fatalf("got %v, want SnapshotRequest{event_lost}", r)

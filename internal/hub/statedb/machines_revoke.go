@@ -211,13 +211,13 @@ func precheckRevokeTx(ctx context.Context, tx *sql.Tx, w MachineWrite, machineID
 // land with the dispatch and attach rows that own them; Terminal and
 // SessionLog are unimplemented, so closing the live stream is the
 // caller's after-commit effect with Bye{REVOKED}.
-func RevokeMachine(ctx context.Context, s *store.Store, in MachineRevoke) (RevokedMachine, error) {
+func RevokeMachine(ctx context.Context, s *store.Store, in MachineRevoke, onCommit func(RevokedMachine)) (RevokedMachine, error) {
 	if in.CloseOpen == nil {
 		return RevokedMachine{}, errors.New("statedb: revoke needs its outbox closer")
 	}
 	jctx := context.WithoutCancel(ctx) // see insertIdentity
 	var out RevokedMachine
-	err := s.Write(ctx, func(tx *sql.Tx) error {
+	err := writeOrdered(ctx, s, &out, onCommit, func(tx *sql.Tx) error {
 		if replay, err := checkMachineReplay(jctx, tx, in.MachineWrite, machineKindRevoke, in.MachineID); err != nil || replay != nil {
 			if err == nil {
 				if err := validatedWrite(jctx); err != nil {
@@ -252,6 +252,11 @@ func RevokeMachine(ctx context.Context, s *store.Store, in MachineRevoke) (Revok
 				return err
 			}
 			out = RevokedMachine{Machine: rev, Serials: serials}
+			// No new stamp here; capture the current row so the hook
+			// publishes the same state a re-read would have (#403).
+			if row, rerr := readMachineRowTx(jctx, tx, in.MachineID); rerr == nil {
+				out.Machine.Row = row
+			}
 			return logMachineRequest(jctx, tx, in.MachineWrite, machineKindRevoke, rev, false)
 		}
 		if err := checkVersion(got.Version, in.ExpectedVersion, "machine"); err != nil {
@@ -288,6 +293,12 @@ func RevokeMachine(ctx context.Context, s *store.Store, in MachineRevoke) (Revok
 				RevokeReason: in.Reason,
 			},
 			Serials: serials, Closed: closed,
+		}
+		// Capture the after-image in-tx for the Watch publish (#403).
+		if row, rerr := readMachineRowTx(jctx, tx, in.MachineID); rerr != nil {
+			return rerr
+		} else {
+			out.Machine.Row = row
 		}
 		if err := auditMachine(jctx, tx, ActionMachineRevoke, out.Machine, in.MachineWrite,
 			map[string]string{"reason": in.Reason}); err != nil {
@@ -326,11 +337,11 @@ func actorOrPrincipal(w MachineWrite) Actor {
 // stamp (a resume orders the DELETED after every earlier change, as the
 // repo delete does), and the full list row beside it for the Watch
 // DELETED message; both carry Deleted.
-func DeleteMachine(ctx context.Context, s *store.Store, in MachineDelete) (MachineStored, MachineRow, error) {
+func DeleteMachine(ctx context.Context, s *store.Store, in MachineDelete, onCommit func(MachineStored, MachineRow)) (MachineStored, MachineRow, error) {
 	jctx := context.WithoutCancel(ctx) // see insertIdentity
 	var out MachineStored
 	var row MachineRow
-	err := s.Write(ctx, func(tx *sql.Tx) error {
+	apply := func(tx *sql.Tx) error {
 		if replay, err := checkMachineReplay(jctx, tx, in.MachineWrite, machineKindDelete, in.MachineID); err != nil || replay != nil {
 			if err == nil {
 				if err := validatedWrite(jctx); err != nil {
@@ -388,7 +399,19 @@ func DeleteMachine(ctx context.Context, s *store.Store, in MachineDelete) (Machi
 			return err
 		}
 		return logMachineRequest(jctx, tx, in.MachineWrite, machineKindDelete, out, true)
-	})
+	}
+	var audits []AuditStored
+	var err error
+	if onCommit == nil {
+		err = s.Write(ctx, apply)
+	} else {
+		err = s.WriteHook(ctx, WithAuditCapture(jctx, apply, &audits), func() {
+			onCommit(out, row)
+			// The job's own audits publish here, after its resource, in
+			// batch order: a resume never skips them (#403).
+			PublishAudits(s, audits)
+		})
+	}
 	if err != nil {
 		return MachineStored{}, MachineRow{}, err
 	}

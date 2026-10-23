@@ -229,10 +229,11 @@ func AppendAudit(ctx context.Context, tx *sql.Tx, e AuditEntry) (int64, error) {
 }
 
 // WriteAudit appends entries in one writer job of their own, for a step that
-// changes nothing else (a refused Enroll). All are written or none.
+// changes nothing else (a refused Enroll). All are written or none. The
+// hook publishes them in batch order (#403), never late through the tick.
 func WriteAudit(ctx context.Context, s *store.Store, entries ...AuditEntry) error {
 	jctx := context.WithoutCancel(ctx) // see insertIdentity
-	return s.Write(ctx, func(tx *sql.Tx) error {
+	return writeHooked(ctx, s, func(tx *sql.Tx) error {
 		for _, e := range entries {
 			if _, err := AppendAudit(jctx, tx, e); err != nil {
 				return err

@@ -88,7 +88,7 @@ func Renew(ctx context.Context, s *store.Store, r Renewal) (Renewed, error) {
 	}
 	jctx := context.WithoutCancel(ctx) // see insertIdentity
 	var got Renewed
-	err = s.Write(ctx, func(tx *sql.Tx) error {
+	err = writeHooked(ctx, s, func(tx *sql.Tx) error {
 		stored, err := checkRenewal(jctx, tx, r)
 		if err != nil || stored != nil {
 			if stored != nil {

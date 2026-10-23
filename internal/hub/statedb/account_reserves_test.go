@@ -29,7 +29,7 @@ func TestAccountReserveHistoryRecordsCreateAndUpdate(t *testing.T) {
 			ConfigWrite: w, ID: "acc-res-1", Harness: "opencode", Provider: "anthropic",
 			DisplayName: "work", Origin: statedb.AccountOriginOwner,
 			Spec: []byte(`{"displayName":"work","reservePercent":` + reserve + `}`),
-		}); err != nil {
+		}, nil); err != nil {
 			t.Fatalf("CreateOwnerAccount: %v", err)
 		}
 	}
@@ -42,7 +42,7 @@ func TestAccountReserveHistoryRecordsCreateAndUpdate(t *testing.T) {
 		w.Now = at
 		if _, err := statedb.UpdateOwnerAccount(ctx, s, statedb.UpdateAccountOp{
 			ConfigWrite: w, ID: "acc-res-1", ExpectedVersion: 0, Merge: merge,
-		}); err != nil {
+		}, nil); err != nil {
 			t.Fatalf("UpdateOwnerAccount: %v", err)
 		}
 	}

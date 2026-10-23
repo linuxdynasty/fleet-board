@@ -36,7 +36,7 @@ func createRepo(t *testing.T, s *store.Store, w statedb.RepoWrite) statedb.RepoS
 		RepoWrite: w,
 		Host:      "github.com", Path: "acme/api", CodeHost: "github",
 		Enabled: true, Spec: []byte(`{"enabled":true}`),
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("CreateWatchedRepo: %v", err)
 	}
@@ -63,7 +63,7 @@ func TestCreateWatchedRepoInsertsVersion1AndAudits(t *testing.T) {
 		RepoWrite: repoWrite("local:alice", "req-1", 1),
 		Host:      "github.com", Path: "acme/api", CodeHost: "github",
 		Enabled: true, Spec: []byte(`{"enabled":true}`),
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("CreateWatchedRepo: %v", err)
 	}
@@ -103,7 +103,7 @@ func TestCreateWatchedRepoReplayReturnsTheStoredRow(t *testing.T) {
 		RepoWrite: repoWrite("local:alice", "req-1", 1),
 		Host:      "github.com", Path: "acme/api", CodeHost: "github",
 		Enabled: true, Spec: []byte(`{"enabled":true}`),
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("replay create: %v", err)
 	}
@@ -126,7 +126,7 @@ func TestCreateWatchedRepoRefusesAReusedRequestID(t *testing.T) {
 		RepoWrite: repoWrite("local:alice", "req-1", 2),
 		Host:      "github.com", Path: "acme/api", CodeHost: "github",
 		Enabled: true, Spec: []byte(`{"enabled":false}`),
-	})
+	}, nil)
 	if !errors.Is(err, statedb.ErrRequestConflict) {
 		t.Errorf("reused request_id with another body = %v, want ErrRequestConflict", err)
 	}
@@ -140,7 +140,7 @@ func TestCreateWatchedRepoRefusesAnExistingRepo(t *testing.T) {
 		RepoWrite: repoWrite("local:alice", "req-2", 1),
 		Host:      "github.com", Path: "acme/api", CodeHost: "github",
 		Enabled: true, Spec: []byte(`{"enabled":true}`),
-	})
+	}, nil)
 	if !errors.Is(err, statedb.ErrRepoExists) {
 		t.Errorf("second create = %v, want ErrRepoExists", err)
 	}
@@ -243,7 +243,7 @@ func TestDeleteWatchedRepoRemovesTheRowAndAudits(t *testing.T) {
 	got, err := statedb.DeleteWatchedRepo(context.Background(), s, statedb.DeleteRepo{
 		RepoWrite: repoWrite("local:alice", "req-2", 6),
 		Host:      "github.com", Path: "acme/api", ExpectedVersion: 1,
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("DeleteWatchedRepo: %v", err)
 	}
@@ -269,12 +269,12 @@ func TestDeleteWatchedRepoReplayDeletesNothingTwice(t *testing.T) {
 	w := repoWrite("local:alice", "req-2", 6)
 	if _, err := statedb.DeleteWatchedRepo(context.Background(), s, statedb.DeleteRepo{
 		RepoWrite: w, Host: "github.com", Path: "acme/api", ExpectedVersion: 1,
-	}); err != nil {
+	}, nil); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
 	again, err := statedb.DeleteWatchedRepo(context.Background(), s, statedb.DeleteRepo{
 		RepoWrite: w, Host: "github.com", Path: "acme/api", ExpectedVersion: 1,
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("replay delete: %v", err)
 	}

@@ -143,7 +143,7 @@ func seedMachine(t *testing.T, dir string) {
 		Key:       statedb.EnrollKey{SecretHash: hash, InstallID: "cli-seed-install", CSRKeyHash: hash},
 		MachineID: seed.MachineLaptop, CertDER: []byte("cli-seed-cert"), Serial: "cli-seed-serial",
 		CertNotAfter: now.Add(time.Hour), ReportedHostname: "laptop.lan", Facts: seed.LaptopFacts, Now: now,
-	})
+	}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -160,7 +160,7 @@ func seedMachine(t *testing.T, dir string) {
 		MachineID: seed.MachineServer, CertDER: []byte("cli-seed-server-cert"), Serial: "cli-seed-server-serial",
 		CertNotAfter: now.Add(time.Hour), ReportedHostname: "server.lan",
 		Facts: `{"hostname":"server.lan"}`, Now: now,
-	})
+	}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -193,7 +193,7 @@ func seedMachine(t *testing.T, dir string) {
 		ID: "cli-account", Harness: "codex", Provider: "openai", DisplayName: "test account",
 		Origin: statedb.AccountOriginOwner,
 		Spec:   []byte(`{"displayName":"test account","mode":"ACCOUNT_MODE_INTERACTIVE_ONLY"}`),
-	})
+	}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -211,7 +211,7 @@ func seedMachine(t *testing.T, dir string) {
 		Integration: "github-1", Kind: "WORK_ITEM_KIND_ISSUE", Project: "acme/web", ItemKey: "7398",
 		ItemJSON: []byte(`{"title":"Fix\n\u001b[31m the parser"}`), UpdateMs: now.UnixMilli(), Stage: 2,
 		TrustJSON: []byte(`{"trusted":true}`),
-	}}, nil, nil, now.UnixMilli()); err != nil {
+	}}, nil, nil, now.UnixMilli(), nil); err != nil {
 		t.Fatal(err)
 	}
 	if err := st.Write(t.Context(), func(tx *sql.Tx) error {

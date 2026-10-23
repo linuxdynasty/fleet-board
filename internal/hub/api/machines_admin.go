@@ -286,19 +286,23 @@ func (f *Fleet) UpdateMachine(ctx context.Context, req *connect.Request[hubv1.Up
 		preRow = &pre
 	}
 	writeCtx := statedb.WithValidatedWrite(ctx, func() error { return quotaCheckpoint(ctx, quotaWrite) })
+	pctx := context.WithoutCancel(ctx) // the publish hook runs on the writer after the handler may have left
 	var stored statedb.MachineStored
-	if err := f.commitWatch(
-		func() error {
-			var err error
-			stored, err = statedb.UpdateMachine(writeCtx, f.store, in)
-			return err
-		},
-		func() {
-			f.publishMachineWatch(ctx, id, hubv1.ChangeType_CHANGE_TYPE_UPDATED,
-				machineOldRow(preRow, stored), stored.Replay)
-		},
-	); err != nil {
-		return nil, f.machineWriteError(ctx, opMachineUpdate, "update", actor, machineStoreError("update", err))
+	{
+		var err error
+		stored, err = statedb.UpdateMachine(writeCtx, f.store, in, func(s statedb.MachineStored) {
+			// Runs on the writer in commit order (#393). The row was
+			// captured in-tx: publishing it never touches the read pool,
+			// so the hook cannot deadlock the writer, and a later job in
+			// the same batch cannot steal this job's transition (#403).
+			if s.Replay {
+				return
+			}
+			f.publishMachineWatchRow(pctx, s.Row, hubv1.ChangeType_CHANGE_TYPE_UPDATED, machineOldRow(preRow, s))
+		})
+		if err != nil {
+			return nil, f.machineWriteError(ctx, opMachineUpdate, "update", actor, machineStoreError("update", err))
+		}
 	}
 	f.machineWrote(ctx, opMachineUpdate, actor, id, stored.Version, stored.Replay)
 	return connect.NewResponse(&hubv1.UpdateMachineResponse{Machine: machineFromStored(stored)}), nil
@@ -420,29 +424,32 @@ func (f *Fleet) RevokeMachine(ctx context.Context, req *connect.Request[hubv1.Re
 		preRow = &pre
 	}
 	writeCtx := statedb.WithValidatedWrite(jctx, func() error { permit.consume(); return nil })
+	pctx := context.WithoutCancel(jctx) // the publish hook runs on the writer after the handler may have left
 	var revoked statedb.RevokedMachine
-	if err := f.commitWatch(
-		func() error {
-			var err error
-			revoked, err = statedb.RevokeMachine(writeCtx, f.store, statedb.MachineRevoke{
-				MachineWrite:    write,
-				MachineID:       id,
-				ExpectedVersion: m.GetExpectedVersion(), Reason: m.GetReason(),
-				CloseOpen: closeOpenForRevoke,
-			})
-			return err
-		},
-		func() {
-			f.publishMachineWatch(jctx, id, hubv1.ChangeType_CHANGE_TYPE_UPDATED,
-				machineOldRow(preRow, revoked.Machine), revoked.Machine.Replay)
-		},
-	); err != nil {
-		var stale *statedb.VersionStale
-		if errors.Is(err, statedb.ErrMachineUnknown) || errors.Is(err, statedb.ErrRequestConflict) ||
-			errors.As(err, &stale) {
-			permit.refund()
+	{
+		var err error
+		revoked, err = statedb.RevokeMachine(writeCtx, f.store, statedb.MachineRevoke{
+			MachineWrite:    write,
+			MachineID:       id,
+			ExpectedVersion: m.GetExpectedVersion(), Reason: m.GetReason(),
+			CloseOpen: closeOpenForRevoke,
+		}, func(r statedb.RevokedMachine) {
+			// Runs on the writer in commit order (#393). The row was
+			// captured in-tx (#403).
+			if r.Machine.Replay {
+				return
+			}
+			f.publishMachineWatchRow(pctx, r.Machine.Row, hubv1.ChangeType_CHANGE_TYPE_UPDATED,
+				machineOldRow(preRow, r.Machine))
+		})
+		if err != nil {
+			var stale *statedb.VersionStale
+			if errors.Is(err, statedb.ErrMachineUnknown) || errors.Is(err, statedb.ErrRequestConflict) ||
+				errors.As(err, &stale) {
+				permit.refund()
+			}
+			return nil, f.machineWriteError(jctx, opMachineRevoke, "revoke", actor, machineStoreError("revoke", err))
 		}
-		return nil, f.machineWriteError(jctx, opMachineRevoke, "revoke", actor, machineStoreError("revoke", err))
 	}
 	if err := f.stageMissing(revoked.Serials); err != nil {
 		f.deliverClosed(jctx, revoked, now)

@@ -30,7 +30,7 @@ func TestWatchedRepoListReadsEveryRow(t *testing.T) {
 			},
 			Host: host, Path: path, CodeHost: "github", Enabled: true,
 			Spec: []byte(spec),
-		}); err != nil {
+		}, nil); err != nil {
 			t.Fatalf("CreateWatchedRepo %s/%s: %v", host, path, err)
 		}
 	}

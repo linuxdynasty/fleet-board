@@ -256,10 +256,10 @@ func urlHost(base string) string {
 // is inserted at version 1, stamped, with its repo.create audit row.
 // Nothing is written on any error. The unique key on (principal,
 // request_id) backs the replay check up.
-func CreateWatchedRepo(ctx context.Context, s *store.Store, in CreateRepo) (RepoStored, error) {
+func CreateWatchedRepo(ctx context.Context, s *store.Store, in CreateRepo, onCommit func(RepoStored)) (RepoStored, error) {
 	jctx := context.WithoutCancel(ctx) // see insertIdentity
 	var out RepoStored
-	err := s.Write(ctx, func(tx *sql.Tx) error {
+	err := writeOrdered(ctx, s, &out, onCommit, func(tx *sql.Tx) error {
 		if replay, err := checkRepoReplay(jctx, tx, in.RepoWrite, in.Host, in.Path); err != nil || replay != nil {
 			if err == nil {
 				if err := validatedWrite(jctx); err != nil {
@@ -331,10 +331,10 @@ type MaskedUpdate struct {
 // [VersionConflict]. Otherwise the merged spec replaces the stored one,
 // the version rises by 1 and the row is stamped, with its repo.update
 // audit row.
-func UpdateWatchedRepoMasked(ctx context.Context, s *store.Store, in MaskedUpdate) (RepoStored, error) {
+func UpdateWatchedRepoMasked(ctx context.Context, s *store.Store, in MaskedUpdate, onCommit func(RepoStored)) (RepoStored, error) {
 	jctx := context.WithoutCancel(ctx) // see insertIdentity
 	var out RepoStored
-	err := s.Write(ctx, func(tx *sql.Tx) error {
+	err := writeOrdered(ctx, s, &out, onCommit, func(tx *sql.Tx) error {
 		if replay, err := checkRepoReplay(jctx, tx, in.RepoWrite, in.Host, in.Path); err != nil || replay != nil {
 			if err == nil {
 				if err := validatedWrite(jctx); err != nil {
@@ -393,10 +393,10 @@ func UpdateWatchedRepoMasked(ctx context.Context, s *store.Store, in MaskedUpdat
 // [ErrRepoUnknown], a stale version is [VersionConflict]. Otherwise the
 // row is deleted with its repo.delete audit row; the run's goals continue
 // and its mirrors age out like any unwatched item (repo.proto).
-func DeleteWatchedRepo(ctx context.Context, s *store.Store, in DeleteRepo) (RepoStored, error) {
+func DeleteWatchedRepo(ctx context.Context, s *store.Store, in DeleteRepo, onCommit func(RepoStored)) (RepoStored, error) {
 	jctx := context.WithoutCancel(ctx) // see insertIdentity
 	var out RepoStored
-	err := s.Write(ctx, func(tx *sql.Tx) error {
+	err := writeOrdered(ctx, s, &out, onCommit, func(tx *sql.Tx) error {
 		if replay, err := checkRepoReplay(jctx, tx, in.RepoWrite, in.Host, in.Path); err != nil || replay != nil {
 			if err == nil {
 				if err := validatedWrite(jctx); err != nil {

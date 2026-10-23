@@ -93,7 +93,7 @@ parses flags and calls `Init`, `Run`, `EnrollToken`, `Backup` or `Restore`.
    the stream cut at 3 min, a stalled `STALE` stream cut), `outbox_expiry`
    (every open command whose deadline came is closed `EXPIRED`) and, hourly,
    `outbox_prune` (commands closed more than 30 days ago). `watch_publish`
-   runs the Fleet publish tick (the audit tail, the volatile flush and a
+   runs the Fleet publish tick (the volatile flush and a
    dirty summary). Later plan rows add their prune jobs to the same list.
 11. Stops: shuts the listeners down at the same time (one 10 s grace for
    all, so the agent listener's handler wait does not eat the others'; then

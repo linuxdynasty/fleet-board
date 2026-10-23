@@ -20,6 +20,7 @@ import (
 	typev1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/type/v1"
 	"github.com/linuxdynasty/fleet-board/internal/hub/approvals"
 	"github.com/linuxdynasty/fleet-board/internal/hub/outbox"
+	"github.com/linuxdynasty/fleet-board/internal/hub/statedb"
 )
 
 // authorizeApprovals admits the caller for ListApprovals, GetApproval and
@@ -55,7 +56,9 @@ func (f *Fleet) ListApprovals(ctx context.Context, req *connect.Request[hubv1.Li
 	now := f.hubNow()
 	var list []*hubv1.Approval
 	var next string
-	err := f.store.Write(ctx, func(tx *sql.Tx) error {
+	// A read that lazily expires: the expiry audits publish through the
+	// job's hook in writer order (#403).
+	err := statedb.WriteHooked(ctx, f.store, func(tx *sql.Tx) error {
 		filter := approvals.Filter{PageSize: int(size), PageToken: m.GetPageToken()}
 		// Validate the cursor before quota admission without reading rows.
 		// ExpireDue below is the first effect in this writer job.
@@ -94,7 +97,9 @@ func (f *Fleet) GetApproval(ctx context.Context, req *connect.Request[hubv1.GetA
 	}
 	now := f.hubNow()
 	var got *hubv1.Approval
-	err := f.store.Write(ctx, func(tx *sql.Tx) error {
+	// A read that lazily expires: the expiry audits publish through the
+	// job's hook in writer order (#403).
+	err := statedb.WriteHooked(ctx, f.store, func(tx *sql.Tx) error {
 		// Zero time asks Get to check the id without lazy expiry. An
 		// exhausted quota must not write an expiration audit row.
 		if _, err := approvals.Get(ctx, tx, req.Msg.GetId().GetValue(), time.Time{}); err != nil {
@@ -160,57 +165,56 @@ func (f *Fleet) DecideApproval(ctx context.Context, req *connect.Request[hubv1.D
 	var outcome approvals.Outcome
 	var sent *hubv1.Operation
 	var sentKind string
-	commitErr := f.commitWatch(
-		func() error {
-			return f.store.Write(ctx, func(tx *sql.Tx) error {
-				var err error
-				outcome, err = approvals.Decide(ctx, tx, approvals.DecideInput{
-					ID: m.GetId().GetValue(), ExpectedVersion: m.GetExpectedVersion(), Decision: m.GetDecision(),
-					Decider: who, Actor: actorOf(who), RequestID: m.GetRequestId(), Now: now,
-					BeforeDecision: func(a *hubv1.Approval, promptID string) error {
-						cmd, err := commandForDecision(ctx, tx, a, m.GetDecision(), promptID)
-						if err != nil || cmd == nil {
-							return err
-						}
-						cmd.RequestedBy = who
-						cmd.IssuedTime = timestamppb.New(now)
-						return mapOutboxError(outbox.CheckEnqueue(ctx, tx, outbox.In{
-							MachineID: a.GetMachine().GetValue(), Command: cmd, RequestID: m.GetRequestId(), Now: now,
-						}))
-					},
-					Checkpoint: func() error { return quotaCheckpoint(ctx, quotaWrite) },
-				})
+	var decideAudits []statedb.AuditStored
+	if commitErr := f.store.WriteHook(ctx, statedb.WithAuditCapture(ctx, func(tx *sql.Tx) error {
+		var err error
+		outcome, err = approvals.Decide(ctx, tx, approvals.DecideInput{
+			ID: m.GetId().GetValue(), ExpectedVersion: m.GetExpectedVersion(), Decision: m.GetDecision(),
+			Decider: who, Actor: actorOf(who), RequestID: m.GetRequestId(), Now: now,
+			BeforeDecision: func(a *hubv1.Approval, promptID string) error {
+				cmd, err := commandForDecision(ctx, tx, a, m.GetDecision(), promptID)
+				if err != nil || cmd == nil {
+					return err
+				}
+				cmd.RequestedBy = who
+				cmd.IssuedTime = timestamppb.New(now)
+				return mapOutboxError(outbox.CheckEnqueue(ctx, tx, outbox.In{
+					MachineID: a.GetMachine().GetValue(), Command: cmd, RequestID: m.GetRequestId(), Now: now,
+				}))
+			},
+			Checkpoint: func() error { return quotaCheckpoint(ctx, quotaWrite) },
+		})
+		if err != nil {
+			return err
+		}
+		if outcome.Replay {
+			// A retry returns the stored response, operation included
+			// (02b idempotency): nothing is decided or sent twice.
+			if outcome.Sends && outcome.OperationID != "" {
+				sent, err = loadOperation(ctx, tx, outcome.OperationID)
 				if err != nil {
 					return err
 				}
-				if outcome.Replay {
-					// A retry returns the stored response, operation included
-					// (02b idempotency): nothing is decided or sent twice.
-					if outcome.Sends && outcome.OperationID != "" {
-						sent, err = loadOperation(ctx, tx, outcome.OperationID)
-						if err != nil {
-							return err
-						}
-					}
-					return nil
-				}
-				if !outcome.Sends {
-					return nil
-				}
-				sent, sentKind, err = f.sendDecided(ctx, tx, who, outcome, m.GetRequestId(), now)
-				if err != nil {
-					return err
-				}
-				// Reload: the attach stamped the sent operation onto the row.
-				outcome.Approval, err = approvals.Get(ctx, tx, outcome.Approval.GetId().GetValue(), now)
-				return err
-			})
-		},
-		func() {
-			f.publishApprovalWatch(outcome.HubSeq, outcome.Approval, hubv1.ChangeType_CHANGE_TYPE_UPDATED, outcome.Replay)
-		},
-	)
-	if commitErr != nil {
+			}
+			return nil
+		}
+		if !outcome.Sends {
+			return nil
+		}
+		sent, sentKind, err = f.sendDecided(ctx, tx, who, outcome, m.GetRequestId(), now)
+		if err != nil {
+			return err
+		}
+		// Reload: the attach stamped the sent operation onto the row.
+		outcome.Approval, err = approvals.Get(ctx, tx, outcome.Approval.GetId().GetValue(), now)
+		return err
+	}, &decideAudits), func() {
+		// Runs on the writer in commit order (#393).
+		f.publishApprovalWatch(outcome.HubSeq, outcome.Approval, hubv1.ChangeType_CHANGE_TYPE_UPDATED, outcome.Replay)
+		// The job's own audits publish here, after its resources, in
+		// batch order: a resume never skips them (#403).
+		f.publishAudits(decideAudits)
+	}); commitErr != nil {
 		return nil, f.decideStoreError(ctx, commitErr)
 	}
 	kind := approvalKindAttr(outcome.Approval.GetKind())
@@ -348,60 +352,55 @@ func (f *Fleet) gateCommand(ctx context.Context, who *typev1.Principal, req prot
 	var approval *hubv1.Approval
 	var fresh *hubv1.Approval
 	var freshSeq int64
-	commitErr := f.commitWatch(
-		func() error {
-			return f.store.Write(ctx, func(tx *sql.Tx) error {
-				machine, err := resolveSession(ctx, tx, sessionID)
-				if err != nil {
-					return err
-				}
-				if id, replay, err := checkGateReplay(ctx, tx, actor, requestID, sum[:]); err != nil || replay {
-					if err != nil {
-						return err
-					}
-					// The first read checks the stored id without expiring it.
-					if _, err := approvals.Get(ctx, tx, id, time.Time{}); err != nil {
-						return err
-					}
-					if err := quotaCheckpoint(ctx, quotaWrite); err != nil {
-						return err
-					}
-					approval, err = approvals.Get(ctx, tx, id, now)
-					return err
-				}
-				created, seq, err := approvals.CreateApproval(ctx, tx, approvals.Create{
-					Kind:      hubv1.ApprovalKind_APPROVAL_KIND_COMMAND_CONFIRM,
-					Severity:  hubv1.Severity_SEVERITY_WARNING,
-					Preview:   truncatePreview(preview),
-					MachineID: machine, SessionID: sessionID, Pane: pane,
-					Allowed:       []approvals.Choice{{Key: "approve"}, {Key: "deny"}},
-					DefaultChoice: "deny",
-					Fallback:      hubv1.ApprovalFallback_APPROVAL_FALLBACK_DENY,
-					ExpireTime:    now.Add(approvalTimeout),
-					RequiredRole:  typev1.Role_ROLE_OWNER,
-					Command:       cmd,
-					Now:           now,
-					Checkpoint:    func() error { return quotaCheckpoint(ctx, quotaWrite) },
-				})
-				if err != nil {
-					return err
-				}
-				if err := logGate(ctx, tx, actor, requestID, created.GetId().GetValue(), sum[:], now); err != nil {
-					return err
-				}
-				approval, fresh = created, created
-				freshSeq = seq
-				return nil
-			})
-		},
-		func() {
-			// A replayed gating raises nothing new: fresh stays nil.
-			if fresh != nil {
-				f.publishApprovalWatch(freshSeq, fresh, hubv1.ChangeType_CHANGE_TYPE_CREATED, false)
+	if commitErr := f.store.WriteHook(ctx, func(tx *sql.Tx) error {
+		machine, err := resolveSession(ctx, tx, sessionID)
+		if err != nil {
+			return err
+		}
+		if id, replay, err := checkGateReplay(ctx, tx, actor, requestID, sum[:]); err != nil || replay {
+			if err != nil {
+				return err
 			}
-		},
-	)
-	if commitErr != nil {
+			// The first read checks the stored id without expiring it.
+			if _, err := approvals.Get(ctx, tx, id, time.Time{}); err != nil {
+				return err
+			}
+			if err := quotaCheckpoint(ctx, quotaWrite); err != nil {
+				return err
+			}
+			approval, err = approvals.Get(ctx, tx, id, now)
+			return err
+		}
+		created, seq, err := approvals.CreateApproval(ctx, tx, approvals.Create{
+			Kind:      hubv1.ApprovalKind_APPROVAL_KIND_COMMAND_CONFIRM,
+			Severity:  hubv1.Severity_SEVERITY_WARNING,
+			Preview:   truncatePreview(preview),
+			MachineID: machine, SessionID: sessionID, Pane: pane,
+			Allowed:       []approvals.Choice{{Key: "approve"}, {Key: "deny"}},
+			DefaultChoice: "deny",
+			Fallback:      hubv1.ApprovalFallback_APPROVAL_FALLBACK_DENY,
+			ExpireTime:    now.Add(approvalTimeout),
+			RequiredRole:  typev1.Role_ROLE_OWNER,
+			Command:       cmd,
+			Now:           now,
+			Checkpoint:    func() error { return quotaCheckpoint(ctx, quotaWrite) },
+		})
+		if err != nil {
+			return err
+		}
+		if err := logGate(ctx, tx, actor, requestID, created.GetId().GetValue(), sum[:], now); err != nil {
+			return err
+		}
+		approval, fresh = created, created
+		freshSeq = seq
+		return nil
+	}, func() {
+		// Runs on the writer in commit order (#393).
+		// A replayed gating raises nothing new: fresh stays nil.
+		if fresh != nil {
+			f.publishApprovalWatch(freshSeq, fresh, hubv1.ChangeType_CHANGE_TYPE_CREATED, false)
+		}
+	}); commitErr != nil {
 		return nil, f.storeError(ctx, actor, commitErr)
 	}
 	if fresh != nil {

@@ -14,36 +14,30 @@ import (
 // publish nothing: the first commit already did.
 //
 // Commit order is the publish order: the store stamps hub_seq in commit
-// order, but handlers wake in goroutine order after their Write returns,
-// so two concurrent commits would publish backwards without [Fleet.commitWatch].
-// Every post-commit publish runs inside it; nothing else takes watchMu.
+// order, and every publish runs in a post-commit hook on the single
+// writer goroutine, so the hook for commit N always runs before the hook
+// for commit N+1 and the bus appends in commit order (02c "Order", #393).
+// A hook publishes only its own commit's rows: the resource, then the
+// audits its tx stamped, so one writer-serialized sequence covers both in
+// hub_seq order. Every publish takes watchMu briefly through offerWatch
+// and never waits on the writer; no path holds watchMu across a writer
+// job, so the discipline cannot wedge (#403).
 
-// commitWatch runs one committed write and its Watch publish as a single
-// ordered step: the commit (a store Write) first, the publish only when
-// it succeeded. Concurrent writers queue here, so the bus appends in
-// commit order (02c "Order"). The critical section holds no other lock:
-// the commit runs its writer job, the publish reads the read pool at
-// most, and both are short and non-blocking.
-//
-// After the publish it tails the audit log: the commit may have appended
-// audit rows (every state-changing write does), and the tail publishes
-// them as AUDIT live with their stamps.
-func (f *Fleet) commitWatch(commit func() error, publish func()) error {
-	f.watchMu.Lock()
-	defer f.watchMu.Unlock()
-	if err := commit(); err != nil {
-		return err
-	}
-	publish()
-	f.publishAuditTail(context.Background())
-	return nil
-}
-
-// offerWatch logs one never-dropped change with the store stamp. A
+// offerWatch logs one never-dropped change with the store stamp. It takes
+// watchMu; callers that already hold it use offerWatchLocked. A
 // non-positive seq means the write carried no stamp and stays unpublished.
 // Every published change dirties the fleet summary: the publish tick
 // recomputes it at most once per second (02c).
 func (f *Fleet) offerWatch(seq int64, change watchChange) {
+	f.watchMu.Lock()
+	defer f.watchMu.Unlock()
+	f.offerWatchLocked(seq, change)
+}
+
+// offerWatchLocked logs one never-dropped change as offerWatch does. The
+// caller holds watchMu, so a hook's several publishes stay atomic and a
+// concurrent tick cannot interleave between them.
+func (f *Fleet) offerWatchLocked(seq int64, change watchChange) {
 	if seq <= 0 {
 		return
 	}
@@ -95,22 +89,6 @@ func machineOldRow(pre *statedb.MachineRow, stored statedb.MachineStored) *state
 		return pre
 	}
 	return nil
-}
-
-// publishMachineWatch offers a machine write: the row is re-read so live
-// filtering sees exactly what ListMachines serves. old is the pre-update
-// row for UNMATCHED evaluation, nil when unknown; replay publishes
-// nothing.
-func (f *Fleet) publishMachineWatch(ctx context.Context, id string, change hubv1.ChangeType, old *statedb.MachineRow, replay bool) {
-	if replay {
-		return
-	}
-	row, err := statedb.ReadMachineRow(ctx, f.store, id)
-	if err != nil {
-		f.tel.Logger.ErrorContext(ctx, "watch.publish_failed", "topic", "MACHINES", "err_kind", "io")
-		return
-	}
-	f.publishMachineWatchRow(ctx, row, change, old)
 }
 
 // publishMachineWatchRow offers a machine write from its already-read

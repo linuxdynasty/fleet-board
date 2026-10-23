@@ -12,11 +12,10 @@ import (
 // This file is the gateway's post-commit hook into Watch (plan row 12,
 // the Watch ingest slice): after an ingest, presence or lifecycle job
 // commits, the arm calls its sink so Watch subscribers see the
-// machine-driven change. Every call runs after the commit and never
-// publishes a rolled-back job; the Fleet serializes the publishes on its
-// watchMu with the in-package writes (the commitWatch discipline). The
-// zero WatchSink publishes nothing, so tests and tools that do not wire
-// Watch keep the ingest path pure.
+// machine-driven change. Every call runs in the committing job's
+// post-commit hook on the writer, in commit order (#393), and never
+// publishes a rolled-back job. The zero WatchSink publishes nothing, so
+// tests and tools that do not wire Watch keep the ingest path pure.
 
 // WatchSink publishes committed gateway changes to Watch subscribers. The
 // daemon wires each hook to a Fleet publish method; a nil hook skips its
@@ -24,20 +23,24 @@ import (
 type WatchSink struct {
 	// MachineState publishes a committed machines.state change (a
 	// Snapshot job's ONLINE, housekeeping's STALE, a Heartbeat
-	// promotion, a stream close's OFFLINE). from is the state the job
-	// left, for UNMATCHED evaluation.
-	MachineState func(ctx context.Context, machineID, from string)
+	// promotion, a stream close's OFFLINE). row is the after-image the
+	// job captured in its tx; from is the state the job left, for
+	// UNMATCHED evaluation.
+	MachineState func(ctx context.Context, row statedb.MachineRow, from string)
 	// MachineCreated publishes an enrolled machine with its create
-	// write. Replays publish nothing.
-	MachineCreated func(ctx context.Context, machineID string, replay bool)
+	// write. row is the after-image the enroll job captured in its tx.
+	// Replays publish nothing.
+	MachineCreated func(ctx context.Context, row statedb.MachineRow, replay bool)
 	// MachineCommitted publishes a Snapshot job's machine write with
-	// its before image. before is nil when the arm could not read one.
-	MachineCommitted func(ctx context.Context, machineID string, before *statedb.MachineRow)
+	// its before image. after is the after-image the job captured in its
+	// tx; before is nil when the arm could not read one.
+	MachineCommitted func(ctx context.Context, after statedb.MachineRow, before *statedb.MachineRow)
 	// MachineEvent publishes an applied event job's machine stamp: the
 	// core stamps only the seq, observed time and hub_seq, none of them
 	// filterable, so the write is always volatile-only and waits out its
-	// interval behind the Watch gate.
-	MachineEvent func(ctx context.Context, machineID string)
+	// interval behind the Watch gate. row is the after-image the job
+	// captured in its tx.
+	MachineEvent func(ctx context.Context, row statedb.MachineRow)
 	// GoalsCommitted publishes an ingest job's observed-goal writes: the
 	// stamped after-images the job's appliers captured in its transaction,
 	// diffed by stamp against the before image the arm read.
@@ -61,27 +64,27 @@ type PanePublication struct {
 	Seq            int64
 }
 
-func (a *agentService) publishMachineState(ctx context.Context, machineID, from string) {
+func (a *agentService) publishMachineState(ctx context.Context, row statedb.MachineRow, from string) {
 	if a.watch.MachineState != nil {
-		a.watch.MachineState(ctx, machineID, from)
+		a.watch.MachineState(ctx, row, from)
 	}
 }
 
-func (a *agentService) publishMachineCreated(ctx context.Context, machineID string, replay bool) {
+func (a *agentService) publishMachineCreated(ctx context.Context, row statedb.MachineRow, replay bool) {
 	if a.watch.MachineCreated != nil {
-		a.watch.MachineCreated(ctx, machineID, replay)
+		a.watch.MachineCreated(ctx, row, replay)
 	}
 }
 
-func (a *agentService) publishMachineCommitted(ctx context.Context, machineID string, before *statedb.MachineRow) {
+func (a *agentService) publishMachineCommitted(ctx context.Context, after statedb.MachineRow, before *statedb.MachineRow) {
 	if a.watch.MachineCommitted != nil {
-		a.watch.MachineCommitted(ctx, machineID, before)
+		a.watch.MachineCommitted(ctx, after, before)
 	}
 }
 
-func (a *agentService) publishMachineEvent(ctx context.Context, machineID string) {
+func (a *agentService) publishMachineEvent(ctx context.Context, row statedb.MachineRow) {
 	if a.watch.MachineEvent != nil {
-		a.watch.MachineEvent(ctx, machineID)
+		a.watch.MachineEvent(ctx, row)
 	}
 }
 

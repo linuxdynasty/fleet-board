@@ -75,10 +75,10 @@ func TestEachActionWritesOneAuditRowAndAReplayWritesNone(t *testing.T) {
 	ctx := context.Background()
 	m := newMachine(enrollKey("install-1", 1), renewMachineID, beforeTTL)
 	m.ReportedHostname = "other-host"
-	if _, err := statedb.Enroll(ctx, s, m); err != nil {
+	if _, err := statedb.Enroll(ctx, s, m, nil); err != nil {
 		t.Fatal(err)
 	}
-	if got, err := statedb.Enroll(ctx, s, m); err != nil || !got.Replayed {
+	if got, err := statedb.Enroll(ctx, s, m, nil); err != nil || !got.Replayed {
 		t.Fatalf("repeat Enroll = %+v, %v; want a replay", got, err)
 	}
 	var signs atomic.Int32
@@ -200,7 +200,7 @@ func TestAJobThatFailsAfterTheChangeLeavesNothing(t *testing.T) {
 		{"enroll", "machines", func(t *testing.T, dir string) error {
 			t.Helper()
 			s := open(t, dir)
-			_, err := statedb.Enroll(ctx, s, newMachine(enrollKey("install-1", 1), renewMachineID, beforeTTL))
+			_, err := statedb.Enroll(ctx, s, newMachine(enrollKey("install-1", 1), renewMachineID, beforeTTL), nil)
 			return err
 		}},
 		{"renewal", "cert_renewals", func(t *testing.T, dir string) error {
@@ -216,7 +216,7 @@ func TestAJobThatFailsAfterTheChangeLeavesNothing(t *testing.T) {
 			t.Parallel()
 			dir, s := tokenStore(t)
 			if tc.table == "cert_renewals" {
-				if _, err := statedb.Enroll(ctx, s, newMachine(enrollKey("install-1", 1), renewMachineID, beforeTTL)); err != nil {
+				if _, err := statedb.Enroll(ctx, s, newMachine(enrollKey("install-1", 1), renewMachineID, beforeTTL), nil); err != nil {
 					t.Fatal(err)
 				}
 			}

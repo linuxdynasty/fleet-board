@@ -44,7 +44,7 @@ func seedChangeRequest(t *testing.T, e *fleetEnv, integration, project, key, tit
 		CRJSON: raw, UpdateMs: update.UnixMilli(),
 	}
 	if _, err := statedb.UpsertChangeRequestPage(context.Background(), e.st, integration,
-		[]statedb.ChangeRequestMirror{mirror}, nil, nil, createMs); err != nil {
+		[]statedb.ChangeRequestMirror{mirror}, nil, nil, createMs, nil); err != nil {
 		t.Fatal(err)
 	}
 }

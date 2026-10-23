@@ -154,10 +154,15 @@ type RateLimitValue struct {
 // the sync time. It reports the rows the page created or replaced with
 // their stamps, so Watch can publish them; a last_sync_ms touch and a
 // dropped page report nothing.
-func UpsertWorkItemPage(ctx context.Context, s *store.Store, integration string, items []WorkItemMirror, cursors []CursorValue, limits []RateLimitValue, nowMs int64) ([]WorkItemChange, error) {
+// onCommit runs on the store writer after this job's batch commits, in
+// commit order (#393): the Watch publish for exactly this page. It
+// receives what the job stamped; a nil onCommit writes without one. It
+// must follow the post-commit hook rules (short, non-blocking, never
+// Submit or Write).
+func UpsertWorkItemPage(ctx context.Context, s *store.Store, integration string, items []WorkItemMirror, cursors []CursorValue, limits []RateLimitValue, nowMs int64, onCommit func([]WorkItemChange)) ([]WorkItemChange, error) {
 	jctx := context.WithoutCancel(ctx)
 	var out []WorkItemChange
-	err := s.Write(ctx, func(tx *sql.Tx) error {
+	err := writeOrdered(ctx, s, &out, onCommit, func(tx *sql.Tx) error {
 		for _, it := range items {
 			c, err := upsertWorkItem(jctx, tx, integration, it, nowMs)
 			if err != nil {
@@ -186,13 +191,15 @@ const mirrorHubSeqSQL = `ALTER TABLE work_items ADD COLUMN hub_seq INTEGER NOT N
 ALTER TABLE change_requests ADD COLUMN hub_seq INTEGER NOT NULL DEFAULT 0 CHECK (hub_seq >= 0);`
 
 // WorkItemChange is one mirror row an upsert created or replaced: the key,
-// whether it is new, the stamp the write took, and the row it replaced
-// (nil when created) for UNMATCHED evaluation.
+// whether it is new, the stamp the write took, the row it replaced (nil
+// when created) for UNMATCHED evaluation, and the after-image the job
+// captured in its tx for the Watch publish (#403).
 type WorkItemChange struct {
 	Key     string
 	Created bool
 	HubSeq  int64
 	Before  *WorkItemRow
+	After   WorkItemRow
 }
 
 // ChangeRequestChange is one change-request row an upsert created or
@@ -202,6 +209,7 @@ type ChangeRequestChange struct {
 	Created bool
 	HubSeq  int64
 	Before  *ChangeRequestRow
+	After   ChangeRequestRow
 }
 
 // upsertWorkItem writes one mirror row and reports the change, or nil when
@@ -248,7 +256,11 @@ func upsertWorkItem(ctx context.Context, tx *sql.Tx, integration string, it Work
 		if err != nil {
 			return nil, err
 		}
-		return &WorkItemChange{Key: key, Created: true, HubSeq: st.HubSeq}, nil
+		after, err := readWorkItemRowTx(ctx, tx, key)
+		if err != nil {
+			return nil, err
+		}
+		return &WorkItemChange{Key: key, Created: true, HubSeq: st.HubSeq, After: after}, nil
 	}
 	before := stored.stored
 	before.Key, before.Integration, before.Kind = key, integration, it.Kind
@@ -278,7 +290,11 @@ func upsertWorkItem(ctx context.Context, tx *sql.Tx, integration string, it Work
 	if err != nil {
 		return nil, err
 	}
-	return &WorkItemChange{Key: key, HubSeq: st.HubSeq, Before: &before}, nil
+	after, err := readWorkItemRowTx(ctx, tx, key)
+	if err != nil {
+		return nil, err
+	}
+	return &WorkItemChange{Key: key, HubSeq: st.HubSeq, Before: &before, After: after}, nil
 }
 
 // ChangeRequestMirror is one provider change request for the mirror.
@@ -294,10 +310,10 @@ type ChangeRequestMirror struct {
 // and rate limits, under the same guard and version rule as work items.
 // It reports the rows the page created or replaced, as
 // [UpsertWorkItemPage].
-func UpsertChangeRequestPage(ctx context.Context, s *store.Store, integration string, items []ChangeRequestMirror, cursors []CursorValue, limits []RateLimitValue, nowMs int64) ([]ChangeRequestChange, error) {
+func UpsertChangeRequestPage(ctx context.Context, s *store.Store, integration string, items []ChangeRequestMirror, cursors []CursorValue, limits []RateLimitValue, nowMs int64, onCommit func([]ChangeRequestChange)) ([]ChangeRequestChange, error) {
 	jctx := context.WithoutCancel(ctx)
 	var out []ChangeRequestChange
-	err := s.Write(ctx, func(tx *sql.Tx) error {
+	err := writeOrdered(ctx, s, &out, onCommit, func(tx *sql.Tx) error {
 		for _, it := range items {
 			c, err := upsertChangeRequest(jctx, tx, integration, it, nowMs)
 			if err != nil {
@@ -350,7 +366,11 @@ func upsertChangeRequest(ctx context.Context, tx *sql.Tx, integration string, it
 		if err != nil {
 			return nil, err
 		}
-		return &ChangeRequestChange{Key: key, Created: true, HubSeq: st.HubSeq}, nil
+		after, err := readChangeRequestRowTx(ctx, tx, key)
+		if err != nil {
+			return nil, err
+		}
+		return &ChangeRequestChange{Key: key, Created: true, HubSeq: st.HubSeq, After: after}, nil
 	}
 	stored.Key, stored.Integration, stored.Project, stored.ItemKey = key, integration, it.Project, it.ItemKey
 	if it.UpdateMs < stored.UpdateMs {
@@ -371,7 +391,11 @@ func upsertChangeRequest(ctx context.Context, tx *sql.Tx, integration string, it
 		return nil, err
 	}
 	before := stored
-	return &ChangeRequestChange{Key: key, HubSeq: st.HubSeq, Before: &before}, nil
+	after, err := readChangeRequestRowTx(ctx, tx, key)
+	if err != nil {
+		return nil, err
+	}
+	return &ChangeRequestChange{Key: key, HubSeq: st.HubSeq, Before: &before, After: after}, nil
 }
 
 func upsertCursors(ctx context.Context, tx *sql.Tx, integration string, cursors []CursorValue, nowMs int64) error {

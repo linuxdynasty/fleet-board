@@ -25,7 +25,7 @@ func machineWrite(principal, requestID string, body byte, now time.Time) statedb
 func enrolledMachineStore(t *testing.T, id string, at time.Time) (string, *store.Store) {
 	t.Helper()
 	dir, s := tokenStore(t)
-	if _, err := statedb.Enroll(context.Background(), s, newMachine(enrollKey("install-1", 1), id, at)); err != nil {
+	if _, err := statedb.Enroll(context.Background(), s, newMachine(enrollKey("install-1", 1), id, at), nil); err != nil {
 		t.Fatal(err)
 	}
 	return dir, s
@@ -39,7 +39,7 @@ func TestUpdateMachineOnAMissingMachineIsUnknown(t *testing.T) {
 		MachineID:    "01jmachine0000000000000001",
 		Name:         "renamed",
 		HasName:      true,
-	})
+	}, nil)
 	if !errors.Is(err, statedb.ErrMachineUnknown) {
 		t.Fatalf("UpdateMachine = %v, want ErrMachineUnknown", err)
 	}
@@ -56,7 +56,7 @@ func TestUpdateMachineRenamesAndLabels(t *testing.T) {
 		MachineWrite: machineWrite("local:alice", "req-1", 9, at),
 		MachineID:    id, Name: "renamed", Labels: []string{"desk"},
 		HasName: true, HasLabels: true,
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("UpdateMachine: %v", err)
 	}
@@ -74,7 +74,7 @@ func TestUpdateMachineRenamesAndLabels(t *testing.T) {
 		MachineWrite: machineWrite("local:alice", "req-1", 9, at.Add(time.Minute)),
 		MachineID:    id, Name: "renamed", Labels: []string{"desk"},
 		HasName: true, HasLabels: true,
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("UpdateMachine replay: %v", err)
 	}
@@ -85,7 +85,7 @@ func TestUpdateMachineRenamesAndLabels(t *testing.T) {
 	_, err = statedb.UpdateMachine(ctx, s, statedb.MachineUpdate{
 		MachineWrite: machineWrite("local:alice", "req-1", 10, at),
 		MachineID:    id, Name: "other", HasName: true,
-	})
+	}, nil)
 	if !errors.Is(err, statedb.ErrRequestConflict) {
 		t.Errorf("conflict = %v, want ErrRequestConflict", err)
 	}
@@ -93,7 +93,7 @@ func TestUpdateMachineRenamesAndLabels(t *testing.T) {
 	_, err = statedb.UpdateMachine(ctx, s, statedb.MachineUpdate{
 		MachineWrite: machineWrite("local:alice", "req-3", 11, at),
 		MachineID:    id, ExpectedVersion: 1, Name: "stale", HasName: true,
-	})
+	}, nil)
 	var stale *statedb.VersionStale
 	if !errors.As(err, &stale) || stale.Current != 2 {
 		t.Errorf("stale = %v, want VersionStale current 2", err)

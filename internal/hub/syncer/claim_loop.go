@@ -61,14 +61,18 @@ func (s *Syncer) claimItem(ctx context.Context, a Adapter, id string, c statedb.
 			if getErr != nil {
 				return getErr
 			}
-			change, err := statedb.UpdateWorkItemClaims(ctx, s.Store, key, []byte(stored.ClaimsJSON),
+			pctx := context.WithoutCancel(ctx) // the publish hook runs on the writer after the waiter may have left
+			_, err := statedb.UpdateWorkItemClaims(ctx, s.Store, key, []byte(stored.ClaimsJSON),
 				int32(hubv1.WorkStage_WORK_STAGE_CLOSED),
-				int32(hubv1.WorkManualReason_WORK_MANUAL_REASON_UNSPECIFIED), now.UnixMilli())
+				int32(hubv1.WorkManualReason_WORK_MANUAL_REASON_UNSPECIFIED), now.UnixMilli(),
+				func(committed statedb.WorkItemChange) {
+					// The close committed: its mirror change publishes to
+					// Watch. This runs on the writer in commit order (#393).
+					s.publishWorkItems(pctx, []statedb.WorkItemChange{committed})
+				})
 			if err != nil {
 				return err
 			}
-			// The close committed: its mirror change publishes to Watch.
-			s.publishWorkItems(ctx, []statedb.WorkItemChange{change})
 			return nil
 		}
 		return s.fail(ctx, id, c.Project, ResourceClaims, err, now)
@@ -102,15 +106,19 @@ func (s *Syncer) claimItem(ctx context.Context, a Adapter, id string, c statedb.
 	})
 	foreign, ours, theirs := splitClaims(page.Claims)
 	stage, reason := InitialStage(item.GetState(), verdict, foreign, gate.Enabled)
-	change, err := statedb.UpdateWorkItemClaims(ctx, s.Store, key, claimsJSON, int32(stage), int32(reason), now.UnixMilli())
+	pctx := context.WithoutCancel(ctx) // the publish hook runs on the writer after the waiter may have left
+	_, err = statedb.UpdateWorkItemClaims(ctx, s.Store, key, claimsJSON, int32(stage), int32(reason), now.UnixMilli(),
+		func(committed statedb.WorkItemChange) {
+			// The claim move committed: its mirror change publishes to
+			// Watch. This runs on the writer in commit order (#393).
+			s.publishWorkItems(pctx, []statedb.WorkItemChange{committed})
+		})
 	if err != nil {
 		return err
 	}
-	// The claim move committed: its mirror change publishes to Watch.
-	s.publishWorkItems(ctx, []statedb.WorkItemChange{change})
 	cursorOut := statedb.CursorValue{Resource: ResourceClaims, Page: c.ItemKey, ETag: page.Validators.GetEtag()}
 	if _, err := statedb.UpsertWorkItemPage(ctx, s.Store, id, nil,
-		[]statedb.CursorValue{cursorOut}, rateLimitValues(page.Meta), now.UnixMilli()); err != nil {
+		[]statedb.CursorValue{cursorOut}, rateLimitValues(page.Meta), now.UnixMilli(), nil); err != nil {
 		return err
 	}
 	if s.Metrics != nil {

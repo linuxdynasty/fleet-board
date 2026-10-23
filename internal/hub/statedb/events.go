@@ -117,6 +117,9 @@ type EventOut struct {
 	// HubSeq is the stamp the job took on the machine row: the Watch
 	// position of the change it made, 0 when nothing was written.
 	HubSeq int64
+	// Row is the machines row the job captured in its tx for the Watch
+	// publish (#403). Empty when nothing was written.
+	Row MachineRow
 }
 
 // ApplyEvent stores one event in the writer job's tx: the machine must
@@ -184,6 +187,12 @@ func ApplyEvent(ctx context.Context, tx *sql.Tx, in EventIn) (EventOut, error) {
 		return EventOut{}, fmt.Errorf("statedb: move hub_last_event_seq: %w", err)
 	}
 	out.HubSeq = st.HubSeq
+	// Capture the after-image in-tx for the Watch publish (#403).
+	if row, rerr := readMachineRowTx(ctx, tx, in.MachineID); rerr != nil {
+		return EventOut{}, rerr
+	} else {
+		out.Row = row
+	}
 	return out, nil
 }
 

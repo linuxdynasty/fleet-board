@@ -30,7 +30,7 @@ func TestAccountListReadsEveryRow(t *testing.T) {
 			ID: id, Harness: harness, Provider: "anthropic",
 			DisplayName: displayName, Origin: statedb.AccountOriginOwner,
 			Spec: []byte(spec),
-		}); err != nil {
+		}, nil); err != nil {
 			t.Fatalf("CreateOwnerAccount %s: %v", id, err)
 		}
 	}

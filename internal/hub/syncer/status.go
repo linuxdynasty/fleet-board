@@ -89,7 +89,7 @@ func (s *Syncer) storeLimits(ctx context.Context, id, resource, page string, cur
 		out.SinceMs, out.HasSince = cursor.SinceMs, true
 	}
 	_, _ = statedb.UpsertWorkItemPage(ctx, s.Store, id, nil,
-		[]statedb.CursorValue{out}, rateLimitValues(meta), now.UnixMilli())
+		[]statedb.CursorValue{out}, rateLimitValues(meta), now.UnixMilli(), nil)
 }
 
 // ok records a clean round: metrics, lag and the completion stamp the

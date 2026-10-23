@@ -121,14 +121,13 @@ type Fleet struct {
 	// checkpoint is the idle-stream CHECKPOINT interval
 	// (watchCheckpointInterval by default).
 	checkpoint time.Duration
-	// watchMu serializes one committed write with its Watch publish, so
-	// concurrent handlers publish in commit order (02c "Order"). See
-	// commitWatch: the only lock it nests is the bus or store lock. The
-	// ingest path (gateway, syncer) publishes through the same lock from
-	// its post-commit hooks, so every publish below is serialized here.
+	// watchMu guards the volatile holds, the summary state and the audit
+	// tail position. It never nests a writer job: every publish takes it
+	// briefly, either in a writer commit hook (commit order, 02c "Order",
+	// #393) or in the publish tick, so the discipline cannot wedge.
 	watchMu sync.Mutex
 	// auditSeq is the highest audit hub_seq published as AUDIT live; the
-	// tail (commitWatch and the publish tick) moves it forward only.
+	// job hooks move it forward past what they publish, never backward.
 	auditSeq int64
 	// summaryDirty is set by every never-dropped publish; the publish
 	// tick recomputes the fleet summary when it is set. summarySeq is the
@@ -190,6 +189,12 @@ func NewFleet(opts FleetOptions) (*Fleet, error) {
 		return nil, fmt.Errorf("api: audit tail position: %w", serr)
 	}
 	f.auditSeq = seq
+	// Per-job audit publish (#403): every writer job captures the audit
+	// rows it stamped and publishes them in its post-commit hook right
+	// after its resource, so one writer-serialized sequence covers
+	// resources and audits in hub_seq order. The hook advances auditSeq
+	// past what it publishes.
+	f.store.SetAuditPublisher(f.publishAudits)
 	f.checkpoint = opts.WatchCheckpoint
 	if f.checkpoint <= 0 {
 		f.checkpoint = watchCheckpointInterval

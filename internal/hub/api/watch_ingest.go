@@ -15,10 +15,10 @@ import (
 // This file publishes machine-driven (ingest) commits to Watch streams
 // (02c): the snapshot and event jobs (goals, machines, pane summaries),
 // the syncer pages (work items, change requests) and hub-started sessions.
-// Every method runs after the commit and holds only watchMu (the
-// commitWatch discipline): a rolled-back job publishes nothing, and
-// concurrent publishers serialize in one place. In-package writes keep
-// using commitWatch; these hooks cover the commits other packages make.
+// Every method runs in the committing job's post-commit hook on the
+// writer, in commit order (#393), and takes watchMu briefly: a rolled-back
+// job publishes nothing, and concurrent publishers serialize in commit
+// order.
 //
 // reads re-read the row List serves, so live filtering can never disagree
 // with the initial state; offerWatch drops a non-positive stamp, so rows
@@ -26,56 +26,48 @@ import (
 
 // PublishMachineState publishes a committed machines.state change (02c):
 // ONLINE from a Snapshot job, STALE or OFFLINE from housekeeping, OFFLINE
-// from a stream close, ONLINE from a Heartbeat promotion. from is the state
-// the job left, for UNMATCHED evaluation. A state change is never
-// volatile: it publishes at once. The caller holds no lock.
-func (f *Fleet) PublishMachineState(ctx context.Context, machineID, from string) {
+// from a stream close, ONLINE from a Heartbeat promotion. row is the
+// after-image the job captured in its tx; from is the state the job left,
+// for UNMATCHED evaluation. A state change is never volatile: it publishes
+// at once. The caller holds no lock.
+func (f *Fleet) PublishMachineState(ctx context.Context, row statedb.MachineRow, from string) {
 	f.watchMu.Lock()
 	defer f.watchMu.Unlock()
-	after, err := statedb.ReadMachineRow(ctx, f.store, machineID)
-	if err != nil {
-		f.tel.Logger.ErrorContext(ctx, "watch.publish_failed", "topic", "MACHINES", "err_kind", "io")
-		return
-	}
-	m, err := machineProto(after)
-	if err != nil {
-		f.tel.Logger.ErrorContext(ctx, "watch.publish_failed", "topic", "MACHINES", "err_kind", "io")
-		return
-	}
-	was := after
-	was.State = from
-	f.volatile.last[gateKey(hubv1.WatchTopic_WATCH_TOPIC_MACHINES, machineID)] = f.now()
-	f.offerWatch(after.HubSeq, watchChange{
-		topic: hubv1.WatchTopic_WATCH_TOPIC_MACHINES, change: hubv1.ChangeType_CHANGE_TYPE_UPDATED,
-		msg: &hubv1.WatchResponse{
-			Topic: hubv1.WatchTopic_WATCH_TOPIC_MACHINES, ChangeType: hubv1.ChangeType_CHANGE_TYPE_UPDATED,
-			Resource: &hubv1.WatchResponse_Machine{Machine: m},
-		},
-		match: func(n *filterNode) bool { return nodeMatchesMachine(n, after) },
-		was:   func(n *filterNode) bool { return nodeMatchesMachine(n, was) },
-	})
-}
-
-// PublishMachineCreated publishes an enrolled machine with its create
-// write. Replays publish nothing: the first enroll already did.
-func (f *Fleet) PublishMachineCreated(ctx context.Context, machineID string, replay bool) {
-	if replay {
-		return
-	}
-	f.watchMu.Lock()
-	defer f.watchMu.Unlock()
-	row, err := statedb.ReadMachineRow(ctx, f.store, machineID)
-	if err != nil {
-		f.tel.Logger.ErrorContext(ctx, "watch.publish_failed", "topic", "MACHINES", "err_kind", "io")
-		return
-	}
 	m, err := machineProto(row)
 	if err != nil {
 		f.tel.Logger.ErrorContext(ctx, "watch.publish_failed", "topic", "MACHINES", "err_kind", "io")
 		return
 	}
-	f.volatile.last[gateKey(hubv1.WatchTopic_WATCH_TOPIC_MACHINES, machineID)] = f.now()
-	f.offerWatch(row.HubSeq, watchChange{
+	was := row
+	was.State = from
+	f.volatile.last[gateKey(hubv1.WatchTopic_WATCH_TOPIC_MACHINES, row.MachineID)] = f.now()
+	f.offerWatchLocked(row.HubSeq, watchChange{
+		topic: hubv1.WatchTopic_WATCH_TOPIC_MACHINES, change: hubv1.ChangeType_CHANGE_TYPE_UPDATED,
+		msg: &hubv1.WatchResponse{
+			Topic: hubv1.WatchTopic_WATCH_TOPIC_MACHINES, ChangeType: hubv1.ChangeType_CHANGE_TYPE_UPDATED,
+			Resource: &hubv1.WatchResponse_Machine{Machine: m},
+		},
+		match: func(n *filterNode) bool { return nodeMatchesMachine(n, row) },
+		was:   func(n *filterNode) bool { return nodeMatchesMachine(n, was) },
+	})
+}
+
+// PublishMachineCreated publishes an enrolled machine with its create
+// write. row is the after-image the enroll job captured in its tx.
+// Replays publish nothing: the first enroll already did.
+func (f *Fleet) PublishMachineCreated(ctx context.Context, row statedb.MachineRow, replay bool) {
+	if replay {
+		return
+	}
+	f.watchMu.Lock()
+	defer f.watchMu.Unlock()
+	m, err := machineProto(row)
+	if err != nil {
+		f.tel.Logger.ErrorContext(ctx, "watch.publish_failed", "topic", "MACHINES", "err_kind", "io")
+		return
+	}
+	f.volatile.last[gateKey(hubv1.WatchTopic_WATCH_TOPIC_MACHINES, row.MachineID)] = f.now()
+	f.offerWatchLocked(row.HubSeq, watchChange{
 		topic: hubv1.WatchTopic_WATCH_TOPIC_MACHINES, change: hubv1.ChangeType_CHANGE_TYPE_CREATED,
 		msg: &hubv1.WatchResponse{
 			Topic: hubv1.WatchTopic_WATCH_TOPIC_MACHINES, ChangeType: hubv1.ChangeType_CHANGE_TYPE_CREATED,
@@ -86,19 +78,15 @@ func (f *Fleet) PublishMachineCreated(ctx context.Context, machineID string, rep
 }
 
 // PublishMachineCommitted publishes a Snapshot job's machine write with
-// its before image for UNMATCHED evaluation. before is nil when the caller
-// did not read one (or the machine is new to the hub); volatile-only
-// writes wait out their interval.
-func (f *Fleet) PublishMachineCommitted(ctx context.Context, machineID string, before *statedb.MachineRow) {
+// its before image for UNMATCHED evaluation. after is the after-image the
+// job captured in its tx; before is nil when the caller did not read one
+// (or the machine is new to the hub); volatile-only writes wait out their
+// interval.
+func (f *Fleet) PublishMachineCommitted(ctx context.Context, after statedb.MachineRow, before *statedb.MachineRow) {
 	f.watchMu.Lock()
 	defer f.watchMu.Unlock()
-	after, err := statedb.ReadMachineRow(ctx, f.store, machineID)
-	if err != nil {
-		f.tel.Logger.ErrorContext(ctx, "watch.publish_failed", "topic", "MACHINES", "err_kind", "io")
-		return
-	}
 	volatileOnly := before != nil && machineVolatileOnly(*before, after)
-	if !f.volatileAllow(hubv1.WatchTopic_WATCH_TOPIC_MACHINES, machineID, volatileOnly, machineVolatileInterval) {
+	if !f.volatileAllow(hubv1.WatchTopic_WATCH_TOPIC_MACHINES, after.MachineID, volatileOnly, machineVolatileInterval) {
 		return
 	}
 	m, err := machineProto(after)
@@ -111,7 +99,7 @@ func (f *Fleet) PublishMachineCommitted(ctx context.Context, machineID string, b
 		old := *before
 		was = func(n *filterNode) bool { return nodeMatchesMachine(n, old) }
 	}
-	f.offerWatch(after.HubSeq, watchChange{
+	f.offerWatchLocked(after.HubSeq, watchChange{
 		topic: hubv1.WatchTopic_WATCH_TOPIC_MACHINES, change: hubv1.ChangeType_CHANGE_TYPE_UPDATED,
 		msg: &hubv1.WatchResponse{
 			Topic: hubv1.WatchTopic_WATCH_TOPIC_MACHINES, ChangeType: hubv1.ChangeType_CHANGE_TYPE_UPDATED,
@@ -125,16 +113,12 @@ func (f *Fleet) PublishMachineCommitted(ctx context.Context, machineID string, b
 // PublishMachineEvent publishes an applied event job's machine stamp: the
 // core stamps only hub_last_event_seq, observed_time and hub_seq, none of
 // them filterable, so the write is always volatile-only and waits out its
-// interval behind the gate. The caller holds no lock.
-func (f *Fleet) PublishMachineEvent(ctx context.Context, machineID string) {
+// interval behind the gate. after is the after-image the job captured in
+// its tx. The caller holds no lock.
+func (f *Fleet) PublishMachineEvent(ctx context.Context, after statedb.MachineRow) {
 	f.watchMu.Lock()
 	defer f.watchMu.Unlock()
-	after, err := statedb.ReadMachineRow(ctx, f.store, machineID)
-	if err != nil {
-		f.tel.Logger.ErrorContext(ctx, "watch.publish_failed", "topic", "MACHINES", "err_kind", "io")
-		return
-	}
-	if !f.volatileAllow(hubv1.WatchTopic_WATCH_TOPIC_MACHINES, machineID, true, machineVolatileInterval) {
+	if !f.volatileAllow(hubv1.WatchTopic_WATCH_TOPIC_MACHINES, after.MachineID, true, machineVolatileInterval) {
 		return
 	}
 	m, err := machineProto(after)
@@ -142,7 +126,7 @@ func (f *Fleet) PublishMachineEvent(ctx context.Context, machineID string) {
 		f.tel.Logger.ErrorContext(ctx, "watch.publish_failed", "topic", "MACHINES", "err_kind", "io")
 		return
 	}
-	f.offerWatch(after.HubSeq, watchChange{
+	f.offerWatchLocked(after.HubSeq, watchChange{
 		topic: hubv1.WatchTopic_WATCH_TOPIC_MACHINES, change: hubv1.ChangeType_CHANGE_TYPE_UPDATED,
 		msg: &hubv1.WatchResponse{
 			Topic: hubv1.WatchTopic_WATCH_TOPIC_MACHINES, ChangeType: hubv1.ChangeType_CHANGE_TYPE_UPDATED,
@@ -229,30 +213,28 @@ func (f *Fleet) PublishGoalsCommitted(ctx context.Context, machineID string, bef
 		return offers[i].id < offers[j].id
 	})
 	for _, o := range offers {
-		f.offerWatch(o.seq, o.change)
+		f.offerWatchLocked(o.seq, o.change)
 	}
 }
 
 // publishSessionCreated publishes a hub-started session (CreateSession):
 // the queued EnsureSession command as OPERATIONS CREATED first, then the
 // session with its create write as SESSIONS CREATED, in ascending stamp
-// order. A request_id replay publishes nothing: the first call already
-// did. The caller holds watchMu (it runs in the CreateSession commitWatch
-// publish step, which serializes commit and publish as one ordered step).
-func (f *Fleet) publishSessionCreated(ctx context.Context, sessID string, op *hubv1.Operation, opSeq int64, replay bool) {
+// order. row is the after-image the job captured in its tx. A request_id
+// replay publishes nothing: the first call already did. It runs in the
+// CreateSession post-commit hook on the writer, in commit order (#393).
+func (f *Fleet) publishSessionCreated(ctx context.Context, row statedb.SessionRow, op *hubv1.Operation, opSeq int64, replay bool) {
 	if replay {
 		return
 	}
 	// The operation stamps first (outbox.Enqueue takes its hub_seq before
 	// the session row takes its own), so it publishes first: ascending
 	// stamp order keeps a resume from the first from skipping the second.
+	// Each publish takes watchMu separately through offerWatch; the tick
+	// carries no audit tail after #403, so nothing interleaves between
+	// these two contiguous stamps.
 	if op != nil {
 		f.publishOperationWatch(opSeq, op)
-	}
-	row, err := statedb.ReadSessionRow(ctx, f.store, sessID)
-	if err != nil {
-		f.tel.Logger.ErrorContext(ctx, "watch.publish_failed", "topic", "SESSIONS", "err_kind", "io")
-		return
 	}
 	sess, err := sessionProto(row)
 	if err != nil {
@@ -270,18 +252,14 @@ func (f *Fleet) publishSessionCreated(ctx context.Context, sessID string, op *hu
 }
 
 // PublishWorkItems publishes a syncer page's work-item changes with the
-// stamps the page commit took, in stamp order. The rows are re-read so
-// live filtering sees what List serves; the recorded before image feeds
+// stamps the page commit took, in stamp order. Each change carries the
+// after-image its job captured in its tx; the recorded before image feeds
 // UNMATCHED evaluation. The caller holds no lock.
 func (f *Fleet) PublishWorkItems(ctx context.Context, changes []statedb.WorkItemChange) {
 	f.watchMu.Lock()
 	defer f.watchMu.Unlock()
 	for _, c := range changes {
-		row, err := statedb.ReadWorkItemRow(ctx, f.store, c.Key)
-		if err != nil {
-			f.tel.Logger.ErrorContext(ctx, "watch.publish_failed", "topic", "WORK_ITEMS", "err_kind", "io")
-			continue
-		}
+		row := c.After
 		v, err := workItemViewOf(row)
 		if err != nil {
 			f.tel.Logger.ErrorContext(ctx, "watch.publish_failed", "topic", "WORK_ITEMS", "err_kind", "io")
@@ -302,7 +280,7 @@ func (f *Fleet) PublishWorkItems(ctx context.Context, changes []statedb.WorkItem
 				was = func(n *filterNode) bool { return nodeMatchesWorkItem(n, bv) }
 			}
 		}
-		f.offerWatch(c.HubSeq, watchChange{
+		f.offerWatchLocked(c.HubSeq, watchChange{
 			topic: hubv1.WatchTopic_WATCH_TOPIC_WORK_ITEMS, change: change,
 			msg: &hubv1.WatchResponse{
 				Topic: hubv1.WatchTopic_WATCH_TOPIC_WORK_ITEMS, ChangeType: change,
@@ -320,11 +298,7 @@ func (f *Fleet) PublishChangeRequests(ctx context.Context, changes []statedb.Cha
 	f.watchMu.Lock()
 	defer f.watchMu.Unlock()
 	for _, c := range changes {
-		row, err := statedb.ReadChangeRequestRow(ctx, f.store, c.Key)
-		if err != nil {
-			f.tel.Logger.ErrorContext(ctx, "watch.publish_failed", "topic", "CHANGE_REQUESTS", "err_kind", "io")
-			continue
-		}
+		row := c.After
 		v, err := changeRequestViewOf(row)
 		if err != nil {
 			f.tel.Logger.ErrorContext(ctx, "watch.publish_failed", "topic", "CHANGE_REQUESTS", "err_kind", "io")
@@ -345,7 +319,7 @@ func (f *Fleet) PublishChangeRequests(ctx context.Context, changes []statedb.Cha
 				was = func(n *filterNode) bool { return nodeMatchesChangeRequest(n, bv) }
 			}
 		}
-		f.offerWatch(c.HubSeq, watchChange{
+		f.offerWatchLocked(c.HubSeq, watchChange{
 			topic: hubv1.WatchTopic_WATCH_TOPIC_CHANGE_REQUESTS, change: change,
 			msg: &hubv1.WatchResponse{
 				Topic: hubv1.WatchTopic_WATCH_TOPIC_CHANGE_REQUESTS, ChangeType: change,
@@ -402,25 +376,26 @@ func (f *Fleet) PublishPane(ctx context.Context, p PanePublication) {
 	}})
 }
 
-// publishAuditTail publishes the audit rows committed since the last tail
-// position as AUDIT CREATED in hub_seq order, then moves the position.
-// Rows the entry assembly rejects log publish_failed and are skipped past,
-// so one bad row cannot wedge the tail. The caller holds watchMu.
-func (f *Fleet) publishAuditTail(ctx context.Context) {
-	rows, err := statedb.ListAuditSince(ctx, f.store, f.auditSeq)
-	if err != nil {
-		f.tel.Logger.ErrorContext(ctx, "watch.publish_failed", "topic", "AUDIT", "err_kind", "io")
-		return
-	}
+// publishAudits publishes one job's captured audit rows after its resource,
+// in hub_seq order. writeOrdered jobs call it inside their post-commit
+// hook on the writer: per-job rows are seq-contiguous, so each job's
+// resource-then-audits in batch order is total hub_seq order, and a resume
+// never skips (#403). It takes watchMu and advances the tick tail's
+// position past what it publishes, so the tail never replays them.
+func (f *Fleet) publishAudits(rows []statedb.AuditStored) {
+	f.watchMu.Lock()
+	defer f.watchMu.Unlock()
 	for _, r := range rows {
+		if r.HubSeq <= f.auditSeq {
+			continue
+		}
 		entry, err := auditEntryOf(r)
 		if err != nil {
-			f.tel.Logger.ErrorContext(ctx, "watch.publish_failed", "topic", "AUDIT", "err_kind", "io")
-			f.auditSeq = r.HubSeq
+			f.tel.Logger.Error("watch.publish_failed", "topic", "AUDIT", "err_kind", "parse")
 			continue
 		}
 		v := auditView{stored: r}
-		f.offerWatch(r.HubSeq, watchChange{
+		f.offerWatchLocked(r.HubSeq, watchChange{
 			topic: hubv1.WatchTopic_WATCH_TOPIC_AUDIT, change: hubv1.ChangeType_CHANGE_TYPE_CREATED,
 			msg: &hubv1.WatchResponse{
 				Topic: hubv1.WatchTopic_WATCH_TOPIC_AUDIT, ChangeType: hubv1.ChangeType_CHANGE_TYPE_CREATED,

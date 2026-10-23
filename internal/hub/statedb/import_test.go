@@ -135,7 +135,7 @@ func TestApplyConfigImportRefusesAStaleUpdate(t *testing.T) {
 func enrollLaptop(t *testing.T, s *store.Store, id string) {
 	t.Helper()
 	key := enrollKey("install-1", 1)
-	if _, err := statedb.Enroll(context.Background(), s, newMachine(key, id, beforeTTL)); err != nil {
+	if _, err := statedb.Enroll(context.Background(), s, newMachine(key, id, beforeTTL), nil); err != nil {
 		t.Fatalf("Enroll: %v", err)
 	}
 }
@@ -189,7 +189,7 @@ func TestApplyConfigImportRefusesAStaleMachineUpdate(t *testing.T) {
 		MachineWrite: machineWrite("local:alice", "req-2", 2, importTime),
 		MachineID:    "01jmachine0000000000000001", ExpectedVersion: 1,
 		Labels: []string{"desk"}, HasLabels: true,
-	}); err != nil {
+	}, nil); err != nil {
 		t.Fatalf("concurrent UpdateMachine: %v", err)
 	}
 	_, _, err := statedb.ApplyConfigImport(context.Background(), s, statedb.ConfigImport{

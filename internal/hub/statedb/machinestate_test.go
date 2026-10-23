@@ -99,7 +99,7 @@ func TestALiveRowCloseMarksTheMachineOffline(t *testing.T) {
 			setState(t, s, renewMachineID, tc.from)
 			before, seq, audits := machineOf(t, s, renewMachineID), counter(t, s), auditCount(t, s)
 			end := helloAt.Add(time.Minute)
-			got, err := statedb.EndConnection(context.Background(), s, renewMachineID, out.Epoch, tc.reason, end)
+			got, err := statedb.EndConnection(context.Background(), s, renewMachineID, out.Epoch, tc.reason, end, nil)
 			if err != nil || !got.Live {
 				t.Fatalf("EndConnection = %+v, %v; want the live row closed", got, err)
 			}
@@ -114,8 +114,13 @@ func TestALiveRowCloseMarksTheMachineOffline(t *testing.T) {
 				MachineID: renewMachineID, From: tc.from, To: tc.want, Reason: string(tc.reason),
 				Stamp: statedb.Stamp{HubSeq: seq + 1, ObservedTime: end},
 			}
-			if got.Change == nil || *got.Change != want {
+			if got.Change == nil || got.Change.MachineID != want.MachineID || got.Change.From != want.From ||
+				got.Change.To != want.To || got.Change.Reason != want.Reason || got.Change.Stamp != want.Stamp {
 				t.Errorf("change %+v, want %+v", got.Change, want)
+			}
+			if got.Change != nil && (got.Change.Row.MachineID != renewMachineID || got.Change.Row.State != tc.want ||
+				got.Change.Row.HubSeq != seq+1) {
+				t.Errorf("change row %+v, want %s at hub_seq %d", got.Change.Row, tc.want, seq+1)
 			}
 			if after.state != tc.want || after.hubSeq != seq+1 || after.observe != end.UnixMilli() {
 				t.Errorf("row %+v, want %s stamped hub_seq %d at %d", after, tc.want, seq+1, end.UnixMilli())
@@ -140,7 +145,7 @@ func TestADisplacedStreamsCloseLeavesTheMachineAsItWas(t *testing.T) {
 			mustHello(t, s, hello(1, "boot-b", "192.0.2.7:51001", helloAt.Add(time.Second)))
 			before := machineOf(t, s, renewMachineID)
 			for _, r := range []statedb.EndReason{statedb.EndStreamClosed, statedb.EndAgentBye, statedb.EndIngestStalled} {
-				got, err := statedb.EndConnection(context.Background(), s, renewMachineID, 1, r, helloAt.Add(time.Minute))
+				got, err := statedb.EndConnection(context.Background(), s, renewMachineID, 1, r, helloAt.Add(time.Minute), nil)
 				if err != nil || got.Live || got.Change != nil {
 					t.Errorf("EndConnection(displaced, %s) = %+v, %v; want a no-op", r, got, err)
 				}
@@ -187,7 +192,7 @@ func TestMarkStateChecksTheStateAndTheLiveEpoch(t *testing.T) {
 			if tc.heardLater {
 				seen = seen.Add(-time.Millisecond)
 			}
-			got, err := statedb.MarkState(ctx, s, statedb.Mark{MachineID: renewMachineID, Epoch: tc.epoch, Seen: seen, To: tc.to, Now: at})
+			got, err := statedb.MarkState(ctx, s, statedb.Mark{MachineID: renewMachineID, Epoch: tc.epoch, Seen: seen, To: tc.to, Now: at}, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -217,7 +222,7 @@ func TestMarkStateWithNoLiveRow(t *testing.T) {
 	t.Parallel()
 	_, s := enrolledStore(t)
 	setState(t, s, renewMachineID, statedb.MachineStale)
-	got, err := statedb.MarkState(context.Background(), s, statedb.Mark{MachineID: renewMachineID, To: statedb.MachineOffline, Now: helloAt})
+	got, err := statedb.MarkState(context.Background(), s, statedb.Mark{MachineID: renewMachineID, To: statedb.MachineOffline, Now: helloAt}, nil)
 	if err != nil || got == nil || got.To != statedb.MachineOffline {
 		t.Fatalf("MarkState = %+v, %v; want OFFLINE", got, err)
 	}
@@ -248,7 +253,7 @@ func TestHeartbeatSeen(t *testing.T) {
 			mustHello(t, s, hello(0, "boot-a", "192.0.2.7:51000", helloAt))
 			setState(t, s, renewMachineID, tc.from)
 			before := machineOf(t, s, renewMachineID)
-			got, err := statedb.HeartbeatSeen(ctx, s, statedb.Beat{MachineID: renewMachineID, Epoch: tc.epoch, Promote: tc.promote, Now: at})
+			got, err := statedb.HeartbeatSeen(ctx, s, statedb.Beat{MachineID: renewMachineID, Epoch: tc.epoch, Promote: tc.promote, Now: at}, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -291,8 +296,14 @@ func TestStartSweep(t *testing.T) {
 		MachineID: renewMachineID, From: statedb.MachineOnline, To: statedb.MachineStale, Reason: "hub_start",
 		Stamp: statedb.Stamp{HubSeq: seq + 1, ObservedTime: start},
 	}
-	if got.RowsClosed != 2 || len(got.Changes) != 1 || got.Changes[0] != want {
+	if got.RowsClosed != 2 || len(got.Changes) != 1 || got.Changes[0].MachineID != want.MachineID ||
+		got.Changes[0].From != want.From || got.Changes[0].To != want.To ||
+		got.Changes[0].Reason != want.Reason || got.Changes[0].Stamp != want.Stamp {
 		t.Errorf("StartSweep = %+v, want two rows closed and %+v", got, want)
+	}
+	if len(got.Changes) == 1 && (got.Changes[0].Row.MachineID != renewMachineID ||
+		got.Changes[0].Row.State != statedb.MachineStale || got.Changes[0].Row.HubSeq != seq+1) {
+		t.Errorf("StartSweep row %+v, want %s at hub_seq %d", got.Changes[0].Row, statedb.MachineStale, seq+1)
 	}
 	if st := machineOf(t, s, otherMachineID).state; st != statedb.MachineOffline {
 		t.Errorf("an OFFLINE machine became %s", st)

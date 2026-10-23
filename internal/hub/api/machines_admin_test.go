@@ -129,6 +129,7 @@ func newMachineEnv(t *testing.T, who *typev1.Principal, adm *testMachineAdmin) *
 	if err != nil {
 		t.Fatal(err)
 	}
+	e.fleet = fleet
 	path, h := fleet.Handler()
 	mux := http.NewServeMux()
 	mux.Handle(path, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -161,7 +162,7 @@ func seedMachine(t *testing.T, e *fleetEnv, id string) {
 		Key: key, MachineID: id, CertDER: []byte("cert"), Serial: "ab" + id[len(id)-4:],
 		CertNotAfter: fleetNow.Add(90 * 24 * time.Hour), ReportedHostname: "laptop.lan",
 		Facts: `{"hostname":"laptop.lan"}`, Now: fleetNow,
-	}); err != nil {
+	}, nil); err != nil {
 		t.Fatal(err)
 	}
 }

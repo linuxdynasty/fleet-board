@@ -56,7 +56,7 @@ func ApplyRestore(ctx context.Context, s *store.Store, u RestoreUpdate) error {
 		return fmt.Errorf("statedb: server names: %w", err)
 	}
 	jctx := context.WithoutCancel(ctx) // see insertIdentity
-	return s.Write(ctx, func(tx *sql.Tx) error {
+	return writeHooked(ctx, s, func(tx *sql.Tx) error {
 		res, err := tx.ExecContext(jctx, `UPDATE hub_identity SET settings_epoch = ?, hub_addresses = ?,
 			restore_reconcile_until = ? WHERE id = 1`, u.SettingsEpoch, string(hub), u.ReconcileUntil.UnixMilli())
 		if err != nil {

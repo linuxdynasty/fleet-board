@@ -3,7 +3,9 @@ package api
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"path/filepath"
@@ -16,8 +18,9 @@ import (
 	"github.com/linuxdynasty/fleet-board/internal/telemetry"
 )
 
-// testCommitFleet builds a Fleet with a real store for commitWatch tests:
-// the commit now tails the audit log, so a zero Fleet no longer suffices.
+// testCommitFleet builds a Fleet with a real store for writer-ordering
+// tests: hook publishes need the single writer, so a zero Fleet no longer
+// suffices.
 func testCommitFleet(t *testing.T) *Fleet {
 	t.Helper()
 	dir := filepath.Join(t.TempDir(), "state")
@@ -192,35 +195,41 @@ func TestWatchBusDropsUnsubscribedShed(t *testing.T) {
 	}
 }
 
-// commitWatch runs one commit with its publish as an atomic step: a
-// second writer queues behind the first instead of interleaving, so the
-// bus appends in commit order (P1-4).
-func TestCommitWatchSerializesPublish(t *testing.T) {
+// WriteHook runs one commit with its publish as an ordered step on the
+// single writer: a second job queues behind the first instead of
+// interleaving, so the bus appends in commit order (#393).
+func TestWriteHookSerializesPublish(t *testing.T) {
 	t.Parallel()
 	f := testCommitFleet(t)
+	var mu sync.Mutex
 	var order []string
+	record := func(s string) {
+		mu.Lock()
+		defer mu.Unlock()
+		order = append(order, s)
+	}
 	entered := make(chan struct{})
 	release := make(chan struct{})
 	doneA := make(chan struct{})
 	doneB := make(chan struct{})
 	go func() {
 		defer close(doneA)
-		_ = f.commitWatch(
-			func() error {
-				order = append(order, "commit-A")
+		_ = f.store.WriteHook(context.Background(),
+			func(tx *sql.Tx) error {
+				record("commit-A")
 				close(entered)
 				<-release
 				return nil
 			},
-			func() { order = append(order, "publish-A") },
+			func() { record("publish-A") },
 		)
 	}()
 	<-entered
 	go func() {
 		defer close(doneB)
-		_ = f.commitWatch(
-			func() error { order = append(order, "commit-B"); return nil },
-			func() { order = append(order, "publish-B") },
+		_ = f.store.WriteHook(context.Background(),
+			func(tx *sql.Tx) error { record("commit-B"); return nil },
+			func() { record("publish-B") },
 		)
 	}()
 	// Let B reach the mutex while A holds it, then release A. Without
@@ -301,10 +310,11 @@ func TestWatchFellBehindLogsResync(t *testing.T) {
 	}
 }
 
-// Thirty-two concurrent writers each commit-then-publish atomically: no
-// publish ever slips between another writer's commit and its publish, so
-// the bus order matches the commit order on every interleaving (P1-4).
-func TestCommitWatchSerializesManyWriters(t *testing.T) {
+// Thirty-two concurrent writer jobs each publish in their commit hook:
+// no hook ever runs before its own commit, and hooks run in the same
+// order as their commits, so the bus order matches the commit order on
+// every interleaving (#393).
+func TestWriteHookOrdersManyWriters(t *testing.T) {
 	t.Parallel()
 	f := testCommitFleet(t)
 	const writers = 32
@@ -316,28 +326,59 @@ func TestCommitWatchSerializesManyWriters(t *testing.T) {
 		order = append(order, s)
 	}
 	var wg sync.WaitGroup
-	for range writers {
+	for i := range writers {
 		wg.Add(1)
-		go func() {
+		go func(id int) {
 			defer wg.Done()
-			_ = f.commitWatch(
-				func() error {
+			_ = f.store.WriteHook(context.Background(),
+				func(tx *sql.Tx) error {
 					time.Sleep(time.Millisecond)
-					record("commit")
+					record(fmt.Sprintf("commit-%d", id))
 					return nil
 				},
-				func() { record("publish") },
+				func() { record(fmt.Sprintf("publish-%d", id)) },
 			)
-		}()
+		}(i)
 	}
 	wg.Wait()
 	if len(order) != 2*writers {
 		t.Fatalf("order has %d steps, want %d", len(order), 2*writers)
 	}
-	for k := 0; k < len(order); k += 2 {
-		if order[k] != "commit" || order[k+1] != "publish" {
-			t.Fatalf("steps %d/%d = %q/%q, want commit/publish pairs",
-				k, k+1, order[k], order[k+1])
+	commitPos := map[string]int{}
+	publishOrder := []string{}
+	for pos, step := range order {
+		if len(step) > 7 && step[:7] == "commit-" {
+			commitPos[step[7:]] = pos
+		} else if len(step) > 8 && step[:8] == "publish-" {
+			publishOrder = append(publishOrder, step[8:])
+		} else {
+			t.Fatalf("step %d = %q, want commit-N or publish-N", pos, step)
 		}
 	}
+	if len(commitPos) != writers || len(publishOrder) != writers {
+		t.Fatalf("order = %v, want %d commits and %d publishes", order, writers, writers)
+	}
+	var commitOrder []string
+	for _, step := range order {
+		if len(step) > 7 && step[:7] == "commit-" {
+			commitOrder = append(commitOrder, step[7:])
+		}
+	}
+	for i, id := range publishOrder {
+		if commitOrder[i] != id {
+			t.Fatalf("publish order %v does not match commit order %v", publishOrder, commitOrder)
+		}
+		if commitPos[id] > indexOf(order, "publish-"+id) {
+			t.Fatalf("publish-%s runs before its commit", id)
+		}
+	}
+}
+
+func indexOf(ss []string, want string) int {
+	for i, s := range ss {
+		if s == want {
+			return i
+		}
+	}
+	return -1
 }

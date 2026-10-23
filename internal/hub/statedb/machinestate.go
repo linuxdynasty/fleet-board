@@ -36,6 +36,9 @@ const (
 type StateChange struct {
 	MachineID, From, To, Reason string
 	Stamp                       Stamp
+	// Row is the full machines row the job captured in its tx for the
+	// Watch publish: the after-image at this job's stamps (#403).
+	Row MachineRow
 }
 
 // Ended is what [EndConnection] did: Live is true when it closed the
@@ -63,7 +66,7 @@ var offlineOnClose = map[EndReason]bool{
 // changes nothing, so a displaced stream never marks its machine OFFLINE
 // (03f race table, "The displaced stream closes after the newer Hello";
 // #138). EndDisplaced is Hello's alone ([ErrEndReasonInvalid]).
-func EndConnection(ctx context.Context, s *store.Store, machineID string, epoch uint64, reason EndReason, now time.Time) (Ended, error) {
+func EndConnection(ctx context.Context, s *store.Store, machineID string, epoch uint64, reason EndReason, now time.Time, onCommit func(Ended)) (Ended, error) {
 	if !endReasons[reason] {
 		return Ended{}, fmt.Errorf("%w: %q", ErrEndReasonInvalid, reason)
 	}
@@ -72,7 +75,7 @@ func EndConnection(ctx context.Context, s *store.Store, machineID string, epoch 
 	}
 	jctx := context.WithoutCancel(ctx) // see insertIdentity
 	var out Ended
-	err := s.Write(ctx, func(tx *sql.Tx) error {
+	err := writeOrdered(ctx, s, &out, onCommit, func(tx *sql.Tx) error {
 		out = Ended{}
 		live, err := closeLive(jctx, tx, machineID, epoch, reason, now)
 		if err != nil || !live {
@@ -140,7 +143,12 @@ func changeState(ctx context.Context, tx *sql.Tx, machineID string, from []strin
 		to, st.ObservedTime.UnixMilli(), st.HubSeq, machineID); err != nil {
 		return nil, fmt.Errorf("statedb: store machine state: %w", err)
 	}
-	return &StateChange{MachineID: machineID, From: cur, To: to, Reason: reason, Stamp: st}, nil
+	// Capture the after-image in-tx for the Watch publish (#403).
+	row, err := readMachineRowTx(ctx, tx, machineID)
+	if err != nil {
+		return nil, err
+	}
+	return &StateChange{MachineID: machineID, From: cur, To: to, Reason: reason, Stamp: st, Row: row}, nil
 }
 
 // liveEpoch is machineID's live connection epoch, 0 when it has none.
@@ -178,7 +186,12 @@ type Mark struct {
 // the live row as offline in the same job, so nothing is left live for a
 // stream that is about to be cut or that no stream holds. It returns the
 // change, or nil when the decision no longer held.
-func MarkState(ctx context.Context, s *store.Store, m Mark) (*StateChange, error) {
+// onCommit runs on the store writer after this job's batch commits, in
+// commit order (#393): the Watch publish for exactly this write. It
+// receives what the job stamped (nil when the job changed nothing); a
+// nil onCommit writes without one. It must follow the post-commit hook
+// rules (short, non-blocking, never Submit or Write).
+func MarkState(ctx context.Context, s *store.Store, m Mark, onCommit func(*StateChange)) (*StateChange, error) {
 	from := []string{MachineOnline}
 	switch m.To {
 	case MachineStale:
@@ -189,7 +202,7 @@ func MarkState(ctx context.Context, s *store.Store, m Mark) (*StateChange, error
 	}
 	jctx := context.WithoutCancel(ctx) // see insertIdentity
 	var out *StateChange
-	err := s.Write(ctx, func(tx *sql.Tx) error {
+	err := writeOrdered(ctx, s, &out, onCommit, func(tx *sql.Tx) error {
 		out = nil
 		live, err := liveEpoch(jctx, tx, m.MachineID)
 		if err != nil || live != m.Epoch {
@@ -243,10 +256,10 @@ type Beat struct {
 // HeartbeatSeen moves last_seen_time and, with b.Promote, returns a STALE
 // machine to ONLINE (reason "heartbeat") when b.Epoch is still its live
 // connection, in one writer job. It returns the change, or nil.
-func HeartbeatSeen(ctx context.Context, s *store.Store, b Beat) (*StateChange, error) {
+func HeartbeatSeen(ctx context.Context, s *store.Store, b Beat, onCommit func(*StateChange)) (*StateChange, error) {
 	jctx := context.WithoutCancel(ctx) // see insertIdentity
 	var out *StateChange
-	err := s.Write(ctx, func(tx *sql.Tx) error {
+	err := writeOrdered(ctx, s, &out, onCommit, func(tx *sql.Tx) error {
 		out = nil
 		if err := touchSeen(jctx, tx, b.MachineID, b.Now); err != nil || !b.Promote {
 			return err

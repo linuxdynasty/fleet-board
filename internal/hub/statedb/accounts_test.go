@@ -46,7 +46,7 @@ func createOwnerAccount(t *testing.T, s *store.Store, w statedb.ConfigWrite) sta
 		ConfigWrite: w, ID: "acc-" + w.RequestID, Harness: "opencode", Provider: "anthropic",
 		DisplayName: "work", Origin: statedb.AccountOriginOwner,
 		Spec: []byte(`{"displayName":"work","reservePercent":"10"}`),
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("CreateOwnerAccount: %v", err)
 	}
@@ -109,7 +109,7 @@ func TestCreateOwnerAccountReplaysAndRefusesConflicts(t *testing.T) {
 		ConfigWrite: configWrite("local:alice", "req-1", 'a'), ID: "acc-other", Harness: "opencode",
 		Provider: "anthropic", DisplayName: "other", Origin: statedb.AccountOriginOwner,
 		Spec: []byte(`{}`),
-	})
+	}, nil)
 	if err != nil || !replayed.Replay {
 		t.Fatalf("replay = %+v/%v, want the stored account marked replay", replayed, err)
 	}
@@ -120,14 +120,14 @@ func TestCreateOwnerAccountReplaysAndRefusesConflicts(t *testing.T) {
 		ConfigWrite: configWrite("local:alice", "req-1", 'b'), ID: "acc-req-1", Harness: "opencode",
 		Provider: "anthropic", DisplayName: "work", Origin: statedb.AccountOriginOwner,
 		Spec: []byte(`{}`),
-	}); !errors.Is(err, statedb.ErrRequestConflict) {
+	}, nil); !errors.Is(err, statedb.ErrRequestConflict) {
 		t.Errorf("conflict = %v, want ErrRequestConflict", err)
 	}
 	if _, err := statedb.CreateOwnerAccount(context.Background(), s, statedb.CreateAccount{
 		ConfigWrite: configWrite("local:alice", "req-2", 'a'), ID: "acc-req-2", Harness: "opencode",
 		Provider: "anthropic", DisplayName: "work", Origin: statedb.AccountOriginOwner,
 		Spec: []byte(`{}`),
-	}); !errors.Is(err, statedb.ErrAccountExists) {
+	}, nil); !errors.Is(err, statedb.ErrAccountExists) {
 		t.Errorf("duplicate = %v, want ErrAccountExists", err)
 	}
 }
@@ -146,7 +146,7 @@ func TestUpdateAndDeleteOwnerAccount(t *testing.T) {
 	updated, err := statedb.UpdateOwnerAccount(ctx, s, statedb.UpdateAccountOp{
 		ConfigWrite: configWrite("local:alice", "req-2", 'c'), ID: "acc-req-1",
 		ExpectedVersion: 1, Merge: merge,
-	})
+	}, nil)
 	if err != nil || updated.Replay {
 		t.Fatalf("update = %+v/%v, want success", updated, err)
 	}
@@ -158,13 +158,13 @@ func TestUpdateAndDeleteOwnerAccount(t *testing.T) {
 		ConfigWrite: configWrite("local:alice", "req-3", 'd'), ID: "acc-req-1",
 		ExpectedVersion: 1, Merge: merge,
 	}
-	if _, err := statedb.UpdateOwnerAccount(ctx, s, stale); !errors.As(err, &staleErr) {
+	if _, err := statedb.UpdateOwnerAccount(ctx, s, stale, nil); !errors.As(err, &staleErr) {
 		t.Errorf("stale update = %v, want VersionStale", err)
 	}
 	deleted, err := statedb.DeleteOwnerAccount(ctx, s, statedb.DeleteAccountOp{
 		ConfigWrite: configWrite("local:alice", "req-4", 'e'), ID: "acc-req-1",
 		ExpectedVersion: 2,
-	})
+	}, nil)
 	if err != nil || deleted.Replay {
 		t.Fatalf("delete = %+v/%v, want success", deleted, err)
 	}
@@ -174,13 +174,13 @@ func TestUpdateAndDeleteOwnerAccount(t *testing.T) {
 	replayedDelete, err := statedb.DeleteOwnerAccount(ctx, s, statedb.DeleteAccountOp{
 		ConfigWrite: configWrite("local:alice", "req-4", 'e'), ID: "acc-req-1",
 		ExpectedVersion: 2,
-	})
+	}, nil)
 	if err != nil || !replayedDelete.Replay {
 		t.Errorf("delete replay = %+v/%v, want the same empty outcome", replayedDelete, err)
 	}
 	if _, err := statedb.DeleteOwnerAccount(ctx, s, statedb.DeleteAccountOp{
 		ConfigWrite: configWrite("local:alice", "req-5", 'f'), ID: "acc-req-1",
-	}); !errors.Is(err, statedb.ErrAccountUnknown) {
+	}, nil); !errors.Is(err, statedb.ErrAccountUnknown) {
 		t.Errorf("second delete = %v, want ErrAccountUnknown", err)
 	}
 }

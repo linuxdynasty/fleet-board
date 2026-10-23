@@ -114,6 +114,11 @@ type MachineStored struct {
 	// Deleted marks the tombstone of a replayed delete.
 	Replay  bool
 	Deleted bool
+	// Row is the full machines row the job captured in its tx for the
+	// Watch publish: the after-image at this job's stamps, not the
+	// batch-final row a post-commit re-read would see (#403). Empty on
+	// replays, which publish nothing.
+	Row MachineRow
 }
 
 // machineLogRow is one machine_request_log row.
@@ -343,10 +348,10 @@ func auditMachine(ctx context.Context, tx *sql.Tx, action string, stored Machine
 // masked fields replace the stored ones, the version rises by 1 and the
 // row is stamped, with its machine.update audit row. A REVOKED machine
 // stays revoked; only its name and labels change.
-func UpdateMachine(ctx context.Context, s *store.Store, in MachineUpdate) (MachineStored, error) {
+func UpdateMachine(ctx context.Context, s *store.Store, in MachineUpdate, onCommit func(MachineStored)) (MachineStored, error) {
 	jctx := context.WithoutCancel(ctx) // see insertIdentity
 	var out MachineStored
-	err := s.Write(ctx, func(tx *sql.Tx) error {
+	err := writeOrdered(ctx, s, &out, onCommit, func(tx *sql.Tx) error {
 		if replay, err := checkMachineReplay(jctx, tx, in.MachineWrite, machineKindUpdate, in.MachineID); err != nil || replay != nil {
 			if err == nil {
 				if err := validatedWrite(jctx); err != nil {
@@ -402,6 +407,14 @@ func UpdateMachine(ctx context.Context, s *store.Store, in MachineUpdate) (Machi
 		var err2 error
 		if out, err2 = withRevocation(jctx, tx, out); err2 != nil {
 			return err2
+		}
+		// Capture the after-image in-tx for the Watch publish: a
+		// post-commit re-read would see the batch-final row when a later
+		// job in the same batch overwrote this one (#403).
+		if row, rerr := readMachineRowTx(jctx, tx, in.MachineID); rerr != nil {
+			return rerr
+		} else {
+			out.Row = row
 		}
 		if err := auditMachine(jctx, tx, ActionMachineUpdate, out, in.MachineWrite,
 			map[string]string{"display_name": name}); err != nil {

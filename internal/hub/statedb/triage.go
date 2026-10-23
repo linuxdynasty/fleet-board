@@ -324,13 +324,13 @@ func auditTriage(ctx context.Context, tx *sql.Tx, action, id string, w TriageWri
 // version + 1, stamped, with its triage.snooze audit row, and a bounded
 // batch of expired idempotency rows is swept. Nothing is written on any
 // error.
-func SnoozeTriageItem(ctx context.Context, s *store.Store, in TriageSnooze) (TriageStored, error) {
+func SnoozeTriageItem(ctx context.Context, s *store.Store, in TriageSnooze, onCommit func(TriageStored)) (TriageStored, error) {
 	if in.ID == "" {
 		return TriageStored{}, fmt.Errorf("%w: a snooze needs an item id", ErrTriageInvalid)
 	}
 	jctx := context.WithoutCancel(ctx) // see insertIdentity
 	var out TriageStored
-	err := s.Write(ctx, func(tx *sql.Tx) error {
+	err := writeOrdered(ctx, s, &out, onCommit, func(tx *sql.Tx) error {
 		if replay, err := triageReplay(jctx, tx, in.Write, "snooze"); err != nil || replay != nil {
 			if err == nil {
 				if err := validatedWrite(jctx); err != nil {
@@ -401,13 +401,13 @@ func SnoozeTriageItem(ctx context.Context, s *store.Store, in TriageSnooze) (Tri
 // Otherwise the row moves to DISMISSED at version + 1 with the operator
 // and time recorded, stamped, with its triage.dismiss audit row carrying
 // the note. Nothing is written on any error.
-func DismissTriageItem(ctx context.Context, s *store.Store, in TriageDismiss) (TriageStored, error) {
+func DismissTriageItem(ctx context.Context, s *store.Store, in TriageDismiss, onCommit func(TriageStored)) (TriageStored, error) {
 	if in.ID == "" {
 		return TriageStored{}, fmt.Errorf("%w: a dismiss needs an item id", ErrTriageInvalid)
 	}
 	jctx := context.WithoutCancel(ctx) // see insertIdentity
 	var out TriageStored
-	err := s.Write(ctx, func(tx *sql.Tx) error {
+	err := writeOrdered(ctx, s, &out, onCommit, func(tx *sql.Tx) error {
 		if replay, err := triageReplay(jctx, tx, in.Write, "dismiss"); err != nil || replay != nil {
 			if err == nil {
 				if err := validatedWrite(jctx); err != nil {

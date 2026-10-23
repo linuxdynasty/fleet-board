@@ -26,7 +26,7 @@ const renewMachineID = "01jmachine0000000000000001"
 func enrolledStore(t *testing.T) (string, *store.Store) {
 	t.Helper()
 	dir, s := tokenStore(t)
-	if _, err := statedb.Enroll(context.Background(), s, newMachine(enrollKey("install-1", 1), renewMachineID, beforeTTL)); err != nil {
+	if _, err := statedb.Enroll(context.Background(), s, newMachine(enrollKey("install-1", 1), renewMachineID, beforeTTL), nil); err != nil {
 		t.Fatal(err)
 	}
 	return dir, s
@@ -223,7 +223,7 @@ func TestOpenMigratesAStoreFromTheMachinesSchema(t *testing.T) {
 	if err := statedb.InsertEnrollToken(context.Background(), s, sampleToken("local:a", "r", 1)); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := statedb.Enroll(context.Background(), s, newMachine(enrollKey("i", 1), renewMachineID, beforeTTL)); err != nil {
+	if _, err := statedb.Enroll(context.Background(), s, newMachine(enrollKey("i", 1), renewMachineID, beforeTTL), nil); err != nil {
 		t.Fatal(err)
 	}
 	var signs atomic.Int32

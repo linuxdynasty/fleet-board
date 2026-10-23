@@ -47,7 +47,7 @@ func TestConcurrentActionsGetDistinctRisingHubSeqs(t *testing.T) {
 				CSRKeyHash: sha256.Sum256([]byte{40 + i}),
 			}
 			id := fmt.Sprintf("01jmachine00000000000000%02d", 10+i)
-			if _, err := statedb.Enroll(ctx, s, newMachine(key, id, beforeTTL)); err != nil {
+			if _, err := statedb.Enroll(ctx, s, newMachine(key, id, beforeTTL), nil); err != nil {
 				t.Error(err)
 			}
 		})

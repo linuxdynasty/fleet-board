@@ -165,10 +165,10 @@ func ReadFleetSettings(ctx context.Context, s *store.Store) (spec []byte, versio
 // 1; otherwise the merged spec replaces the stored one, the version
 // rises by 1 and the row is stamped, with its settings.update audit row
 // (target settings/fleet, 02m).
-func UpdateFleetSettings(ctx context.Context, s *store.Store, in UpdateSettingsOp) (SettingsStored, error) {
+func UpdateFleetSettings(ctx context.Context, s *store.Store, in UpdateSettingsOp, onCommit func(SettingsStored)) (SettingsStored, error) {
 	jctx := context.WithoutCancel(ctx) // see insertIdentity
 	var out SettingsStored
-	err := s.Write(ctx, func(tx *sql.Tx) error {
+	err := writeOrdered(ctx, s, &out, onCommit, func(tx *sql.Tx) error {
 		if row, err := configReplay(jctx, tx, in.ConfigWrite, configKindSettings); err != nil || row != nil {
 			if err == nil {
 				if err := validatedWrite(jctx); err != nil {

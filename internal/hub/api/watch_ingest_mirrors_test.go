@@ -329,7 +329,11 @@ func TestWatchSummaryTickPublishes(t *testing.T) {
 	}
 	pump.expectNone(t)
 	// A second dirty inside the second waits out the throttle.
-	e.fleet.PublishMachineState(context.Background(), "m-sum", "ENROLLED")
+	sumRow, err := statedb.ReadMachineRow(context.Background(), e.st, "m-sum")
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.fleet.PublishMachineState(context.Background(), sumRow, "ENROLLED")
 	if err := e.fleet.PublishTick(context.Background()); err != nil {
 		t.Fatalf("PublishTick: %v", err)
 	}

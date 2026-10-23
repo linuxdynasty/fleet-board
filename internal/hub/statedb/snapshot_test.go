@@ -149,7 +149,7 @@ func TestASnapshotOfAnotherEpochOrMachineIsRefused(t *testing.T) {
 	if _, err := applySnapshot(t, s, snapIn(1, 42, snapAt)); !errors.Is(err, statedb.ErrSnapshotNotCurrent) {
 		t.Errorf("snapshot of displaced epoch 1: %v, want ErrSnapshotNotCurrent", err)
 	}
-	if _, err := statedb.EndConnection(context.Background(), s, renewMachineID, 2, statedb.EndStreamClosed, snapAt); err != nil {
+	if _, err := statedb.EndConnection(context.Background(), s, renewMachineID, 2, statedb.EndStreamClosed, snapAt, nil); err != nil {
 		t.Fatal(err)
 	}
 	before.lastSeen = readSnap(t, dir).lastSeen // EndConnection moves it

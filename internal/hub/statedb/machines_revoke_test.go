@@ -53,7 +53,7 @@ func TestRevokeMachineRevokesSerialsAndClosesCommands(t *testing.T) {
 		MachineWrite: machineWrite("local:alice", "req-1", 9, at),
 		MachineID:    id, Reason: "stolen laptop",
 		CloseOpen: closeForRevoke,
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("RevokeMachine: %v", err)
 	}
@@ -89,7 +89,7 @@ func TestRevokeMachineRevokesSerialsAndClosesCommands(t *testing.T) {
 		MachineWrite: machineWrite("local:alice", "req-2", 10, at.Add(time.Minute)),
 		MachineID:    id, Reason: "stolen laptop",
 		CloseOpen: closeForRevoke,
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("second RevokeMachine: %v", err)
 	}
@@ -108,7 +108,7 @@ func TestRevokeMachineRevokesSerialsAndClosesCommands(t *testing.T) {
 		MachineWrite: machineWrite("local:alice", "req-3", 11, at),
 		MachineID:    "01jmissing0000000000000001",
 		CloseOpen:    closeForRevoke,
-	})
+	}, nil)
 	if !errors.Is(err, statedb.ErrMachineUnknown) {
 		t.Errorf("missing = %v, want ErrMachineUnknown", err)
 	}
@@ -127,21 +127,21 @@ func TestDeleteMachineNeedsARevokedMachine(t *testing.T) {
 	_, _, err := statedb.DeleteMachine(ctx, s, statedb.MachineDelete{
 		MachineWrite: machineWrite("local:alice", "req-1", 9, at),
 		MachineID:    id,
-	})
+	}, nil)
 	if !errors.Is(err, statedb.ErrMachineNotRevoked) {
 		t.Fatalf("live delete = %v, want ErrMachineNotRevoked", err)
 	}
 	if _, err := statedb.RevokeMachine(ctx, s, statedb.MachineRevoke{
 		MachineWrite: machineWrite("local:alice", "req-2", 10, at),
 		MachineID:    id, CloseOpen: closeForRevoke,
-	}); err != nil {
+	}, nil); err != nil {
 		t.Fatal(err)
 	}
 
 	gone, _, err := statedb.DeleteMachine(ctx, s, statedb.MachineDelete{
 		MachineWrite: machineWrite("local:alice", "req-3", 11, at.Add(time.Minute)),
 		MachineID:    id,
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("DeleteMachine: %v", err)
 	}
@@ -184,7 +184,7 @@ func TestDeleteMachineNeedsARevokedMachine(t *testing.T) {
 	again, _, err := statedb.DeleteMachine(ctx, s, statedb.MachineDelete{
 		MachineWrite: machineWrite("local:alice", "req-3", 11, at.Add(2*time.Minute)),
 		MachineID:    id,
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("replayed DeleteMachine: %v", err)
 	}
@@ -210,19 +210,19 @@ func TestMachineReplayNeedsTheKind(t *testing.T) {
 	if _, err := statedb.RevokeMachine(ctx, s, statedb.MachineRevoke{
 		MachineWrite: machineWrite("local:alice", "req-1", 9, at),
 		MachineID:    id, CloseOpen: closeForRevoke,
-	}); err != nil {
+	}, nil); err != nil {
 		t.Fatal(err)
 	}
 	if _, _, err := statedb.DeleteMachine(ctx, s, statedb.MachineDelete{
 		MachineWrite: machineWrite("local:alice", "req-1", 9, at.Add(time.Minute)),
 		MachineID:    id,
-	}); !errors.Is(err, statedb.ErrRequestConflict) {
+	}, nil); !errors.Is(err, statedb.ErrRequestConflict) {
 		t.Fatalf("delete under the revoke's key = %v, want ErrRequestConflict", err)
 	}
 	if _, err := statedb.UpdateMachine(ctx, s, statedb.MachineUpdate{
 		MachineWrite: machineWrite("local:alice", "req-1", 9, at.Add(2*time.Minute)),
 		MachineID:    id, Name: "renamed", HasName: true,
-	}); !errors.Is(err, statedb.ErrRequestConflict) {
+	}, nil); !errors.Is(err, statedb.ErrRequestConflict) {
 		t.Fatalf("update under the revoke's key = %v, want ErrRequestConflict", err)
 	}
 	if err := s.Close(); err != nil {
@@ -263,7 +263,7 @@ func TestPrecheckRevokeDecidesBeforeAnyEffect(t *testing.T) {
 	if _, err := statedb.RevokeMachine(ctx, s, statedb.MachineRevoke{
 		MachineWrite: machineWrite("local:alice", "req-1", 9, at),
 		MachineID:    id, CloseOpen: closeForRevoke,
-	}); err != nil {
+	}, nil); err != nil {
 		t.Fatal(err)
 	}
 	replay, err := statedb.PrecheckRevoke(ctx, s,
@@ -281,5 +281,42 @@ func TestPrecheckRevokeDecidesBeforeAnyEffect(t *testing.T) {
 	}
 	if err := s.Close(); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// A machine delete stamps its audits in its own job: the custom hook must
+// publish them through the store's audit publisher, never the tick tail
+// (#403 P1).
+func TestDeleteMachineHookPublishesAudits(t *testing.T) {
+	t.Parallel()
+	id := "01jmachine0000000000000003"
+	_, s := enrolledMachineStore(t, id, beforeTTL)
+	ctx := context.Background()
+	at := beforeTTL.Add(time.Minute)
+	var got []statedb.AuditStored
+	s.SetAuditPublisher(func(rows []statedb.AuditStored) { got = append(got, rows...) })
+	if _, err := statedb.RevokeMachine(ctx, s, statedb.MachineRevoke{
+		MachineWrite: machineWrite("local:alice", "req-2", 10, at),
+		MachineID:    id, CloseOpen: closeForRevoke,
+	}, func(statedb.RevokedMachine) {}); err != nil {
+		t.Fatalf("RevokeMachine: %v", err)
+	}
+	if _, _, err := statedb.DeleteMachine(ctx, s, statedb.MachineDelete{
+		MachineWrite: machineWrite("local:alice", "req-3", 11, at.Add(time.Minute)),
+		MachineID:    id,
+	}, func(statedb.MachineStored, statedb.MachineRow) {}); err != nil {
+		t.Fatalf("DeleteMachine: %v", err)
+	}
+	if len(got) == 0 {
+		t.Fatal("hook published no audits: delete audits never published")
+	}
+	var sawDelete bool
+	for _, r := range got {
+		if r.Action == "machine.delete" {
+			sawDelete = true
+		}
+	}
+	if !sawDelete {
+		t.Fatalf("hook published %d audits with no machine.delete", len(got))
 	}
 }

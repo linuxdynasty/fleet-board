@@ -53,6 +53,14 @@ func scanChangeRequestRows(rows *sql.Rows) (ChangeRequestRow, error) {
 	return c, nil
 }
 
+// readChangeRequestRowTx reads one mirror row in the writer job's tx for
+// the Watch publish (#403). A post-commit hook must publish the capture,
+// never re-read.
+func readChangeRequestRowTx(ctx context.Context, tx *sql.Tx, key string) (ChangeRequestRow, error) {
+	return scanChangeRequestRow(tx.QueryRowContext(ctx,
+		`SELECT `+changeRequestColumns+` FROM change_requests WHERE key = ?`, key))
+}
+
 // ErrChangeRequestUnknown is a missing mirror row.
 var ErrChangeRequestUnknown = errors.New("statedb: unknown change request")
 

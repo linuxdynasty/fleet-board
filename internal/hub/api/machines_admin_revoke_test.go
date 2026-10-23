@@ -89,7 +89,7 @@ func reenrollMachine(t *testing.T, e *fleetEnv, id, serial string) {
 		Key: key, PreviousMachine: id, CertDER: []byte("cert-new-" + serial), Serial: serial,
 		CertNotAfter: fleetNow.Add(90 * 24 * time.Hour), ReportedHostname: "laptop.lan",
 		Facts: `{"hostname":"laptop.lan"}`, Now: fleetNow,
-	}); err != nil {
+	}, nil); err != nil {
 		t.Fatal(err)
 	}
 }

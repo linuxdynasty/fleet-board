@@ -204,7 +204,7 @@ func Hello(ctx context.Context, s *store.Store, in HelloIn) (HelloOut, error) {
 	}
 	jctx := context.WithoutCancel(ctx) // see insertIdentity
 	var out HelloOut
-	err := s.Write(ctx, func(tx *sql.Tx) error {
+	err := writeHooked(ctx, s, func(tx *sql.Tx) error {
 		var err error
 		out, err = applyHello(jctx, tx, in)
 		return err

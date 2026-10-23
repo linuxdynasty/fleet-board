@@ -23,7 +23,7 @@ func TestOwnerWritesPublishWatchOrder(t *testing.T) {
 	settings, err := statedb.UpdateFleetSettings(ctx, s, statedb.UpdateSettingsOp{
 		ConfigWrite: configWrite("local:alice", "w-settings", 'a'),
 		Merge:       fleetMerge([]byte(`{\"hub\":{}}`)),
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("UpdateFleetSettings: %v", err)
 	}
@@ -32,14 +32,14 @@ func TestOwnerWritesPublishWatchOrder(t *testing.T) {
 	snoozed, err := statedb.SnoozeTriageItem(ctx, s, statedb.TriageSnooze{
 		Write: triageWrite("local:alice", "w-snooze", 'a'), ID: "ti-a",
 		ExpectedVersion: seedA.Version, Until: now.AddDate(0, 0, 1),
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("SnoozeTriageItem: %v", err)
 	}
 	dismissed, err := statedb.DismissTriageItem(ctx, s, statedb.TriageDismiss{
 		Write: triageWrite("local:alice", "w-dismiss", 'a'), ID: "ti-b",
 		ExpectedVersion: seedB.Version, Note: "done",
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("DismissTriageItem: %v", err)
 	}
@@ -87,7 +87,7 @@ func TestTriageReplayTakesNoNewStamp(t *testing.T) {
 	first, err := statedb.SnoozeTriageItem(ctx, s, statedb.TriageSnooze{
 		Write: triageWrite("local:alice", "w-1", 'a'), ID: "ti-r",
 		ExpectedVersion: seed.Version, Until: triageTime.AddDate(0, 0, 1),
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("first snooze: %v", err)
 	}
@@ -95,7 +95,7 @@ func TestTriageReplayTakesNoNewStamp(t *testing.T) {
 	second, err := statedb.SnoozeTriageItem(ctx, s, statedb.TriageSnooze{
 		Write: triageWrite("local:alice", "w-1", 'a'), ID: "ti-r",
 		ExpectedVersion: seed.Version, Until: triageTime.AddDate(0, 0, 1),
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("replay snooze: %v", err)
 	}

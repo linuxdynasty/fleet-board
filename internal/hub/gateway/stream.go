@@ -395,7 +395,15 @@ func (a *agentService) closed(ctx context.Context, s *stream) {
 		if a.beforeRowClose != nil {
 			a.beforeRowClose()
 		}
-		ended, err = statedb.EndConnection(wctx, a.store, s.machineID, s.epoch, reason, a.now().UTC())
+		ended, err = statedb.EndConnection(wctx, a.store, s.machineID, s.epoch, reason, a.now().UTC(),
+			func(e statedb.Ended) {
+				// The close committed: publish the OFFLINE change in
+				// commit order (#393). Closes that change no state (a
+				// displaced or already-closed row) publish nothing.
+				if e.Change != nil {
+					a.publishMachineState(ctx, e.Change.Row, e.Change.From)
+				}
+			})
 	}
 	// After the close returns, never before: the close is the last job this
 	// stream queues, and when Shutdown's wait runs out the store closes
@@ -407,7 +415,7 @@ func (a *agentService) closed(ctx context.Context, s *stream) {
 				"epoch", s.epoch)
 		}
 		if ended.Change != nil {
-			a.stateChanged(ctx, *ended.Change)
+			a.logStateChanged(ctx, *ended.Change)
 		}
 	}
 	a.log.InfoContext(ctx, "reconnect.closed", "machine_id", s.machineID, "epoch", s.epoch, "reason", string(reason),

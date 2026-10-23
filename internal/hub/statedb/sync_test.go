@@ -26,7 +26,7 @@ func TestTheSyncSchemaMirrorsProviderPages(t *testing.T) {
 
 	mustUpsert := func(items []statedb.WorkItemMirror) {
 		t.Helper()
-		if _, err := statedb.UpsertWorkItemPage(ctx, s, "github-1", items, nil, nil, 10); err != nil {
+		if _, err := statedb.UpsertWorkItemPage(ctx, s, "github-1", items, nil, nil, 10, nil); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -80,7 +80,7 @@ func TestUpsertWorkItemPageReportsChanges(t *testing.T) {
 			TrustJSON: []byte(`{"trusted":true}`),
 		}
 	}
-	got, err := statedb.UpsertWorkItemPage(ctx, s, "github-1", []statedb.WorkItemMirror{row(100, "first")}, nil, nil, 10)
+	got, err := statedb.UpsertWorkItemPage(ctx, s, "github-1", []statedb.WorkItemMirror{row(100, "first")}, nil, nil, 10, nil)
 	if err != nil {
 		t.Fatalf("UpsertWorkItemPage: %v", err)
 	}
@@ -95,21 +95,21 @@ func TestUpsertWorkItemPageReportsChanges(t *testing.T) {
 		t.Errorf("change key = %q, want %q", got[0].Key, key)
 	}
 	firstSeq := got[0].HubSeq
-	got, err = statedb.UpsertWorkItemPage(ctx, s, "github-1", []statedb.WorkItemMirror{row(100, "first")}, nil, nil, 20)
+	got, err = statedb.UpsertWorkItemPage(ctx, s, "github-1", []statedb.WorkItemMirror{row(100, "first")}, nil, nil, 20, nil)
 	if err != nil {
 		t.Fatalf("UpsertWorkItemPage: %v", err)
 	}
 	if len(got) != 0 {
 		t.Fatalf("identical page changes = %+v, want none", got)
 	}
-	got, err = statedb.UpsertWorkItemPage(ctx, s, "github-1", []statedb.WorkItemMirror{row(90, "late")}, nil, nil, 30)
+	got, err = statedb.UpsertWorkItemPage(ctx, s, "github-1", []statedb.WorkItemMirror{row(90, "late")}, nil, nil, 30, nil)
 	if err != nil {
 		t.Fatalf("UpsertWorkItemPage: %v", err)
 	}
 	if len(got) != 0 {
 		t.Fatalf("older page changes = %+v, want none (guard drops it)", got)
 	}
-	got, err = statedb.UpsertWorkItemPage(ctx, s, "github-1", []statedb.WorkItemMirror{row(110, "second")}, nil, nil, 40)
+	got, err = statedb.UpsertWorkItemPage(ctx, s, "github-1", []statedb.WorkItemMirror{row(110, "second")}, nil, nil, 40, nil)
 	if err != nil {
 		t.Fatalf("UpsertWorkItemPage: %v", err)
 	}
