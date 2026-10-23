@@ -1,6 +1,7 @@
 import type { JSX } from "react";
 import { ROUTES, routeHref, useHashRoute, type RouteName } from "./router.ts";
 import { MachinesView } from "./views/machines.tsx";
+import { UsageView } from "./views/usage.tsx";
 import styles from "./app.module.css";
 
 const LABELS: Record<RouteName, string> = {
@@ -39,7 +40,13 @@ export function App(): JSX.Element {
         ))}
       </nav>
       <main className={styles.main}>
-        {route === "machines" ? <MachinesView /> : <PlannedView name={route} />}
+        {route === "machines" ? (
+          <MachinesView />
+        ) : route === "usage" ? (
+          <UsageView />
+        ) : (
+          <PlannedView name={route} />
+        )}
       </main>
     </div>
   );
