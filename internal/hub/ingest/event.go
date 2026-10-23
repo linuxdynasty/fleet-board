@@ -107,8 +107,11 @@ func SubmitEvent(ctx context.Context, st *store.Store, in statedb.EventIn, ev *a
 	if onCommit == nil {
 		p.done, err = st.Submit(ctx, apply)
 	} else {
-		p.done, err = st.SubmitHook(ctx, apply, func() {
+		p.done, err = st.SubmitHook(ctx, statedb.WithAuditCapture(jctx, apply, &p.audits), func() {
 			onCommit(p.out, p.goals)
+			// The job's own audits publish here, after its resources, in
+			// batch order: a resume never skips them (#403).
+			statedb.PublishAudits(st, p.audits)
 		})
 	}
 	if err != nil {
@@ -119,9 +122,10 @@ func SubmitEvent(ctx context.Context, st *store.Store, in statedb.EventIn, ev *a
 
 // EventPending is a queued Event job ([SubmitEvent]).
 type EventPending struct {
-	done  <-chan error
-	out   statedb.EventOut  // written by the job; read after its result
-	goals []statedb.GoalRow // the appliers' stamped after-images; read after the result
+	done   <-chan error
+	out    statedb.EventOut  // written by the job; read after its result
+	goals  []statedb.GoalRow // the appliers' stamped after-images; read after the result
+	audits []statedb.AuditStored
 }
 
 // Result delivers the job's outcome once: nil after the batch holding it

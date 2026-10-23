@@ -10,20 +10,19 @@ import (
 )
 
 // This file is the Watch publish tick (02c): the housekeeping job that
-// keeps the live topics no commit hook can keep alone. The audit tail and
-// the summary hold only watchMu; each volatile flush releases it while
-// its restamp commits, publishing in the commit hook in commit order
-// (#393):
+// keeps the live topics no commit hook can keep alone. The summary holds
+// only watchMu; each volatile flush releases it while its restamp
+// commits, publishing in the commit hook in commit order (#393):
 //
-//   - the audit tail publishes the audit rows committed anywhere since
-//     the last position (gateway, syncer, housekeeping expiry — every
-//     writer job appends its rows, so no single commit hook sees them
-//     all) as AUDIT CREATED in hub_seq order;
 //   - the volatile flush restamps the held volatile-only changes whose
 //     interval passed and publishes the latest values at the fresh
 //     position, so a resume never skips them;
 //   - the summary recompute publishes the fleet summary when a published
 //     change dirtied it, at most once per second.
+//
+// Audit rows need no tail: every writer job publishes its own audits in
+// its post-commit hook, after its resource, in batch order, so one
+// writer-serialized sequence covers both in hub_seq order (#403).
 //
 // A run never fails: a store or assembly error logs its static event and
 // the next run retries. The caller holds no lock.
@@ -32,15 +31,13 @@ import (
 // per second).
 const summaryPublishInterval = watchSummaryInterval
 
-// PublishTick runs one publish pass: the audit tail, the volatile flush
-// and the dirty summary, in hub_seq order. It always returns nil; every
-// failure is logged and retried on the next pass. The volatile flush
-// releases watchMu while each restamp commits: a flush holds no lock
-// across the writer, so a commit hook publishing under watchMu can never
-// wedge against the tick (#393).
+// PublishTick runs one publish pass: the volatile flush and the dirty
+// summary. It always returns nil; every failure is logged and retried on
+// the next pass. The volatile flush releases watchMu while each restamp
+// commits: a flush holds no lock across the writer, so a commit hook
+// publishing under watchMu can never wedge against the tick (#393).
 func (f *Fleet) PublishTick(ctx context.Context) error {
 	f.watchMu.Lock()
-	f.publishAuditTail(ctx)
 	due := f.dueVolatile(f.now())
 	f.watchMu.Unlock()
 	for _, d := range due {

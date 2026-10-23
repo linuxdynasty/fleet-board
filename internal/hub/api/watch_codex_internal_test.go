@@ -11,8 +11,10 @@ import (
 
 	"connectrpc.com/connect"
 
+	agentv1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/agent/v1"
 	hubv1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/hub/v1"
 	typev1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/type/v1"
+	"github.com/linuxdynasty/fleet-board/internal/hub/approvals"
 	"github.com/linuxdynasty/fleet-board/internal/hub/statedb"
 	"google.golang.org/protobuf/types/known/fieldmaskpb"
 )
@@ -239,6 +241,159 @@ func TestCodexAuditPublishesInSeqOrder(t *testing.T) {
 		if seqs[i] <= seqs[i-1] {
 			t.Fatalf("hub_seq %v not ascending (topics %v): resume would skip", seqs, topics)
 		}
+	}
+}
+
+// The hammer keeper: concurrent writer-ordered account creates stamp
+// resource then audit per job while the publish tick spins. The bus must
+// stay in hub_seq order no matter where the tick lands (#403 P1). After
+// the tail's removal the tick publishes no audits at all, so this holds
+// by construction; it guards the invariant forever.
+func TestCodexHookAndTickStayOrdered(t *testing.T) {
+	t.Parallel()
+	f := testCommitFleet(t)
+	ctx := internalPrincipalCtx(context.Background())
+	stop := make(chan struct{})
+	var tickWG sync.WaitGroup
+	tickWG.Add(1)
+	go func() {
+		defer tickWG.Done()
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+				_ = f.PublishTick(context.Background())
+			}
+		}
+	}()
+	const writers, rounds = 4, 15
+	var wg sync.WaitGroup
+	errs := make(chan error, writers*rounds)
+	for w := 0; w < writers; w++ {
+		wg.Add(1)
+		go func(w int) {
+			defer wg.Done()
+			for k := 0; k < rounds; k++ {
+				name := fmt.Sprintf("hammer-%d-%d", w, k)
+				_, err := f.CreateAccount(ctx, connect.NewRequest(&hubv1.CreateAccountRequest{
+					RequestId: fmt.Sprintf("hammer-req-%d-%d", w, k),
+					Harness:   &typev1.Harness{Name: "opencode"},
+					Provider:  "anthropic",
+					Spec: &hubv1.AccountSpec{
+						DisplayName: name, Mode: hubv1.AccountMode_ACCOUNT_MODE_FLEET,
+						BudgetKind: typev1.BudgetKind_BUDGET_KIND_DOLLAR_CAP,
+					},
+				}))
+				errs <- err
+			}
+		}(w)
+	}
+	wg.Wait()
+	close(stop)
+	tickWG.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatalf("CreateAccount: %v", err)
+		}
+	}
+	entries, _, _ := f.watch.snapshot(0, ^uint64(0))
+	var prev uint64
+	var count int
+	for i, e := range entries {
+		if e.seq <= prev {
+			t.Fatalf("entry %d: hub_seq %d after %d: resume would skip", i, e.seq, prev)
+		}
+		prev = e.seq
+		count++
+	}
+	if count == 0 {
+		t.Fatal("bus is empty")
+	}
+}
+
+// seedApproval creates one COMMAND_CONFIRM approval in-tx: the gated kill
+// command stays stored, nothing is sent.
+func seedApproval(t *testing.T, f *Fleet, expire time.Time) string {
+	t.Helper()
+	now := f.now()
+	in := approvals.Create{
+		Kind:     hubv1.ApprovalKind_APPROVAL_KIND_COMMAND_CONFIRM,
+		Severity: hubv1.Severity_SEVERITY_WARNING,
+		Preview:  "kill window dev:3", MachineID: "m1",
+		Allowed: []approvals.Choice{{Key: "approve"}, {Key: "deny"}},
+		Command: &agentv1.Command{
+			Kind: &agentv1.Command_KillWindow{KillWindow: &agentv1.KillWindow{
+				Window: &typev1.WindowKey{Server: "dev", ServerStartId: "s9", WindowId: "3"},
+			}},
+		},
+		DefaultChoice: "deny", Fallback: hubv1.ApprovalFallback_APPROVAL_FALLBACK_DENY,
+		ExpireTime: expire, RequiredRole: typev1.Role_ROLE_OWNER, Now: now,
+	}
+	var id string
+	err := f.store.Write(context.Background(), func(tx *sql.Tx) error {
+		a, _, err := approvals.CreateApproval(context.Background(), tx, in)
+		if err != nil {
+			return err
+		}
+		id = a.GetId().GetValue()
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("CreateApproval: %v", err)
+	}
+	return id
+}
+
+// auditSeqs returns the hub_seqs of the AUDIT entries on the bus.
+func auditSeqs(f *Fleet) []uint64 {
+	entries, _, _ := f.watch.snapshot(0, ^uint64(0))
+	var out []uint64
+	for _, e := range entries {
+		if e.change.topic == hubv1.WatchTopic_WATCH_TOPIC_AUDIT {
+			out = append(out, e.seq)
+		}
+	}
+	return out
+}
+
+// Approval expiry stamps its audits in its own job: the hook must publish
+// them, with no tick running (#403 P1).
+func TestCodexExpirePassPublishesAudits(t *testing.T) {
+	t.Parallel()
+	f := testCommitFleet(t)
+	ctx := context.Background()
+	now := f.now()
+	seedApproval(t, f, now.Add(time.Hour))
+	expired, err := approvals.ExpirePass(ctx, f.store, now.Add(2*time.Hour))
+	if err != nil {
+		t.Fatalf("ExpirePass: %v", err)
+	}
+	if len(expired) != 1 {
+		t.Fatalf("expired = %v, want one approval", expired)
+	}
+	if got := auditSeqs(f); len(got) == 0 {
+		t.Fatal("bus holds no AUDIT entries: expiry audits never published")
+	}
+}
+
+// An approval decision stamps its audits in its own job: the hook must
+// publish them, with no tick running (#403 P1).
+func TestCodexDecidePublishesAudits(t *testing.T) {
+	t.Parallel()
+	f := testCommitFleet(t)
+	ctx := internalPrincipalCtx(context.Background())
+	id := seedApproval(t, f, f.now().Add(time.Hour))
+	_, err := f.DecideApproval(ctx, connect.NewRequest(&hubv1.DecideApprovalRequest{
+		RequestId: "decide-req-1", Id: &hubv1.ApprovalId{Value: id},
+		ExpectedVersion: 1, Decision: "deny",
+	}))
+	if err != nil {
+		t.Fatalf("DecideApproval: %v", err)
+	}
+	if got := auditSeqs(f); len(got) == 0 {
+		t.Fatal("bus holds no AUDIT entries: decision audits never published")
 	}
 }
 

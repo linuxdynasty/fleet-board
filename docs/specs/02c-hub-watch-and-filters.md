@@ -115,9 +115,7 @@ A goal file changes, the agent sends an `Event`, the store writer commits it (de
 and triage state in the same transaction), and the fan-out bus delivers it to each matching
 `Watch`. Every writer uses the same commit-then-publish step: the ingest jobs, the gateway's
 agent writes and the syncer's mirror pages commit first, then offer their stamped changes in
-commit order, and the publish tick tails new audit entries the same way
-(a rolled-back job publishes nothing). The publish runs as a post-commit hook on the single store writer, so concurrent commits cannot publish backwards. One transaction can produce several changes (a goal and its triage item); per
-resource they arrive in order. After a drop the client reopens with the last `resume_token`;
+commit order (a rolled-back job publishes nothing). Each job's hook publishes its resource then the audits its own transaction stamped, so one writer-serialized sequence covers both in hub_seq order with no tail to race it. One transaction can produce several changes; per resource they arrive in order. After a drop the client reopens with the last `resume_token`;
 `RESYNC_REQUIRED` comes only when the hub cannot honour that token.
 
 ```mermaid

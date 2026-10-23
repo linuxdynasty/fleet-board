@@ -283,3 +283,40 @@ func TestPrecheckRevokeDecidesBeforeAnyEffect(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// A machine delete stamps its audits in its own job: the custom hook must
+// publish them through the store's audit publisher, never the tick tail
+// (#403 P1).
+func TestDeleteMachineHookPublishesAudits(t *testing.T) {
+	t.Parallel()
+	id := "01jmachine0000000000000003"
+	_, s := enrolledMachineStore(t, id, beforeTTL)
+	ctx := context.Background()
+	at := beforeTTL.Add(time.Minute)
+	var got []statedb.AuditStored
+	s.SetAuditPublisher(func(rows []statedb.AuditStored) { got = append(got, rows...) })
+	if _, err := statedb.RevokeMachine(ctx, s, statedb.MachineRevoke{
+		MachineWrite: machineWrite("local:alice", "req-2", 10, at),
+		MachineID:    id, CloseOpen: closeForRevoke,
+	}, func(statedb.RevokedMachine) {}); err != nil {
+		t.Fatalf("RevokeMachine: %v", err)
+	}
+	if _, _, err := statedb.DeleteMachine(ctx, s, statedb.MachineDelete{
+		MachineWrite: machineWrite("local:alice", "req-3", 11, at.Add(time.Minute)),
+		MachineID:    id,
+	}, func(statedb.MachineStored, statedb.MachineRow) {}); err != nil {
+		t.Fatalf("DeleteMachine: %v", err)
+	}
+	if len(got) == 0 {
+		t.Fatal("hook published no audits: delete audits never published")
+	}
+	var sawDelete bool
+	for _, r := range got {
+		if r.Action == "machine.delete" {
+			sawDelete = true
+		}
+	}
+	if !sawDelete {
+		t.Fatalf("hook published %d audits with no machine.delete", len(got))
+	}
+}

@@ -69,7 +69,8 @@ func (f *Fleet) CreateSession(ctx context.Context, req *connect.Request[hubv1.Cr
 	var sessOpSeq int64
 	var sessRow statedb.SessionRow
 	pctx := context.WithoutCancel(ctx) // the publish hook runs on the writer after the handler may have left
-	if commitErr := f.store.WriteHook(ctx, func(tx *sql.Tx) error {
+	var sessAudits []statedb.AuditStored
+	if commitErr := f.store.WriteHook(ctx, statedb.WithAuditCapture(ctx, func(tx *sql.Tx) error {
 		if op, replay, err := checkRequest(ctx, tx, actor, m.GetRequestId(), sum[:]); err != nil || replay {
 			if err != nil {
 				return err
@@ -141,11 +142,14 @@ func (f *Fleet) CreateSession(ctx context.Context, req *connect.Request[hubv1.Cr
 		}
 		emitKind, emitOutcome = op.Kind, "sent"
 		return nil
-	}, func() {
+	}, &sessAudits), func() {
 		// Runs on the writer in commit order (#393).
 		// A request_id replay sends nothing new: only a fresh create
 		// publishes its session and command.
 		f.publishSessionCreated(pctx, sessRow, out, sessOpSeq, emitOutcome == "replayed")
+		// The job's own audits publish here, after its resources, in
+		// batch order: a resume never skips them (#403).
+		f.publishAudits(sessAudits)
 	}); commitErr != nil {
 		return nil, f.storeError(ctx, actor, commitErr)
 	}

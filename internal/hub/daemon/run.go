@@ -241,10 +241,10 @@ func serve(ctx context.Context, cfg *config.Config, opts Options, d hubDeps, s *
 	}, housekeeping.Job{
 		Name: "system_evaluate", Every: system.EvaluateEvery, Run: sysLoop.Run,
 	}, housekeeping.Job{
-		// The Watch publish tick (plan row 12, slice 2): the audit tail,
-		// the volatile flush and the dirty fleet summary, at most every
-		// housekeeping tick. It never fails: every failure is logged and
-		// retried on the next pass.
+		// The Watch publish tick (plan row 12, slice 2): the volatile
+		// flush and the dirty fleet summary, at most every housekeeping
+		// tick. It never fails: every failure is logged and retried on
+		// the next pass.
 		Name: "watch_publish", Every: housekeeping.TickEvery, Run: func(ctx context.Context, _ time.Time) error {
 			return fleet.PublishTick(ctx)
 		},

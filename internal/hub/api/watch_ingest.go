@@ -376,36 +376,6 @@ func (f *Fleet) PublishPane(ctx context.Context, p PanePublication) {
 	}})
 }
 
-// publishAuditTail publishes the audit rows committed since the last tail
-// position as AUDIT CREATED in hub_seq order, then moves the position.
-// Rows the entry assembly rejects log publish_failed and are skipped past,
-// so one bad row cannot wedge the tail. The caller holds watchMu.
-func (f *Fleet) publishAuditTail(ctx context.Context) {
-	rows, err := statedb.ListAuditSince(ctx, f.store, f.auditSeq)
-	if err != nil {
-		f.tel.Logger.ErrorContext(ctx, "watch.publish_failed", "topic", "AUDIT", "err_kind", "io")
-		return
-	}
-	for _, r := range rows {
-		entry, err := auditEntryOf(r)
-		if err != nil {
-			f.tel.Logger.ErrorContext(ctx, "watch.publish_failed", "topic", "AUDIT", "err_kind", "io")
-			f.auditSeq = r.HubSeq
-			continue
-		}
-		v := auditView{stored: r}
-		f.offerWatchLocked(r.HubSeq, watchChange{
-			topic: hubv1.WatchTopic_WATCH_TOPIC_AUDIT, change: hubv1.ChangeType_CHANGE_TYPE_CREATED,
-			msg: &hubv1.WatchResponse{
-				Topic: hubv1.WatchTopic_WATCH_TOPIC_AUDIT, ChangeType: hubv1.ChangeType_CHANGE_TYPE_CREATED,
-				Resource: &hubv1.WatchResponse_AuditEntry{AuditEntry: entry},
-			},
-			match: func(n *filterNode) bool { return nodeMatchesAudit(n, v) },
-		})
-		f.auditSeq = r.HubSeq
-	}
-}
-
 // publishAudits publishes one job's captured audit rows after its resource,
 // in hub_seq order. writeOrdered jobs call it inside their post-commit
 // hook on the writer: per-job rows are seq-contiguous, so each job's

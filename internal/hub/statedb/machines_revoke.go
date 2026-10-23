@@ -400,11 +400,17 @@ func DeleteMachine(ctx context.Context, s *store.Store, in MachineDelete, onComm
 		}
 		return logMachineRequest(jctx, tx, in.MachineWrite, machineKindDelete, out, true)
 	}
+	var audits []AuditStored
 	var err error
 	if onCommit == nil {
 		err = s.Write(ctx, apply)
 	} else {
-		err = s.WriteHook(ctx, apply, func() { onCommit(out, row) })
+		err = s.WriteHook(ctx, WithAuditCapture(jctx, apply, &audits), func() {
+			onCommit(out, row)
+			// The job's own audits publish here, after its resource, in
+			// batch order: a resume never skips them (#403).
+			PublishAudits(s, audits)
+		})
 	}
 	if err != nil {
 		return MachineStored{}, MachineRow{}, err

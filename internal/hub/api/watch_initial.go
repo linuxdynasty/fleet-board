@@ -215,7 +215,9 @@ func initialTriage(ctx context.Context, s *watchSession, node *filterNode) ([]*h
 func initialApprovals(ctx context.Context, s *watchSession, _ *filterNode) ([]*hubv1.WatchResponse, error) {
 	now := s.now()
 	var list []*hubv1.Approval
-	err := s.store.Write(ctx, func(tx *sql.Tx) error {
+	// A read that lazily expires: the expiry audits publish through the
+	// job's hook in writer order (#403).
+	err := statedb.WriteHooked(ctx, s.store, func(tx *sql.Tx) error {
 		if _, err := approvals.ExpireDue(ctx, tx, now, 200); err != nil {
 			return err
 		}

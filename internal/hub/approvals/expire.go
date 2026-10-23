@@ -21,7 +21,7 @@ import (
 // approval sees EXPIRED even between passes.
 func ExpirePass(ctx context.Context, s *store.Store, now time.Time) ([]string, error) {
 	var expired []string
-	err := s.Write(ctx, func(tx *sql.Tx) error {
+	err := statedb.WriteHooked(ctx, s, func(tx *sql.Tx) error {
 		var err error
 		expired, err = ExpireDue(ctx, tx, now, 200)
 		return err

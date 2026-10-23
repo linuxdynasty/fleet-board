@@ -17,10 +17,11 @@ import (
 // order, and every publish runs in a post-commit hook on the single
 // writer goroutine, so the hook for commit N always runs before the hook
 // for commit N+1 and the bus appends in commit order (02c "Order", #393).
-// A hook publishes only its own commit's rows; the publish tick tails the
-// audit log for rows no single hook sees. Every publish takes watchMu
-// briefly through offerWatch and never waits on the writer; no path holds
-// watchMu across a writer job, so the discipline cannot wedge (#403).
+// A hook publishes only its own commit's rows: the resource, then the
+// audits its tx stamped, so one writer-serialized sequence covers both in
+// hub_seq order. Every publish takes watchMu briefly through offerWatch
+// and never waits on the writer; no path holds watchMu across a writer
+// job, so the discipline cannot wedge (#403).
 
 // offerWatch logs one never-dropped change with the store stamp. It takes
 // watchMu; callers that already hold it use offerWatchLocked. A

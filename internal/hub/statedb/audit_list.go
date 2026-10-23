@@ -75,6 +75,20 @@ func listAuditRangeTx(ctx context.Context, tx *sql.Tx, from, to int64) ([]AuditS
 	return out, rows.Err()
 }
 
+// AuditCounterTx reads the current hub_seq counter in the writer job's
+// tx, without taking a stamp. Custom-hook jobs (ingest, session, gateway)
+// bracket their apply with it and ListAuditRangeTx so the hook publishes
+// exactly the audits its own job stamped, in writer order (#403).
+func AuditCounterTx(ctx context.Context, tx *sql.Tx) (int64, error) {
+	return counterTx(ctx, tx)
+}
+
+// ListAuditRangeTx reads the audit rows one writer job stamped, in hub_seq
+// order: the rows past from up to to, read in the job's own tx (#403).
+func ListAuditRangeTx(ctx context.Context, tx *sql.Tx, from, to int64) ([]AuditStored, error) {
+	return listAuditRangeTx(ctx, tx, from, to)
+}
+
 // counterTx reads the current hub_seq counter in the writer job's tx,
 // without taking a stamp.
 func counterTx(ctx context.Context, tx *sql.Tx) (int64, error) {
@@ -95,32 +109,6 @@ func MaxAuditSeq(ctx context.Context, s *store.Store) (int64, error) {
 	})
 	if err != nil {
 		return 0, fmt.Errorf("statedb: max audit seq: %w", err)
-	}
-	return out, nil
-}
-
-// ListAuditSince reads the audit rows past seq in hub_seq order: the new
-// tail of the log since the publisher's last position. hub_seq is unique,
-// so the order is exact.
-func ListAuditSince(ctx context.Context, s *store.Store, seq int64) ([]AuditStored, error) {
-	var out []AuditStored
-	err := s.Read(ctx, func(tx *sql.Tx) error {
-		rows, err := tx.QueryContext(ctx, `SELECT `+auditListColumns+` FROM audit_log WHERE hub_seq > ? ORDER BY hub_seq`, seq)
-		if err != nil {
-			return fmt.Errorf("statedb: list audit tail: %w", err)
-		}
-		defer func() { _ = rows.Close() }()
-		for rows.Next() {
-			r, err := scanAuditListRow(rows)
-			if err != nil {
-				return err
-			}
-			out = append(out, r)
-		}
-		return rows.Err()
-	})
-	if err != nil {
-		return nil, err
 	}
 	return out, nil
 }

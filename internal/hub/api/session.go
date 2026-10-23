@@ -94,7 +94,8 @@ func (f *Fleet) sendOne(ctx context.Context, who *typev1.Principal, req proto.Me
 	// leave a "sent" count or log behind.
 	var emitKind, emitOutcome, emitMachine, emitCommand string
 	var queued outbox.Op
-	doneCh, submitErr := f.store.SubmitHook(ctx, func(tx *sql.Tx) error {
+	var sessAudits []statedb.AuditStored
+	doneCh, submitErr := f.store.SubmitHook(ctx, statedb.WithAuditCapture(ctx, func(tx *sql.Tx) error {
 		machine, err := resolveSession(ctx, tx, sessionID)
 		if err != nil {
 			return err
@@ -135,13 +136,16 @@ func (f *Fleet) sendOne(ctx context.Context, who *typev1.Principal, req proto.Me
 		queued = op
 		emitKind, emitOutcome, emitMachine, emitCommand = op.Kind, "sent", machine, op.CommandID
 		return nil
-	}, func() {
+	}, &sessAudits), func() {
 		// Runs on the writer in commit order (#393).
 		// A replayed gating sends nothing new: only a fresh
 		// queue publishes its operation.
 		if queued.Created {
 			f.publishOperationWatch(queued.HubSeq, out)
 		}
+		// The job's own audits publish here, after its resources, in
+		// batch order: a resume never skips them (#403).
+		f.publishAudits(sessAudits)
 	})
 	if submitErr != nil {
 		return nil, f.storeError(ctx, actor, submitErr)

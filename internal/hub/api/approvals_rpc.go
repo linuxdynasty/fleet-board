@@ -20,6 +20,7 @@ import (
 	typev1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/type/v1"
 	"github.com/linuxdynasty/fleet-board/internal/hub/approvals"
 	"github.com/linuxdynasty/fleet-board/internal/hub/outbox"
+	"github.com/linuxdynasty/fleet-board/internal/hub/statedb"
 )
 
 // authorizeApprovals admits the caller for ListApprovals, GetApproval and
@@ -55,7 +56,9 @@ func (f *Fleet) ListApprovals(ctx context.Context, req *connect.Request[hubv1.Li
 	now := f.hubNow()
 	var list []*hubv1.Approval
 	var next string
-	err := f.store.Write(ctx, func(tx *sql.Tx) error {
+	// A read that lazily expires: the expiry audits publish through the
+	// job's hook in writer order (#403).
+	err := statedb.WriteHooked(ctx, f.store, func(tx *sql.Tx) error {
 		filter := approvals.Filter{PageSize: int(size), PageToken: m.GetPageToken()}
 		// Validate the cursor before quota admission without reading rows.
 		// ExpireDue below is the first effect in this writer job.
@@ -94,7 +97,9 @@ func (f *Fleet) GetApproval(ctx context.Context, req *connect.Request[hubv1.GetA
 	}
 	now := f.hubNow()
 	var got *hubv1.Approval
-	err := f.store.Write(ctx, func(tx *sql.Tx) error {
+	// A read that lazily expires: the expiry audits publish through the
+	// job's hook in writer order (#403).
+	err := statedb.WriteHooked(ctx, f.store, func(tx *sql.Tx) error {
 		// Zero time asks Get to check the id without lazy expiry. An
 		// exhausted quota must not write an expiration audit row.
 		if _, err := approvals.Get(ctx, tx, req.Msg.GetId().GetValue(), time.Time{}); err != nil {
@@ -160,7 +165,8 @@ func (f *Fleet) DecideApproval(ctx context.Context, req *connect.Request[hubv1.D
 	var outcome approvals.Outcome
 	var sent *hubv1.Operation
 	var sentKind string
-	if commitErr := f.store.WriteHook(ctx, func(tx *sql.Tx) error {
+	var decideAudits []statedb.AuditStored
+	if commitErr := f.store.WriteHook(ctx, statedb.WithAuditCapture(ctx, func(tx *sql.Tx) error {
 		var err error
 		outcome, err = approvals.Decide(ctx, tx, approvals.DecideInput{
 			ID: m.GetId().GetValue(), ExpectedVersion: m.GetExpectedVersion(), Decision: m.GetDecision(),
@@ -202,9 +208,12 @@ func (f *Fleet) DecideApproval(ctx context.Context, req *connect.Request[hubv1.D
 		// Reload: the attach stamped the sent operation onto the row.
 		outcome.Approval, err = approvals.Get(ctx, tx, outcome.Approval.GetId().GetValue(), now)
 		return err
-	}, func() {
+	}, &decideAudits), func() {
 		// Runs on the writer in commit order (#393).
 		f.publishApprovalWatch(outcome.HubSeq, outcome.Approval, hubv1.ChangeType_CHANGE_TYPE_UPDATED, outcome.Replay)
+		// The job's own audits publish here, after its resources, in
+		// batch order: a resume never skips them (#403).
+		f.publishAudits(decideAudits)
 	}); commitErr != nil {
 		return nil, f.decideStoreError(ctx, commitErr)
 	}

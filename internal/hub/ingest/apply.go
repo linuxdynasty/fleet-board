@@ -98,8 +98,11 @@ func SubmitSnapshot(ctx context.Context, st *store.Store, s Stream, snap *agentv
 	if onCommit == nil {
 		p.done, err = st.Submit(ctx, apply)
 	} else {
-		p.done, err = st.SubmitHook(ctx, apply, func() {
+		p.done, err = st.SubmitHook(ctx, statedb.WithAuditCapture(jctx, apply, &p.audits), func() {
 			onCommit(p.out, p.goals, p.expired)
+			// The job's own audits publish here, after its resources, in
+			// batch order: a resume never skips them (#403).
+			statedb.PublishAudits(st, p.audits)
 		})
 	}
 	if err != nil {
@@ -120,6 +123,7 @@ type Pending struct {
 	out     statedb.SnapshotOut // written by the job; read after done
 	expired []outbox.Closed     // written by the job; read after done
 	goals   []statedb.GoalRow   // the appliers' stamped after-images; read after done
+	audits  []statedb.AuditStored
 	result  error
 	read    bool
 }
