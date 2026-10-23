@@ -138,7 +138,7 @@ func TestFloodDuringACommand(t *testing.T) {
 			close(release)
 			out := <-got
 			if out.err != nil {
-				t.Fatalf("ListPanes during the flood: %v (%s)", out.err, floodSummary(t, raw))
+				t.Fatalf("ListPanes during the flood on %s: %v (%s)", floodBinaryVersion(b.Path), out.err, floodSummary(t, raw))
 			}
 			if len(out.panes) != 2 {
 				t.Fatalf("ListPanes during the flood = %d panes, want 2", len(out.panes))
