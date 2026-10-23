@@ -225,6 +225,9 @@ func classifyRepo(r *hubv1.RepoSpec, i int, existing map[string]*hubv1.RepoSpec,
 	if p := tables.normalizeRepoRefs(field, name, host, normalized, codeHosts); p != nil {
 		return 0, name, nil, nil, p
 	}
+	// A legacy document may still carry valid empty wrappers the export
+	// now drops; canonicalize both sides so the compare sees them equal.
+	canonicalizeRepoSpec(normalized)
 	stored, ok := existing[name]
 	if !ok {
 		return hubv1.ConfigChangeKind_CONFIG_CHANGE_KIND_CREATE, name, normalized, nil, nil
@@ -344,14 +347,18 @@ func planConfigImport(doc *hubv1.FleetConfig, existing map[string]*hubv1.RepoSpe
 	}
 	if !isEmptyHub(doc.GetHub()) {
 		hubClone := proto.Clone(doc.GetHub()).(*hubv1.HubSettings) //nolint:forcetypeassert // Clone keeps the message type
-		if p := tables.normalizeGateRefs("config.hub", hubClone.GetTrustedGate()); p != nil {
-			changes = append(changes, p)
-		} else if line := diffStoredLine(hubv1.ConfigEntity_CONFIG_ENTITY_HUB_SETTINGS, "hub",
-			proto.Equal(hubClone, restHub(rest))); line != nil {
-			changes = append(changes, line)
+		hubProblem := tables.normalizeGateRefs("config.hub", hubClone.GetTrustedGate())
+		if hubProblem != nil {
+			changes = append(changes, hubProblem)
 		} else {
-			changes = append(changes, unsupportedImportLine(
-				hubv1.ConfigEntity_CONFIG_ENTITY_HUB_SETTINGS, "hub", "config.hub", "hub settings"))
+			canonicalizeGate(hubClone.GetTrustedGate())
+			if line := diffStoredLine(hubv1.ConfigEntity_CONFIG_ENTITY_HUB_SETTINGS, "hub",
+				proto.Equal(hubClone, restHub(rest))); line != nil {
+				changes = append(changes, line)
+			} else {
+				changes = append(changes, unsupportedImportLine(
+					hubv1.ConfigEntity_CONFIG_ENTITY_HUB_SETTINGS, "hub", "config.hub", "hub settings"))
+			}
 		}
 	}
 	if !isEmptyFleetValues(doc.GetFleetValues()) {

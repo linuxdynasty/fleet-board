@@ -165,3 +165,67 @@ func TestImportBlocksAnUnknownBindingMachine(t *testing.T) {
 		t.Errorf("problem = %q, want it to name ghost", got)
 	}
 }
+
+// TestExportKeepsAmbiguousMachineBindings is the Codex P1 on #404: two
+// enrolled machines may share a display name, and a binding to either
+// must stay an id wrapper the CLI names instead of silently resolving
+// to one of them.
+func TestExportKeepsAmbiguousMachineBindings(t *testing.T) {
+	t.Parallel()
+	e := newFleetEnv(t, localUser("alice"), trusted(false))
+	first := "01jambiguousmachine001"
+	second := "01jambiguousmachine002"
+	seedMachine(t, e, first)
+	seedMachine(t, e, second)
+	spec := accountSpec()
+	spec.Bindings = []*hubv1.AccountBindingSpec{{Machine: &typev1.MachineId{Value: first}}}
+	createOwnerAccount(t, e, "acc-amb", spec)
+
+	got := exportConfig(t, e)
+	if len(got.GetAccounts()) != 1 {
+		t.Fatalf("accounts = %+v, want one", got.GetAccounts())
+	}
+	binding := got.GetAccounts()[0].GetSpec().GetBindings()[0]
+	if binding.GetMachine().GetValue() != first {
+		t.Errorf("binding machine = %+v, want the stored id kept", binding.GetMachine())
+	}
+	if binding.GetMachineDisplayName() != "" {
+		t.Errorf("machine_display_name = %q, want unset for an ambiguous name", binding.GetMachineDisplayName())
+	}
+}
+
+// TestExportClearsEmptyGateWrappers is the Codex P1 on #404: a valid
+// fleet-wide default label carries a present-but-empty integration
+// wrapper. The export drops that valid empty default instead of
+// tripping the unportable refusal, and the re-import plans unchanged
+// because the stored baseline canonicalizes the same way.
+func TestExportClearsEmptyGateWrappers(t *testing.T) {
+	t.Parallel()
+	e := newFleetEnv(t, localUser("alice"), trusted(false))
+	updateFleetSettings(t, e, "req-gate-1", &hubv1.SettingsSpec{
+		Scope: fleetSettingsScope(),
+		Hub: &hubv1.HubSettings{TrustedGate: &hubv1.TrustedGate{
+			Labels: []*hubv1.TrustedLabel{
+				{Name: "ok", Integration: &typev1.IntegrationId{}},
+			},
+		}},
+	}, []string{"spec.hub.trusted_gate"}, 0)
+
+	got := exportConfig(t, e)
+	labels := got.GetHub().GetTrustedGate().GetLabels()
+	if len(labels) != 1 {
+		t.Fatalf("trusted labels = %+v, want one", labels)
+	}
+	if labels[0].GetIntegration() != nil {
+		t.Errorf("label integration = %+v, want the empty default cleared", labels[0].GetIntegration())
+	}
+	if _, err := fleetconfig.Encode(got); err != nil {
+		t.Fatalf("Encode exported config: %v", err)
+	}
+	plan := dryRun(t, e, "dry-gate", got)
+	for _, c := range plan.GetChanges() {
+		if c.GetKind() != hubv1.ConfigChangeKind_CONFIG_CHANGE_KIND_UNCHANGED {
+			t.Errorf("re-import plan line %+v is not unchanged", c)
+		}
+	}
+}

@@ -81,7 +81,7 @@ message TrackerProject {
   // Portable key for the integration, used in FleetConfig documents instead
   // of integration (02m): export fills it and leaves integration unset,
   // import resolves it to the local integration id. Live RPCs keep using
-  // integration and ignore this field.
+  // integration and refuse this field on live calls.
   IntegrationRef integration_ref = 3;
 }
 
@@ -133,7 +133,7 @@ message RepoSpec {
   // Portable key for the code host, used in FleetConfig documents instead of
   // repo.code_host (02m): export fills it and strips code_host, import
   // resolves it to the local integration id, falling back to the host match
-  // when it is unset. Live RPCs keep using repo.code_host and ignore this.
+  // when it is unset. Live RPCs keep writing repo.code_host and refuse this.
   IntegrationRef code_host_ref = 12;
 }
 

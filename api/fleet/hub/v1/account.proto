@@ -46,8 +46,8 @@ message AccountBindingSpec {
   string profile = 2;
   // Portable key for the machine, used in FleetConfig documents instead of
   // machine (02m): export fills the display name and leaves machine unset,
-  // import resolves it to the local machine. Live RPCs keep using machine
-  // and ignore this field.
+  // import resolves it to the local machine. Live RPCs keep writing the
+  // machine id and refuse this field.
   string machine_display_name = 3;
 }
 

@@ -30,6 +30,9 @@ func (f *Fleet) importBaseline(ctx context.Context, doc *hubv1.FleetConfig) (map
 		if err := protojson.Unmarshal(r.Spec, &spec); err != nil {
 			return nil, nil, nil, nil, err
 		}
+		// Present-but-empty wrappers predate the export dropping them;
+		// canonicalize so the stored baseline compares equal (#397).
+		canonicalizeRepoSpec(&spec)
 		existing[r.Host+"/"+r.Path] = &spec
 		versions[r.Host+"/"+r.Path] = r.Version
 	}
@@ -72,6 +75,9 @@ func (f *Fleet) configRestBaseline(ctx context.Context) (*configRest, error) {
 			return nil, err
 		}
 		rest.hub, rest.fleetValues = layer.GetHub(), layer.GetValues()
+		// Present-but-empty gate wrappers predate the export dropping
+		// them; canonicalize so the baseline compares equal (#397).
+		canonicalizeGate(rest.hub.GetTrustedGate())
 	}
 	integrationRows, err := statedb.ListIntegrationRows(ctx, f.store)
 	if err != nil {

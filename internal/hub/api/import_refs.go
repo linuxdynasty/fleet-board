@@ -169,6 +169,46 @@ func (t *refTables) normalizeAccountRefs(name, field string, spec *hubv1.Account
 	return nil
 }
 
+// canonicalizeGate drops present-but-empty integration wrappers from a
+// trusted gate. Empty means the default, so the wrapper carries nothing;
+// the export never writes them, and the stored baseline must compare
+// equal to the document without them.
+func canonicalizeGate(gate *hubv1.TrustedGate) {
+	if gate == nil {
+		return
+	}
+	for _, u := range gate.GetUsers() {
+		if u.GetIntegration().GetValue() == "" {
+			u.Integration = nil
+		}
+	}
+	for _, l := range gate.GetLabels() {
+		if l.GetIntegration().GetValue() == "" {
+			l.Integration = nil
+		}
+	}
+}
+
+// canonicalizeRepoSpec drops present-but-empty integration wrappers from
+// a repo spec: the code host, the tracker projects, and the repo gate
+// users, for the same document-equality reason as canonicalizeGate.
+func canonicalizeRepoSpec(spec *hubv1.RepoSpec) {
+	if repo := spec.GetRepo(); repo != nil && repo.GetCodeHost().GetValue() == "" {
+		repo.CodeHost = nil
+	}
+	for _, tp := range spec.GetTrackerProjects() {
+		if tp.GetIntegration().GetValue() == "" {
+			tp.Integration = nil
+		}
+	}
+	gate := spec.GetTrustedGate()
+	for _, u := range gate.GetUsers() {
+		if u.GetIntegration().GetValue() == "" {
+			u.Integration = nil
+		}
+	}
+}
+
 // normalizeGateRefs resolves a cloned trusted gate's document refs to
 // local ids, for the hub-settings compare.
 func (t *refTables) normalizeGateRefs(field string, gate *hubv1.TrustedGate) *hubv1.ConfigChange {

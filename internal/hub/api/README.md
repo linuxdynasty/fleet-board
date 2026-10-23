@@ -323,7 +323,11 @@ stream cut. Signals: `fleet_hub_config_writes_total{op, outcome}` (`op`
 repos, integrations, hub and fleet settings, owner accounts and machines
 (one entry per enrolled machine with its layer's values, one per kept
 machine entry; a kept row shadowing an enrolled name folds into it;
-repo entries omit the stamped code host, re-derived on import, #395).
+ids travel as portable refs (#397): `IntegrationRef` (provider plus base
+URL) for code hosts, tracker projects and trusted gates, and machine
+display names for account bindings. `ImportConfig` resolves the refs
+against the target hub (a code-host ref wins over the host match) before
+diffing; present-but-empty wrappers canonicalize to unset on both sides).
 `ImportConfig` diffs a document and applies it in one writer transaction
 or not at all: today only the repo and machine sections apply (other
 sections plan a blocking "not built yet" line). A machine entry matching
