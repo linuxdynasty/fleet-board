@@ -60,7 +60,9 @@ Plus `GetServerInfo` (API version, hub version, `fleet_id`, `hub_instance_id`,
 server time, features, `auth_mode`, `sign_in_methods`, `claim_pending`, the
 caller and its scopes), `ExportConfig` and `ImportConfig`
 ([02m](02m-hub-api-actions-and-audit.md#config-export-and-import)) and
-`GetStoreStatus`. Which release
+`GetStoreStatus`. Exchange documents carry portable refs (`IntegrationRef`,
+`machine_display_name`) that import resolves to local ids; live calls keep
+writing ids and refuse the ref fields. Which release
 serves each RPC and Watch topic: [02k](02k-v1-surface-and-cli.md).
 
 Served so far (row 12 slices): `GetOperation` reads one stored command as
