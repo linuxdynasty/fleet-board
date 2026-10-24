@@ -1,13 +1,16 @@
-# internal/e2eseed
+# e2eseed
 
-Writes the shared test fleet into a fresh state folder, for the dashboard's
-Playwright smoke test (`npm run e2e` in `web/`).
+One-shot seeder for the web smoke test: `go run ./internal/e2eseed <fleetd.yaml>`.
 
-```bash
-go run ./internal/e2eseed /tmp/e2e-state
-fleetd run --config /tmp/e2e-fleetd.yaml   # state_dir points at /tmp/e2e-state
-```
+Two steps, in order:
 
-One argument, the state folder; it prints the folder back. Seeding twice
-fails: the shared fleet is never silently replaced. Deterministic like the
-seed itself: no clocks, no randomness, fixed test vectors.
+1. `daemon.Init` on the config path (a real CA identity, fresh random per
+   run, which a booting hub needs). The state folder must not hold a
+   `state.db` yet; init refuses to replace one.
+2. `seed.SeedRows`, which writes the shared seed rows (machines only) in a
+   fixed order.
+
+Determinism holds for the seed rows only. The CA identity is
+fresh-random every run by design, and `daemon.Init` decides what exists
+already, so this binary never reseeds a live folder. Telemetry is a
+no-op here: no run of the seeder phones anything home.

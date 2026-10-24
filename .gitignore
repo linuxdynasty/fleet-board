@@ -25,3 +25,4 @@ tools/tscheck/node_modules/
 web/e2e/screenshots/
 web/e2e/.e2e-url
 web/e2e/.e2e-state.json
+web/e2e/.e2e-restore.json

@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { STATE_FILE, URL_FILE } from "./helpers.ts";
+import { RESTORE_FILE, STATE_FILE, URL_FILE } from "./helpers.ts";
 
 // Fixed loopback ports for the smoke hub, away from the dev defaults (7080,
 // 7443) so the smoke never talks to a developer's hub.
@@ -87,6 +87,10 @@ export default async function globalSetup(): Promise<void> {
   const placeholder = readPlaceholder();
   console.log(`e2e setup: stashing dist/index.html (${placeholder.length} bytes)`);
   fs.writeFileSync(path.join(tmpDir, "placeholder-index.html"), placeholder);
+  // Publish the restore pointer before anything that can fail: the
+  // teardown keys the placeholder restore off this file, not off the hub
+  // state file written at the end, so an early failure still cleans up.
+  fs.writeFileSync(RESTORE_FILE, JSON.stringify({ tmpDir }));
 
   run("npm", ["run", "build"], webDir);
   run("npx", ["playwright", "install", "chromium"], webDir);
@@ -117,6 +121,16 @@ export default async function globalSetup(): Promise<void> {
       // Already gone; the log below tells the story.
     }
     throw err;
+  }
+  // A 200 proves a hub answers here, not that it is ours: a concurrent
+  // run's hub on the same fixed ports answers the same poll. Our child
+  // holds the ports exactly when it is still alive, so its death is the
+  // proof the poll hit someone else's hub (for example a bind failure).
+  if (child.exitCode !== null || child.signalCode !== null) {
+    throw new Error(
+      `e2e setup: fleetd pid=${child.pid} is already dead; see ${path.join(tmpDir, "fleetd.log")}. ` +
+        "Another run may hold the smoke ports.",
+    );
   }
   const state: E2EState = { url, pid: child.pid, tmpDir };
   fs.writeFileSync(STATE_FILE, JSON.stringify(state));

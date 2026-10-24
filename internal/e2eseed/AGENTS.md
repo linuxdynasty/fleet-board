@@ -1,9 +1,10 @@
-# internal/e2eseed
+# e2eseed agent rules
 
-Read the root `AGENTS.md` first; it applies here. Rules for this package:
+One-shot seeder, no server: `go run ./internal/e2eseed <fleetd.yaml>`.
 
-- Thin wiring only: parse the one argument, call `internal/seed`, report
-  the exit code. It never starts a process and never touches the network.
-- Deterministic only: no clock reads, no random bytes. Seeding twice fails;
-  the shared fleet is never silently replaced.
-- A change here updates this README and `doc.go` in the same commit.
+- Argument is the fleetd.yaml path, not the state folder: `daemon.Init`
+  needs the config to find (and refuse to replace) the store.
+- Keep it dependency-light: init plus `seed.SeedRows`, no scheduler, no
+  network, no telemetry (the binary passes a no-op).
+- Seed rows stay fixed-order; the CA identity stays fresh-random per run.
+  Do not "stabilize" the identity: reseeding a live folder is refused.
