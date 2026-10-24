@@ -1,5 +1,7 @@
 import type { JSX } from "react";
-import { ROUTES, routeHref, useHashRoute, type RouteName } from "./router.ts";
+import { useEffect } from "react";
+import { ROUTES, routeHref, useHashRoute, useNavigate, type RouteName } from "./router.ts";
+import { TRIAGE_MOVE_EVENT, isTypingTarget, keyAction, type TriageMoveDetail } from "./keys.ts";
 import { InsightsView } from "./views/insights.tsx";
 import { MachinesView } from "./views/machines.tsx";
 import { SettingsView } from "./views/settings.tsx";
@@ -28,8 +30,39 @@ function PlannedView({ name }: { name: RouteName }): JSX.Element {
   );
 }
 
+function useViewKeys(route: RouteName, navigate: (name: RouteName) => void): void {
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.metaKey || event.ctrlKey || event.altKey) {
+        return;
+      }
+      if (isTypingTarget(event.target)) {
+        return;
+      }
+      const action = keyAction(event.key, route);
+      if (action === null) {
+        return;
+      }
+      if (action.kind === "view") {
+        navigate(action.route);
+      } else if (action.kind === "next-session") {
+        navigate("session");
+      } else {
+        window.dispatchEvent(
+          new CustomEvent<TriageMoveDetail>(TRIAGE_MOVE_EVENT, { detail: { delta: action.delta } }),
+        );
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [route, navigate]);
+}
+
 export function App(): JSX.Element {
   const route = useHashRoute();
+  useViewKeys(route, useNavigate());
   return (
     <div className={styles.page}>
       <nav className={styles.nav} aria-label="Views">
