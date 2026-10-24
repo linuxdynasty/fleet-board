@@ -1,22 +1,21 @@
 // Settings view (row 14): the setting values at the layer they are set,
-// the watched repos, the routines (including the built-in weekly insights
-// report), and the suggestions-in-triage switch. Reads: the SETTINGS, REPOS
-// and ROUTINES watch topics. Writes: UpdateSettings (machine-layer values
-// and the fleet suggestions switch), UpdateRepo (pause or resume only) and
-// UpdateRoutine (on/off, schedule, harness, model; a built-in is never
-// deleted). Plain words first; raw contract names live behind details.
+// the watched repos, and the suggestions-in-triage switch. Reads: the
+// SETTINGS and REPOS watch topics. Writes: UpdateSettings (the fleet
+// suggestions switch) and UpdateRepo (pause or resume only). The routines
+// section and per-layer value editing stay out: the hub serves ROUTINES
+// and machine-layer writes with row 27, and subscribing to an unserved
+// topic fails the whole Watch. Plain words first; raw contract names live
+// behind details.
 import { useMemo, useState, type Dispatch, type FormEvent, type JSX, type SetStateAction } from "react";
 import { ChangeType, WatchTopic } from "../../../gen/ts/fleet/hub/v1/watch_pb.ts";
 import type { WatchResponse } from "../../../gen/ts/fleet/hub/v1/watch_pb.ts";
 import type { Settings } from "../../../gen/ts/fleet/hub/v1/settings_pb.ts";
 import type { Repo } from "../../../gen/ts/fleet/hub/v1/repo_pb.ts";
-import { RoutineBuiltin, type Routine } from "../../../gen/ts/fleet/hub/v1/routine_pb.ts";
 import { useWatch } from "../watch.ts";
 import { layerLabel } from "./settings-helpers.ts";
 import { useSaver } from "./settings-save.ts";
 import { LayerCard } from "./settings-values.tsx";
 import { RepoRow } from "./settings-repos.tsx";
-import { RoutineRow } from "./settings-routines.tsx";
 import { SuggestionsToggle } from "./settings-suggestions.tsx";
 import styles from "./settings.module.css";
 
@@ -26,10 +25,6 @@ function settingsKey(s: Settings): string {
 
 function repoKey(r: Repo): string {
   return r.id?.value ?? `${r.spec?.repo?.host ?? ""}/${r.spec?.repo?.path ?? ""}`;
-}
-
-function routineKey(r: Routine): string {
-  return r.id?.value ?? r.spec?.displayName ?? "";
 }
 
 // upsertRow folds one watched resource into its map, newest version wins.
@@ -67,7 +62,6 @@ function layerRank(s: Settings): number {
 export function SettingsView(): JSX.Element {
   const [layers, setLayers] = useState<Map<string, Settings>>(new Map());
   const [repos, setRepos] = useState<Map<string, Repo>>(new Map());
-  const [routines, setRoutines] = useState<Map<string, Routine>>(new Map());
   const [initialDone, setInitialDone] = useState(false);
   const [secret, setSecret] = useState("");
   const saver = useSaver();
@@ -76,7 +70,6 @@ export function SettingsView(): JSX.Element {
       () => [
         { topic: WatchTopic.SETTINGS, sendInitial: true },
         { topic: WatchTopic.REPOS, sendInitial: true },
-        { topic: WatchTopic.ROUTINES, sendInitial: true },
       ],
       [],
     ),
@@ -92,14 +85,11 @@ export function SettingsView(): JSX.Element {
             upsertRow(setLayers, settingsKey, msg.changeType, resource.value);
           } else if (resource.case === "repo" && msg.topic === WatchTopic.REPOS) {
             upsertRow(setRepos, repoKey, msg.changeType, resource.value);
-          } else if (resource.case === "routine" && msg.topic === WatchTopic.ROUTINES) {
-            upsertRow(setRoutines, routineKey, msg.changeType, resource.value);
           }
         },
         onResync: () => {
           setLayers(new Map());
           setRepos(new Map());
-          setRoutines(new Map());
           setInitialDone(false);
         },
       }),
@@ -117,12 +107,7 @@ export function SettingsView(): JSX.Element {
       `${b.spec?.repo?.host ?? ""}/${b.spec?.repo?.path ?? ""}`,
     ),
   );
-  const orderedRoutines = [...routines.values()].sort((a, b) => {
-    const aWeekly = a.spec?.builtin === RoutineBuiltin.INSIGHTS_WEEKLY ? 0 : 1;
-    const bWeekly = b.spec?.builtin === RoutineBuiltin.INSIGHTS_WEEKLY ? 0 : 1;
-    return aWeekly - bWeekly || (a.spec?.displayName ?? "").localeCompare(b.spec?.displayName ?? "");
-  });
-  const empty = orderedLayers.length === 0 && orderedRepos.length === 0 && orderedRoutines.length === 0;
+  const empty = orderedLayers.length === 0 && orderedRepos.length === 0;
 
   const saveSecret = (event: FormEvent): void => {
     event.preventDefault();
@@ -181,7 +166,7 @@ export function SettingsView(): JSX.Element {
             <h2>Setting values</h2>
             <ul className={styles.list}>
               {orderedLayers.map((layer) => (
-                <LayerCard key={`${settingsKey(layer)}-${layer.version}`} layer={layer} saver={saver} />
+                <LayerCard key={`${settingsKey(layer)}-${layer.version}`} layer={layer} />
               ))}
             </ul>
           </div>
@@ -193,22 +178,6 @@ export function SettingsView(): JSX.Element {
               <ul className={styles.list}>
                 {orderedRepos.map((repo) => (
                   <RepoRow key={`${repoKey(repo)}-${repo.version}`} repo={repo} saver={saver} />
-                ))}
-              </ul>
-            )}
-          </div>
-          <div className={styles.section}>
-            <h2>Routines</h2>
-            {orderedRoutines.length === 0 ? (
-              <p>No routines.</p>
-            ) : (
-              <ul className={styles.list}>
-                {orderedRoutines.map((routine) => (
-                  <RoutineRow
-                    key={`${routineKey(routine)}-${routine.version}`}
-                    routine={routine}
-                    saver={saver}
-                  />
                 ))}
               </ul>
             )}
