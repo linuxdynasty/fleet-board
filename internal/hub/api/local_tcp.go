@@ -11,17 +11,25 @@ import (
 
 	typev1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/type/v1"
 	"github.com/linuxdynasty/fleet-board/internal/telemetry"
+	"github.com/linuxdynasty/fleet-board/web"
 )
 
 // NewLocalServer serves the local-trusted FleetService and metrics on the
-// API listener. The Fleet instance is the same one served by admin.sock.
+// API listener, plus the embedded dashboard on every other GET path (02j
+// "Listeners"). The Fleet instance is the same one served by admin.sock.
 func NewLocalServer(tel *telemetry.Telemetry, port int, fleet *Fleet, quotas *Quotas) (*http.Server, error) {
 	if tel == nil || fleet == nil || quotas == nil || !fleet.localTrusted {
 		return nil, errors.New("api: local server needs telemetry, quotas and a local-trusted Fleet")
 	}
+	content, err := web.Dist()
+	if err != nil {
+		return nil, err
+	}
 	mux := http.NewServeMux()
 	mux.Handle("GET /metrics", tel.MetricsHandler(nil))
 	mux.Handle(fleet.Handler())
+	// "/" also matches other methods; the dashboard refuses those itself.
+	mux.Handle("/", web.Handler(content))
 	return localServer(tel, "api", port, mux, quotas, true), nil
 }
 

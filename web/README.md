@@ -15,6 +15,7 @@ npm run typecheck      # tsc --noEmit
 npm run lint           # eslint, no warnings
 npm test               # vitest
 npm run build          # vite build to web/dist
+npm run e2e            # Playwright smoke: each view against fleetd on the seed
 ```
 
 TypeScript is 6.0.x, the ADR 0020 fallback: typescript-eslint does not
@@ -33,3 +34,23 @@ type gate until then.
   changes by `(id, version)`.
 - Plain words in the UI; raw contract names behind a details toggle.
   Untrusted text renders as text, never as HTML.
+
+## End-to-end smoke (`npm run e2e`)
+
+The smoke opens the built dashboard in a real browser at phone width
+(390 px). The run builds the page, starts `fleetd` on the throwaway seed
+(an enroll-only fleet, so most views are empty on purpose), and checks
+each of the 7 views shows its heading; the Machines view also shows the
+seeded laptop, which proves live hub data. Phone-width shots land in
+`web/e2e/screenshots/` (not committed). From a clean checkout:
+
+```bash
+make tools gen
+npm install          # in web/
+npx playwright install chromium   # the smoke does this itself when missing
+npm run e2e          # in web/
+```
+
+The run builds `fleetd` with the real page embedded and serves it from the
+hub itself (`web/dist` is build output; only the placeholder
+`web/dist/index.html` is committed, and the run restores it afterwards).
