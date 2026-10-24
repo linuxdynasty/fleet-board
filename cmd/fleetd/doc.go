@@ -13,6 +13,9 @@
 // flow and writes github-app.pem, github-client-secret (mode 0600, never
 // logged) and the github keys of fleetd.yaml, then prints
 // "restart fleetd to apply";
+// `fleetd upgrade [--version TAG]` fetches the release, checks its checksum,
+// swaps the binary and restarts the service (internal/release); a mismatch
+// or an older release installs nothing;
 // `fleetd --version` prints the name and version (internal/buildinfo).
 // Exit codes: 0 success, 1 the command failed, 2 bad usage. This package is
 // wiring only: cobra parses the flags and internal/hub/daemon does the work.

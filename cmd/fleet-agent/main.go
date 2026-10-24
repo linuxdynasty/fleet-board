@@ -73,7 +73,7 @@ func execute(ctx context.Context, args []string, stdout, stderr io.Writer, disco
 		return conn.DefaultDir()
 	}
 	cfg := configDirFlag(root)
-	root.AddCommand(enrollCommand(dir, cfg, p.Version, discover, stdout, stderr), runCommand(dir, cfg, p.Version, discover, stderr), doctorCommand(dir, cfg, stdout))
+	root.AddCommand(enrollCommand(dir, cfg, p.Version, discover, stdout, stderr), runCommand(dir, cfg, p.Version, discover, stderr), doctorCommand(dir, cfg, stdout), upgradeCommand(p.Version, stdout))
 
 	err := root.ExecuteContext(ctx)
 	if err == nil {

@@ -94,6 +94,7 @@ func TestVersionAndUsage(t *testing.T) {
 		{"no arguments prints help", nil, 0, "fleet-agent is the fleet-board agent"},
 		{"unknown command", []string{"frobnicate"}, 2, ""},
 		{"enroll without a token", []string{"enroll", "--hub", "127.0.0.1"}, 2, ""},
+		{"upgrade help names the checksum", []string{"upgrade", "--help"}, 0, "verify its checksum"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

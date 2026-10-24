@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  com.fleet-board.fleet-agent: the agent as a macOS LaunchAgent (02j). It
+  starts at the owner's login; a locked screen is fine, a logged-out Mac is
+  not (no auto-login is set up).
+
+  `@HOME@` is replaced with the owner's home folder by packaging/install.sh.
+  Logs: ~/Library/Logs/fleet-agent.log. Before enrollment the agent exits 1
+  and launchd retries every 5 seconds; enroll, then restart it. ThrottleInterval
+  keeps a failing agent from spinning.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.fleet-board.fleet-agent</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>@HOME@/.local/bin/fleet-agent</string>
+    <string>run</string>
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>ThrottleInterval</key>
+  <integer>5</integer>
+  <key>WorkingDirectory</key>
+  <string>@HOME@</string>
+  <key>StandardOutPath</key>
+  <string>@HOME@/Library/Logs/fleet-agent.log</string>
+  <key>StandardErrorPath</key>
+  <string>@HOME@/Library/Logs/fleet-agent.log</string>
+</dict>
+</plist>

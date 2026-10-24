@@ -1,0 +1,76 @@
+# Release publish (plan row 16). A pushed tag like v0.1.0 builds the twelve
+# archives plus SHA256SUMS (scripts/release-build.sh, `make dist`) and
+# attaches them to the GitHub Release. Pure Go with CGO_ENABLED=0, so one
+# Linux runner builds every platform. The dashboard is built first so the
+# fleetd archives embed it. Creating the tag is the release act; the owner
+# pushes tags, never an agent without being asked.
+name: release
+
+on:
+  push:
+    tags:
+      - "v[0-9]*.[0-9]*.[0-9]*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Check out the tag
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Go from go.mod
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - name: Set up Node from .node-version
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+
+      - name: Confirm the toolchain versions
+        run: |
+          . ./tool-versions.env
+          case "$(go env GOVERSION)" in
+            "go$GO_VERSION" | "go$GO_VERSION".*) ;;
+            *) echo "Go is $(go env GOVERSION), tool-versions.env wants $GO_VERSION" >&2; exit 1 ;;
+          esac
+
+      - name: Generate Go and TypeScript (buf generate)
+        run: make gen
+
+      - name: Build the dashboard fleetd embeds
+        run: |
+          cd web
+          npm ci --no-audit --no-fund
+          npm run build
+
+      - name: Build the release archives
+        run: make dist VERSION="${{ github.ref_name }}"
+
+      - name: Check the checksums
+        run: |
+          cd dist
+          shasum -a 256 -c SHA256SUMS
+
+      - name: Publish to GitHub Releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" dist/* \
+            --title "${{ github.ref_name }}" \
+            --notes "Install: see docs/runbooks/install.md. Every archive is listed in SHA256SUMS; the install script and the upgrade commands verify it before installing."

@@ -203,17 +203,22 @@ Decision 14 of ADR 0024, built in plan PR 16.
 
 - **Where binaries live.** GitHub Releases of this repository: one archive per
   program and platform (darwin and linux, amd64 and arm64) and one `SHA256SUMS`
-  file. Nothing else is published.
+  file. Nothing else is published. Archives are named
+  `<program>-<goos>-<goarch>.tar.gz` (for example
+  `fleet-agent-linux-amd64.tar.gz`); each holds one file, named for the
+  program. Built with plain `go build` (`make dist`), stamped with the tag.
 - **Install.** A one-line install script (the "Add machine" command shows it) downloads
   the archive for the machine, checks it against `SHA256SUMS`, installs it into the
   owner's `~/.local/bin` and installs the service unit. A checksum mismatch installs
   nothing.
 - **Upgrade.** `fleet-agent upgrade` and `fleetd upgrade` run on the machine, as the
   owner. Each fetches the latest release (or the one named with `--version`), checks
-  the checksum, replaces its own binary, and restarts the service. The databases
-  migrate forward only when the new binary starts. An upgrade is never a hub command
-  (01, M). A hub and its agents are upgraded one at a time; the wire contract is
-  additive-only from `v0.1`.
+  the checksum, replaces its own binary, and restarts the service. An install
+  already at the release, or a release older than the running binary, is refused
+  before anything is installed: the databases migrate forward only when the
+  new binary starts, so a downgrade can never open them. An upgrade is never
+  a hub command (01, M). A hub and its agents are upgraded one at a time; the
+  wire contract is additive-only from `v0.1`.
 - **macOS signing.** The binaries are not signed or notarized for now. macOS marks a
   downloaded file as quarantined, so the owner clears the flag once per machine with
   `xattr -d com.apple.quarantine <binary>`; the install script prints the command.
