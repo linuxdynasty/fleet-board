@@ -36,19 +36,112 @@ func (f *Fleet) exportFailed(ctx context.Context, actor, step string) error {
 		"the hub could not export the configuration", nil, nil)
 }
 
-// exportRepos renders the watched repos without their stored code host
-// stamp: the export holds no ids (#395), and import re-derives the host
-// by matching, so omitting it here is lossless.
-func exportRepos(rows []statedb.RepoSpecRow) ([]*hubv1.RepoSpec, error) {
+// integrationRefMap keys integration rows by id, so the export renders
+// the portable refs (#397) documents carry instead of hub ids.
+func integrationRefMap(rows []statedb.IntegrationConfigRow) map[string]*hubv1.IntegrationRef {
+	out := make(map[string]*hubv1.IntegrationRef, len(rows))
+	for _, r := range rows {
+		out[r.ID] = &hubv1.IntegrationRef{Provider: r.Provider, BaseUrl: r.BaseURL}
+	}
+	return out
+}
+
+// exportIntegrationRef resolves one stored integration id to its portable
+// ref. An orphan id (no integration row) has no ref: the wrapper stays and
+// the CLI names it unportable, instead of the export silently dropping it.
+func exportIntegrationRef(id string, refs map[string]*hubv1.IntegrationRef) *hubv1.IntegrationRef {
+	if id == "" {
+		return nil
+	}
+	return refs[id]
+}
+
+// clearEmptyIntegrationID drops a present-but-empty integration wrapper.
+// Empty means the default (an unscoped trusted label, no code host), so
+// the wrapper carries nothing the document needs and the codec would
+// refuse it as unportable. It reports whether it cleared anything.
+func clearEmptyIntegrationID(id **typev1.IntegrationId) bool {
+	if *id != nil && (*id).GetValue() == "" {
+		*id = nil
+		return true
+	}
+	return false
+}
+
+// exportRepoGate renders a repo trusted gate with portable refs: every
+// set user integration wrapper moves to its ref, which import resolves
+// back. The plain label needs no translation.
+func exportRepoGate(gate *hubv1.RepoTrustedGate, refs map[string]*hubv1.IntegrationRef) {
+	if gate == nil {
+		return
+	}
+	for _, u := range gate.GetUsers() {
+		if clearEmptyIntegrationID(&u.Integration) {
+			continue
+		}
+		if ref := exportIntegrationRef(u.GetIntegration().GetValue(), refs); ref != nil {
+			u.Integration = nil
+			u.IntegrationRef = ref
+		}
+	}
+}
+
+// exportTrustedGate renders a trusted gate with portable refs: every set
+// integration wrapper moves to its ref, which import resolves back.
+func exportTrustedGate(gate *hubv1.TrustedGate, refs map[string]*hubv1.IntegrationRef) {
+	if gate == nil {
+		return
+	}
+	for _, u := range gate.GetUsers() {
+		if clearEmptyIntegrationID(&u.Integration) {
+			continue
+		}
+		if ref := exportIntegrationRef(u.GetIntegration().GetValue(), refs); ref != nil {
+			u.Integration = nil
+			u.IntegrationRef = ref
+		}
+	}
+	for _, l := range gate.GetLabels() {
+		if clearEmptyIntegrationID(&l.Integration) {
+			continue
+		}
+		if ref := exportIntegrationRef(l.GetIntegration().GetValue(), refs); ref != nil {
+			l.Integration = nil
+			l.IntegrationRef = ref
+		}
+	}
+}
+
+// exportRepos renders the watched repos with portable refs (#397): the code
+// host and tracker integrations as provider/base-URL refs, the stored id
+// wrappers unset, so the document YAML-encodes and moves between hubs.
+func exportRepos(rows []statedb.RepoSpecRow, refs map[string]*hubv1.IntegrationRef) ([]*hubv1.RepoSpec, error) {
 	var out []*hubv1.RepoSpec
 	for _, r := range rows {
 		var spec hubv1.RepoSpec
 		if err := protojson.Unmarshal(r.Spec, &spec); err != nil {
 			return nil, err
 		}
+		// No code host wrapper, or an orphan id with no ref, leaves
+		// CodeHostRef unset: import falls back to the host match.
 		if repo := spec.GetRepo(); repo != nil {
-			repo.CodeHost = nil
+			if clearEmptyIntegrationID(&repo.CodeHost) {
+				// Dropped the valid empty default; nothing to resolve.
+			} else if ref := exportIntegrationRef(repo.GetCodeHost().GetValue(), refs); ref != nil {
+				repo.CodeHost = nil
+				spec.CodeHostRef = ref
+			}
 		}
+		for _, tp := range spec.GetTrackerProjects() {
+			if clearEmptyIntegrationID(&tp.Integration) {
+				continue
+			}
+			if ref := exportIntegrationRef(tp.GetIntegration().GetValue(), refs); ref != nil {
+				tp.Integration = nil
+				tp.IntegrationRef = ref
+			}
+		}
+		exportRepoGate(spec.GetTrustedGate(), refs)
 		out = append(out, &spec)
 	}
 	return out, nil
@@ -73,14 +166,23 @@ func exportIntegrations(rows []statedb.IntegrationConfigRow) ([]*hubv1.Integrati
 	return out, nil
 }
 
-// exportAccounts renders the owner-created accounts as stored, matched
-// by harness and display name on import.
-func exportAccounts(rows []statedb.AccountRow) ([]*hubv1.AccountConfig, error) {
+// exportAccounts renders the owner-created accounts with portable refs
+// (#397): each binding's machine id moves to its display name, which
+// import resolves back. An orphan machine id, or one whose display name
+// two machines share, stays, and the CLI names it unportable, instead
+// of the export silently dropping the binding or picking a machine.
+func exportAccounts(rows []statedb.AccountRow, machines map[string]string) ([]*hubv1.AccountConfig, error) {
 	var out []*hubv1.AccountConfig
 	for _, r := range rows {
 		var spec hubv1.AccountSpec
 		if err := protojson.Unmarshal(r.Spec, &spec); err != nil {
 			return nil, err
+		}
+		for _, b := range spec.GetBindings() {
+			if name, ok := machines[b.GetMachine().GetValue()]; ok && b.GetMachine() != nil {
+				b.Machine = nil
+				b.MachineDisplayName = name
+			}
 		}
 		out = append(out, &hubv1.AccountConfig{
 			Harness: &typev1.Harness{Name: r.Harness}, Provider: r.Provider, Spec: &spec,
@@ -107,19 +209,20 @@ func (f *Fleet) ExportConfig(ctx context.Context, req *connect.Request[hubv1.Exp
 	actor := who.GetId().GetValue()
 	now := f.hubNow()
 
-	repoRows, err := statedb.ListAllWatchedRepoSpecs(ctx, f.store)
-	if err != nil {
-		return nil, f.exportFailed(ctx, actor, "store")
-	}
-	repos, err := exportRepos(repoRows)
-	if err != nil {
-		return nil, f.exportFailed(ctx, actor, "decode")
-	}
 	integrationRows, err := statedb.ListIntegrationRows(ctx, f.store)
 	if err != nil {
 		return nil, f.exportFailed(ctx, actor, "store")
 	}
+	refs := integrationRefMap(integrationRows)
 	integrations, err := exportIntegrations(integrationRows)
+	if err != nil {
+		return nil, f.exportFailed(ctx, actor, "decode")
+	}
+	repoRows, err := statedb.ListAllWatchedRepoSpecs(ctx, f.store)
+	if err != nil {
+		return nil, f.exportFailed(ctx, actor, "store")
+	}
+	repos, err := exportRepos(repoRows, refs)
 	if err != nil {
 		return nil, f.exportFailed(ctx, actor, "decode")
 	}
@@ -135,12 +238,31 @@ func (f *Fleet) ExportConfig(ctx context.Context, req *connect.Request[hubv1.Exp
 			return nil, f.exportFailed(ctx, actor, "decode")
 		}
 		hub, fleetValues = spec.GetHub(), spec.GetValues()
+		exportTrustedGate(hub.GetTrustedGate(), refs)
 	}
 	accountRows, err := statedb.ListAccountRows(ctx, f.store)
 	if err != nil {
 		return nil, f.exportFailed(ctx, actor, "store")
 	}
-	accounts, err := exportAccounts(accountRows)
+	identities, err := statedb.ListMachineIdentities(ctx, f.store)
+	if err != nil {
+		return nil, f.exportFailed(ctx, actor, "store")
+	}
+	// Only an unambiguous display name translates to a portable ref:
+	// two enrolled machines may share a name, and a binding to either
+	// stays an id wrapper the CLI names instead of silently picking
+	// one (#397).
+	nameCounts := make(map[string]int, len(identities))
+	for _, id := range identities {
+		nameCounts[id.Name]++
+	}
+	machineNames := make(map[string]string, len(identities))
+	for _, id := range identities {
+		if nameCounts[id.Name] == 1 {
+			machineNames[id.MachineID] = id.Name
+		}
+	}
+	accounts, err := exportAccounts(accountRows, machineNames)
 	if err != nil {
 		return nil, f.exportFailed(ctx, actor, "decode")
 	}

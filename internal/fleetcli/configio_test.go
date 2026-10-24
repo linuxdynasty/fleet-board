@@ -62,7 +62,10 @@ func TestExportStripsStampedIDs(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("export = %d: %s", code, diagnostic)
 	}
-	if strings.Contains(out, "code_host") || strings.Contains(out, "codeHost") {
+	// code_host_ref is the portable ref (#397); a bare code_host wrapper
+	// or its JSON alias would be a hub id leaking into the document.
+	withoutRefs := strings.ReplaceAll(out, "code_host_ref", "")
+	if strings.Contains(withoutRefs, "code_host") || strings.Contains(out, "codeHost") {
 		t.Fatalf("export carries a hub id: %q", out)
 	}
 	if _, err := fleetconfig.Decode([]byte(out)); err != nil {
@@ -390,11 +393,10 @@ func TestImportPlanQuotesUntrustedNames(t *testing.T) {
 	}
 }
 
-// TestExportAfterMappingNamesThePortableGap proves the walk-test gap: once
-// a Codex account is mapped to its machine, the hub carries IDs the YAML
-// exchange cannot render yet, and export refuses with a clear diagnostic
-// instead of an opaque failure.
-func TestExportAfterMappingNamesThePortableGap(t *testing.T) {
+// TestExportAfterMappingRendersPortableRefs proves #397: once a Codex
+// account is mapped to its machine, export renders the binding with the
+// machine display name instead of refusing a portable gap.
+func TestExportAfterMappingRendersPortableRefs(t *testing.T) {
 	h := startHubWithExtra(t, true, seedGitHubRow)
 	code, created, diagnostic := invokeSecret(t, h, h.secret,
 		"account", "create", "--harness", "codex", "--provider", "openai",
@@ -410,7 +412,13 @@ func TestExportAfterMappingNamesThePortableGap(t *testing.T) {
 		t.Fatalf("bindings update = %d: %s", code, diagnostic)
 	}
 	code, out, diagnostic := invoke(t, h, "export")
-	if code != 1 || out != "" || !strings.Contains(diagnostic, "portable") {
-		t.Fatalf("mapped export = %d, %q, %q, want a refusal naming the portable gap", code, out, diagnostic)
+	if code != 0 {
+		t.Fatalf("mapped export = %d: %s", code, diagnostic)
+	}
+	if !strings.Contains(out, "machine_display_name: \"laptop\"") {
+		t.Fatalf("exported bindings lack the machine display name: %q", out)
+	}
+	if strings.Contains(out, "machine:\n") {
+		t.Fatalf("exported bindings still carry a machine id wrapper: %q", out)
 	}
 }

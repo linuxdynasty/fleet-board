@@ -148,6 +148,9 @@ func (f *Fleet) CreateRepo(ctx context.Context, req *connect.Request[hubv1.Creat
 	if err := checkRepoSpec(m.GetRepo().GetSpec()); err != nil {
 		return nil, f.repoRefused(ctx, opRepoCreate, actor, err)
 	}
+	if err := rejectRepoDocRefs(m.GetRepo().GetSpec()); err != nil {
+		return nil, f.repoRefused(ctx, opRepoCreate, actor, err)
+	}
 	sum, err := repoBodyHash(m)
 	if err != nil {
 		return nil, f.repoFailed(ctx, opRepoCreate, "watch", actor, "encode", err)
@@ -286,6 +289,9 @@ func (f *Fleet) UpdateRepo(ctx context.Context, req *connect.Request[hubv1.Updat
 				if err := checkRepoSpec(merged); err != nil {
 					return nil, false, err
 				}
+				if err := rejectRepoDocRefs(merged); err != nil {
+					return nil, false, err
+				}
 				mergedJSON, err := protojson.Marshal(merged)
 				if err != nil {
 					return nil, false, err
@@ -300,6 +306,7 @@ func (f *Fleet) UpdateRepo(ctx context.Context, req *connect.Request[hubv1.Updat
 			return nil, f.repoWriteError(ctx, opRepoUpdate, "update", actor, repoStoreError("update", err))
 		}
 	}
+
 	var outSpec hubv1.RepoSpec
 	if err := protojson.Unmarshal(stored.Spec, &outSpec); err != nil {
 		return nil, f.repoFailed(ctx, opRepoUpdate, "update", actor, "decode", err)

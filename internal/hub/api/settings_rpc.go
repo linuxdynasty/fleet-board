@@ -124,6 +124,25 @@ func checkMergedHub(hub *hubv1.HubSettings) error {
 		v.add("spec.hub.log_retention", typev1.ReasonCode_REASON_CODE_INVALID_ARGUMENT,
 			"log_retention is at least 24 hours")
 	}
+	// Portable refs belong to fleet.yaml documents (#397); the live write
+	// takes hub ids, so a ref here is refused instead of silently ignored.
+	gate := hub.GetTrustedGate()
+	for i, u := range gate.GetUsers() {
+		if u.GetIntegrationRef() != nil {
+			v.add("spec.hub.trusted_gate.users["+strconv.Itoa(i)+"].integration_ref",
+				typev1.ReasonCode_REASON_CODE_INVALID_ARGUMENT,
+				"integration_ref is for fleet.yaml documents; live calls write integration ids")
+			break
+		}
+	}
+	for _, l := range gate.GetLabels() {
+		if l.GetIntegrationRef() != nil {
+			v.add("spec.hub.trusted_gate.labels.integration_ref",
+				typev1.ReasonCode_REASON_CODE_INVALID_ARGUMENT,
+				"integration_ref is for fleet.yaml documents; live calls write integration ids")
+			break
+		}
+	}
 	for i, c := range hub.GetDefaultConsent() {
 		switch c {
 		case typev1.ConsentAct_CONSENT_ACT_PUSH,

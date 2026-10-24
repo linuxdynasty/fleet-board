@@ -1,0 +1,15 @@
+// fleet.hub.v1 portable reference keys (02m). This file imports no other
+// fleet file, so any hub message can use these keys without an import cycle.
+syntax = "proto3";
+
+package fleet.hub.v1;
+
+// IntegrationRef is the portable key for an integration: the provider and
+// base URL the owner recognizes (02m). It carries no hub ID, so it survives
+// a move to another hub. ImportConfig resolves it against the integrations
+// the target hub has; an unknown key plans the entry as SKIPPED, never
+// creating the integration.
+message IntegrationRef {
+  string provider = 1;
+  string base_url = 2;
+}
