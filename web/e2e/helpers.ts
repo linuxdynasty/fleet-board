@@ -11,6 +11,9 @@ export const E2E_DIR = here;
 export const SCREENSHOT_DIR = path.join(here, "screenshots");
 export const URL_FILE = path.join(here, ".e2e-url");
 export const STATE_FILE = path.join(here, ".e2e-state.json");
+// Written before the build, so a setup failure still restores the
+// committed placeholder even when no hub ever started.
+export const RESTORE_FILE = path.join(here, ".e2e-restore.json");
 
 export const VIEWS = [
   "machines",
