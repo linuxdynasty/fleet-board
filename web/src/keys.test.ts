@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   KEY_VIEW_ORDER,
+  clampSelection,
   isTypingTarget,
   keyAction,
   moveSelection,
@@ -83,6 +84,13 @@ describe("view keys", () => {
     expect(moveSelection(5, 1, 3)).toBe(2);
     expect(moveSelection(0, 1, 0)).toBe(0);
     expect(moveSelection(0, 1, 1)).toBe(0);
+  });
+
+  it("normalizes a stored selection when the feed shrinks", () => {
+    expect(clampSelection(5, 3)).toBe(2);
+    expect(clampSelection(2, 3)).toBe(2);
+    expect(clampSelection(0, 3)).toBe(0);
+    expect(clampSelection(0, 0)).toBe(0);
   });
 
   it("reads the triage move direction, nothing else", () => {

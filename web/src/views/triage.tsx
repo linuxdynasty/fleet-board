@@ -2,10 +2,10 @@
 // first. Read-only except Snooze and Dismiss; prompt answers and the
 // special cards arrive in the follow-up slice. Data: the TRIAGE watch
 // topic, SnoozeTriageItem and DismissTriageItem for the two buttons.
-import { useEffect, useMemo, useRef, useState, type FormEvent, type JSX } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type JSX } from "react";
 import { Code, ConnectError } from "@connectrpc/connect";
 import { create } from "@bufbuild/protobuf";
-import { TRIAGE_MOVE_EVENT, moveSelection, triageMoveDelta } from "../keys.ts";
+import { TRIAGE_MOVE_EVENT, clampSelection, moveSelection, triageMoveDelta } from "../keys.ts";
 import {
   DismissTriageItemRequestSchema,
   Severity,
@@ -119,7 +119,15 @@ type ActState =
   | { status: "needs-secret" }
   | { status: "error"; message: string };
 
-function TriageCard({ item, selected }: { item: TriageItem; selected: boolean }): JSX.Element {
+function TriageCard({
+  item,
+  selected,
+  selectedRef,
+}: {
+  item: TriageItem;
+  selected: boolean;
+  selectedRef?: (el: HTMLLIElement | null) => void;
+}): JSX.Element {
   const [act, setAct] = useState<ActState>({ status: "idle" });
   const [secret, setSecret] = useState("");
   const kind = kindTitle(item.kind);
@@ -173,6 +181,7 @@ function TriageCard({ item, selected }: { item: TriageItem; selected: boolean })
 
   return (
     <li
+      ref={selectedRef}
       className={selected ? `${styles.card} ${styles.selected}` : styles.card}
       aria-current={selected ? "true" : undefined}
     >
@@ -240,7 +249,9 @@ export function TriageView(): JSX.Element {
       if (delta === null) {
         return;
       }
-      setSelected((prev) => moveSelection(prev, delta, countRef.current));
+      // Clamp the stored index first: the feed can shrink between
+      // presses, stranding the selection past the end.
+      setSelected((prev) => moveSelection(clampSelection(prev, countRef.current), delta, countRef.current));
     };
     window.addEventListener(TRIAGE_MOVE_EVENT, onMove);
     return () => {
@@ -293,6 +304,11 @@ export function TriageView(): JSX.Element {
   useEffect(() => {
     countRef.current = list.length;
   });
+  // One stable callback, so the ref only attaches when the selection
+  // actually moves cards; attaching scrolls the new card into view.
+  const scrollToSelected = useCallback((el: HTMLLIElement | null) => {
+    el?.scrollIntoView({ block: "nearest" });
+  }, []);
   const shown = list.length === 0 ? 0 : Math.min(selected, list.length - 1);
   if (state === "denied") {
     return (
@@ -321,7 +337,12 @@ export function TriageView(): JSX.Element {
       ) : (
         <ul className={styles.list}>
           {list.map((i, idx) => (
-            <TriageCard key={itemKey(i)} item={i} selected={idx === shown} />
+            <TriageCard
+              key={itemKey(i)}
+              item={i}
+              selected={idx === shown}
+              selectedRef={idx === shown ? scrollToSelected : undefined}
+            />
           ))}
         </ul>
       )}

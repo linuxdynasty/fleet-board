@@ -92,3 +92,14 @@ export function moveSelection(index: number, delta: 1 | -1, count: number): numb
   }
   return Math.min(Math.max(index + delta, 0), count - 1);
 }
+
+// clampSelection keeps a stored Triage selection inside a changed feed.
+// Live updates can remove cards the selection pointed at; the stored
+// index is normalized so the next j/k moves from the card on screen,
+// not from a stale position past the end.
+export function clampSelection(index: number, count: number): number {
+  if (count <= 0) {
+    return 0;
+  }
+  return Math.min(Math.max(index, 0), count - 1);
+}
