@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 )
 
 // Limits keep an untrusted endpoint from eating memory: the release list is
@@ -36,11 +37,21 @@ type GitHub struct {
 	Client  *http.Client
 }
 
+// defaultTimeout bounds one upgrade fetch when the caller sets no
+// deadline: releases are small JSON and one static binary, so 30 seconds
+// (the repo's HTTP convention) is generous.
+const defaultTimeout = 30 * time.Second
+
 func (g GitHub) client() *http.Client {
 	if g.Client != nil {
 		return g.Client
 	}
-	return http.DefaultClient
+	return &http.Client{Timeout: defaultTimeout}
+}
+
+// Timeout reports the bound client() applies without an explicit client.
+func (g GitHub) Timeout() time.Duration {
+	return g.client().Timeout
 }
 
 func (g GitHub) base() string {
@@ -58,8 +69,8 @@ func (g GitHub) Release(ctx context.Context, repo, version string) (ReleaseInfo,
 	path := "/repos/" + repo + "/releases/latest"
 	if version != "" {
 		v := strings.TrimSpace(version)
-		if strings.Contains(v, "/") || strings.Contains(v, "..") {
-			return ReleaseInfo{}, fmt.Errorf("release: bad version %q", v)
+		if err := checkVersion(v); err != nil {
+			return ReleaseInfo{}, err
 		}
 		path = "/repos/" + repo + "/releases/tags/" + v
 	}
@@ -140,6 +151,25 @@ func (g GitHub) Download(ctx context.Context, url string) ([]byte, error) {
 		return nil, fmt.Errorf("release: download is empty")
 	}
 	return body, nil
+}
+
+// checkVersion whitelists tag characters (letters, digits, dot, dash,
+// underscore, optional leading v): a tag goes into a URL path, so anything
+// URL-significant (?, #, space, slash) is refused before the request.
+func checkVersion(v string) error {
+	s := strings.TrimPrefix(v, "v")
+	if s == "" {
+		return fmt.Errorf("release: bad version %q: want vX.Y.Z", v)
+	}
+	for _, c := range s {
+		switch {
+		case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z', c >= '0' && c <= '9':
+		case c == '-', c == '_', c == '.':
+		default:
+			return fmt.Errorf("release: bad version %q: want vX.Y.Z", v)
+		}
+	}
+	return nil
 }
 
 func checkRepo(repo string) error {

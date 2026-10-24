@@ -11,8 +11,11 @@ the project's GitHub Releases page.
 
 ## What you need
 
-- On every machine: `curl` and `tar`. macOS and Linux only, on an
-  Intel/AMD or ARM chip.
+- On every machine: `curl` and `tar`, plus a checksum tool:
+  `shasum` (ships with macOS) or `sha256sum` (Linux coreutils, on by
+  default in most distros). install.sh checks the download against the
+  release checksum before it installs anything. macOS and Linux only, on
+  an Intel/AMD or ARM chip.
 - The hub needs its dashboard built into `fleetd` (releases already have
   it; see [Staying current](#staying-current)).
 - One GitHub App install for the watched repos (plan item 0.2, the

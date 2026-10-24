@@ -102,8 +102,10 @@ if [ "${#want}" -ne 64 ]; then
 fi
 if command -v shasum >/dev/null; then
   got="$(shasum -a 256 "$work/$asset" | awk '{print $1}')"
-else
+elif command -v sha256sum >/dev/null; then
   got="$(sha256sum "$work/$asset" | awk '{print $1}')"
+else
+  echo "install.sh: need shasum or sha256sum to check the download; installs nothing" >&2; exit 1
 fi
 if [ "$got" != "$want" ]; then
   echo "install.sh: checksum mismatch for $asset: the download is not what the release published; installs nothing" >&2
@@ -141,7 +143,8 @@ if [ "$os" = "darwin" ]; then
   mkdir -p "$unit_dir"
   curl -fsSL -o "$work/$unit" "$unit_base/launchd/$unit" || {
     echo "install.sh: no unit $unit for $version" >&2; exit 1; }
-  sed "s|@HOME@|$HOME|g" "$work/$unit" > "$unit_dir/$unit"
+  home_esc=$(printf '%s' "$HOME" | sed 's/[&|\\]/\\&/g')
+  sed "s|@HOME@|$home_esc|g" "$work/$unit" > "$unit_dir/$unit"
   echo "install.sh: installed $unit_dir/$unit"
   if [ "$start" = "yes" ]; then
     launchctl unload "$unit_dir/$unit" 2>/dev/null || true
@@ -157,7 +160,8 @@ else
   mkdir -p "$unit_dir"
   curl -fsSL -o "$work/$unit" "$unit_base/systemd/$unit" || {
     echo "install.sh: no unit $unit for $version" >&2; exit 1; }
-  sed "s|@HOME@|$HOME|g" "$work/$unit" > "$unit_dir/$unit"
+  home_esc=$(printf '%s' "$HOME" | sed 's/[&|\\]/\\&/g')
+  sed "s|@HOME@|$home_esc|g" "$work/$unit" > "$unit_dir/$unit"
   echo "install.sh: installed $unit_dir/$unit"
   if [ "$start" = "yes" ]; then
     if systemctl --user daemon-reload && systemctl --user enable --now "$unit" 2>/dev/null; then
