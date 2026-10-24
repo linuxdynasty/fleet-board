@@ -2,8 +2,7 @@
 
 The hub's HTTP API ([02b](../../../docs/specs/02b-hub-api.md),
 [02f](../../../docs/specs/02f-hub-authentication.md#host-and-origin-checks)).
-The API listener serves `/metrics` and `FleetService` behind the Host and
-Origin checks. The optional metrics listener serves only `/metrics`.
+The API listener serves `/metrics`, `FleetService`, and the embedded dashboard (the `web` package) on every other GET path, behind the Host and Origin checks. The optional metrics listener serves only `/metrics`.
 `FleetService` includes `CreateEnrollmentToken`, the watched-repo
 writes (`CreateRepo`, `UpdateRepo`, `DeleteRepo`), the machine admin
 writes (`UpdateMachine`, `RevokeMachine`, `DeleteMachine`), the

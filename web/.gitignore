@@ -1,2 +1,7 @@
 node_modules/
-dist/
+# Build output served by fleetd. Only the placeholder dist/index.html is
+# tracked (it keeps `go build` working without Node); the smoke builds the
+# real page and restores the placeholder afterwards.
+dist/*
+!dist/index.html
+test-results/

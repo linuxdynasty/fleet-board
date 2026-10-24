@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/linuxdynasty/fleet-board/internal/hub/statedb"
+	"github.com/linuxdynasty/fleet-board/internal/store"
 )
 
 // Version is the agent wire version this seed was built against, pinned as
@@ -61,6 +62,19 @@ func Seed(ctx context.Context, dir string) error {
 		return fmt.Errorf("seed: open state.db: %w", err)
 	}
 	defer func() { _ = st.Close() }()
+	if err := SeedRows(ctx, st); err != nil {
+		return err
+	}
+	return nil
+}
+
+// SeedRows writes the shared fleet rows into an already-created store: two
+// enrolled machines, and the laptop's Hello and Snapshot so it reads ONLINE
+// while the server stays ENROLLED. A real hub needs a real CA identity, so
+// the dashboard smoke runs `fleetd init` first and calls this for the rows;
+// the fake seed identity above is for contract tests only. The rows are
+// identical either way: same machines, same fixed clock.
+func SeedRows(ctx context.Context, st *store.Store) error {
 	// Fixed order: map iteration would hand the earlier hub_seq and audit
 	// rows to whichever machine Go visits first.
 	ordered := []struct {
@@ -83,7 +97,7 @@ func Seed(ctx context.Context, dir string) error {
 		return fmt.Errorf("seed: laptop hello: %w", err)
 	}
 	at := seedNow.Add(2 * time.Minute)
-	err = st.Write(ctx, func(tx *sql.Tx) error {
+	err := st.Write(ctx, func(tx *sql.Tx) error {
 		if _, err := statedb.ApplySnapshot(ctx, tx, statedb.SnapshotIn{
 			MachineID: MachineLaptop, Epoch: 1, Seq: 1, InstallID: laptopInstall,
 			Facts: LaptopFacts, Resources: `{"load1":0.5}`,
