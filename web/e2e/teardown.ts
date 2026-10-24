@@ -4,7 +4,7 @@
 // that never started a hub leaves the worktree clean.
 import fs from "node:fs";
 import path from "node:path";
-import { E2E_DIR, RESTORE_FILE, STATE_FILE } from "./helpers.ts";
+import { E2E_DIR, RESTORE_FILE, STATE_FILE, URL_FILE } from "./helpers.ts";
 
 const distDir = path.join(E2E_DIR, "..", "dist");
 
@@ -24,10 +24,13 @@ export default async function globalTeardown(): Promise<void> {
     if (fs.existsSync(backup)) {
       fs.copyFileSync(backup, path.join(distDir, "index.html"));
       console.log("e2e teardown: restored dist/index.html placeholder");
+      fs.rmSync(path.join(distDir, "assets"), { recursive: true, force: true });
+    } else {
+      console.log("e2e teardown: no stash found, dist/index.html left as built");
     }
-    fs.rmSync(path.join(distDir, "assets"), { recursive: true, force: true });
     fs.rmSync(tmpDir, { recursive: true, force: true });
     fs.rmSync(RESTORE_FILE, { force: true });
   }
   fs.rmSync(STATE_FILE, { force: true });
+  fs.rmSync(URL_FILE, { force: true });
 }
