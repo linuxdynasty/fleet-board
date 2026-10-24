@@ -158,7 +158,7 @@ func (g GitHub) Download(ctx context.Context, url string) ([]byte, error) {
 // URL-significant (?, #, space, slash) is refused before the request.
 func checkVersion(v string) error {
 	s := strings.TrimPrefix(v, "v")
-	if s == "" {
+	if s == "" || strings.Contains(s, "..") {
 		return fmt.Errorf("release: bad version %q: want vX.Y.Z", v)
 	}
 	for _, c := range s {

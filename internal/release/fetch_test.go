@@ -4,7 +4,9 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/linuxdynasty/fleet-board/internal/release"
 )
@@ -64,9 +66,12 @@ func TestFetchRelease(t *testing.T) {
 	if _, err := f.Release(t.Context(), "not-a-repo", ""); err == nil {
 		t.Error("Release with a bad repo name succeeded, want an error")
 	}
-	for _, bad := range []string{"v0.2.0?x=1", "v0.2.0#frag", "v0.2 0", "v0.2.0/x", "../v0.2.0"} {
-		if _, err := f.Release(t.Context(), "o/r", bad); err == nil {
+	for _, bad := range []string{"v0.2.0?x=1", "v0.2.0#frag", "v0.2 0", "v0.2.0/x", "../v0.2.0", "..", "..."} {
+		_, err := f.Release(t.Context(), "o/r", bad)
+		if err == nil {
 			t.Errorf("Release with version %q succeeded, want an error", bad)
+		} else if !strings.Contains(err.Error(), "bad version") {
+			t.Errorf("Release with version %q failed with %v, want the validator to refuse it", bad, err)
 		}
 	}
 }
@@ -74,8 +79,8 @@ func TestFetchRelease(t *testing.T) {
 func TestDefaultClientHasATimeout(t *testing.T) {
 	t.Parallel()
 	f := release.GitHub{}
-	if got := f.Timeout(); got <= 0 {
-		t.Errorf("default fetch timeout = %v, want a positive bound", got)
+	if got, want := f.Timeout(), 30*time.Second; got != want {
+		t.Errorf("default fetch timeout = %v, want %v", got, want)
 	}
 }
 
