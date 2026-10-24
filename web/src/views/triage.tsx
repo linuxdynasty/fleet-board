@@ -2,9 +2,10 @@
 // first. Read-only except Snooze and Dismiss; prompt answers and the
 // special cards arrive in the follow-up slice. Data: the TRIAGE watch
 // topic, SnoozeTriageItem and DismissTriageItem for the two buttons.
-import { useMemo, useState, type FormEvent, type JSX } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent, type JSX } from "react";
 import { Code, ConnectError } from "@connectrpc/connect";
 import { create } from "@bufbuild/protobuf";
+import { TRIAGE_MOVE_EVENT, moveSelection, triageMoveDelta } from "../keys.ts";
 import {
   DismissTriageItemRequestSchema,
   Severity,
@@ -118,7 +119,7 @@ type ActState =
   | { status: "needs-secret" }
   | { status: "error"; message: string };
 
-function TriageCard({ item }: { item: TriageItem }): JSX.Element {
+function TriageCard({ item, selected }: { item: TriageItem; selected: boolean }): JSX.Element {
   const [act, setAct] = useState<ActState>({ status: "idle" });
   const [secret, setSecret] = useState("");
   const kind = kindTitle(item.kind);
@@ -171,7 +172,10 @@ function TriageCard({ item }: { item: TriageItem }): JSX.Element {
   };
 
   return (
-    <li className={styles.card}>
+    <li
+      className={selected ? `${styles.card} ${styles.selected}` : styles.card}
+      aria-current={selected ? "true" : undefined}
+    >
       <p className={styles.head}>
         <span className={styles.chip}>{severityText(item.severity)}</span>{" "}
         {kind ?? "triage item"}
@@ -226,6 +230,23 @@ function TriageCard({ item }: { item: TriageItem }): JSX.Element {
 export function TriageView(): JSX.Element {
   const [rows, setRows] = useState<Map<string, TriageItem>>(new Map());
   const [initialDone, setInitialDone] = useState(false);
+  // The card j/k moves through. The shell fires one event per press;
+  // the count ref keeps the handler clamped to the latest feed.
+  const [selected, setSelected] = useState(0);
+  const countRef = useRef(0);
+  useEffect(() => {
+    const onMove = (event: Event): void => {
+      const delta = triageMoveDelta(event);
+      if (delta === null) {
+        return;
+      }
+      setSelected((prev) => moveSelection(prev, delta, countRef.current));
+    };
+    window.addEventListener(TRIAGE_MOVE_EVENT, onMove);
+    return () => {
+      window.removeEventListener(TRIAGE_MOVE_EVENT, onMove);
+    };
+  }, []);
   const state = useWatch(
     // The feed shows open items only (ListTriageItems defaults the same
     // way). A snoozed or dismissed card leaves the filter, arriving once
@@ -269,6 +290,10 @@ export function TriageView(): JSX.Element {
   );
 
   const list = orderItems([...rows.values()]);
+  useEffect(() => {
+    countRef.current = list.length;
+  });
+  const shown = list.length === 0 ? 0 : Math.min(selected, list.length - 1);
   if (state === "denied") {
     return (
       <section>
@@ -295,8 +320,8 @@ export function TriageView(): JSX.Element {
         <p>{initialDone ? "Nothing needs you." : "Loading…"}</p>
       ) : (
         <ul className={styles.list}>
-          {list.map((i) => (
-            <TriageCard key={itemKey(i)} item={i} />
+          {list.map((i, idx) => (
+            <TriageCard key={itemKey(i)} item={i} selected={idx === shown} />
           ))}
         </ul>
       )}
