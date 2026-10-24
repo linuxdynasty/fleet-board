@@ -11,5 +11,8 @@ output and Playwright smoke starts from
 - `Version` follows the agent wire (`internal/protoversion`): a wire change
   breaks the build until the seed is rebuilt.
 - Seeding twice fails; the shared fleet is never silently replaced.
+- `SeedRows` writes the same rows into a `fleetd init` store, whose real CA
+  identity a running hub needs; the fake seed identity is for contract
+  tests only.
 
 Tests: `CGO_ENABLED=0 go test -shuffle=on -count=3 ./internal/seed/`.

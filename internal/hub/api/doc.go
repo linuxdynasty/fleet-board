@@ -1,7 +1,9 @@
 // Package api is the hub's HTTP API (docs/specs/02b-hub-api.md, 02f).
 //
 // [NewLocalServer] serves the generated FleetService and GET /metrics on the
-// local_trusted API listener. [NewMetricsServer] serves only metrics on the
+// local_trusted API listener, plus the embedded dashboard (package
+// github.com/linuxdynasty/fleet-board/web) on every other path.
+// [NewMetricsServer] serves only metrics on the
 // optional listener. Both check the loopback peer, Host, Origin and unsupported
 // credential carriers before any handler and share [Quotas]. Checked TCP
 // admission mints only the fixed USER local-owner with OWNER scopes; the

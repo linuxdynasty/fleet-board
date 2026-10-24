@@ -12,7 +12,10 @@ HTTP limits request headers to 1 MiB; this bounds raw cookie-name scanning
 without turning a large unrelated cookie into a sign-in credential.
 Connect calls need a Connect protocol header or gRPC content type. The local
 mode returns `FAILED_PRECONDITION` for sign-in and device RPCs. API tokens
-and other unbuilt RPCs return `UNIMPLEMENTED`; Watch remains unbuilt.
+and other unbuilt RPCs return `UNIMPLEMENTED`. Watch streams per-topic
+subscriptions with the initial state (02c); unserved topics (`ROUTINES`,
+the v3 `DEVICES` and `NOTIFICATION_TARGETS`) are refused as whole
+subscriptions.
 
 The API and optional metrics listeners share one `Quotas` instance. Read and
 write allowances belong to the fixed owner. `GetServerInfo` and `/metrics`

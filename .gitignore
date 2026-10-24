@@ -16,3 +16,12 @@ gen/
 # Tools that `make tools` builds with the local Go (pinned in tool-versions.env).
 .bin/
 tools/tscheck/node_modules/
+
+# web/dist is build output served by fleetd (see web/.gitignore); only the
+# placeholder web/dist/index.html is committed. The Playwright smoke builds
+# the real page and restores the placeholder afterwards.
+# Playwright smoke: phone-width screenshots (described in the PR, never
+# committed) and the run's URL/state files.
+web/e2e/screenshots/
+web/e2e/.e2e-url
+web/e2e/.e2e-state.json
