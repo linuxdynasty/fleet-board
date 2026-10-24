@@ -1,19 +1,10 @@
 import { create } from "@bufbuild/protobuf";
 import { describe, expect, it } from "vitest";
+import { QuotaWindowSchema } from "../../../gen/ts/fleet/hub/v1/insights_pb.ts";
 import {
-  InsightDimension,
-  InsightGroupKeySchema,
-  OutcomeRowSchema,
-  QuotaWindowSchema,
-} from "../../../gen/ts/fleet/hub/v1/insights_pb.ts";
-import {
+  dayRangeMs,
   durationText,
-  groupName,
-  perGoalText,
   percentValue,
-  rangeStartMs,
-  rateText,
-  reportBlocks,
   sampleText,
   windowLine,
 } from "./insights-helpers.ts";
@@ -32,24 +23,6 @@ describe("insights helpers", () => {
     expect(percentValue(undefined)).toBeNull();
   });
 
-  it("never shows a rate under 5 goals", () => {
-    const few = create(OutcomeRowSchema, { ran: 3, merged: 2, mergeRatePercent: 67 });
-    expect(rateText(few.ran, few.mergeRatePercent)).toContain("too few");
-    expect(rateText(few.ran, few.mergeRatePercent)).toContain("3 goals");
-    const unset = create(OutcomeRowSchema, { ran: 10, merged: 7 });
-    expect(rateText(unset.ran, unset.mergeRatePercent)).toContain("too few");
-    expect(rateText(10, 70)).toContain("70%");
-    expect(rateText(10, 70)).toContain("10 goals");
-  });
-
-  it("means per goal only with enough goals behind them", () => {
-    expect(perGoalText(12, 6)).toContain("2.0");
-    expect(perGoalText(12, 6)).toContain("per goal");
-    expect(perGoalText(3, 2)).toContain("2 goals");
-    expect(perGoalText(3, 2)).not.toContain("per goal");
-    expect(perGoalText(5, 0)).toContain("no goals");
-  });
-
   it("says durations in plain words", () => {
     expect(durationText(undefined)).toBeNull();
     expect(durationText({ $typeName: "google.protobuf.Duration", seconds: 1200n, nanos: 0 })).toBe(
@@ -60,33 +33,16 @@ describe("insights helpers", () => {
     );
   });
 
-  it("names outcome groups in plain words", () => {
-    const key = (partial: Record<string, unknown>) => create(InsightGroupKeySchema, partial);
-    expect(groupName(key({ harness: { name: "codex" } }), InsightDimension.HARNESS)).toBe("Codex");
-    expect(groupName(key({ model: "opus" }), InsightDimension.MODEL)).toBe("opus");
-    expect(groupName(key({}), InsightDimension.MODEL)).toBe("(no model)");
-    expect(groupName(key({ account: { value: "a-1" } }), InsightDimension.ACCOUNT)).toBe("a-1");
-    expect(groupName(key({ label: "perf" }), InsightDimension.LABEL)).toBe("perf");
-    expect(groupName(key({}), InsightDimension.HARNESS)).toBe("(unknown)");
-  });
-
-  it("sanitizes the written report into text blocks", () => {
-    const blocks = reportBlocks(
-      "<!-- fleet-insights bundle=abc -->\n# Week 41\n- waste grew\n<script>alert(1)</script>\nSee [the numbers](https://example.com/x)",
-    );
-    expect(blocks.some((b) => b.text.includes("fleet-insights"))).toBe(false);
-    expect(blocks.find((b) => b.kind === "heading")?.text).toBe("Week 41");
-    expect(blocks.find((b) => b.kind === "bullet")?.text).toBe("waste grew");
-    const raw = blocks.find((b) => b.text.includes("script"));
-    expect(raw?.kind).toBe("text");
-    expect(raw?.text).toBe("<script>alert(1)</script>");
-    expect(blocks.some((b) => b.text.includes("the numbers (https://example.com/x)"))).toBe(true);
-  });
-
-  it("starts ranges at a UTC midnight", () => {
+  it("ends ranges at next UTC midnight so today counts", () => {
     const now = Date.UTC(2026, 9, 24, 15, 30);
-    expect(rangeStartMs(7, now)).toBe(Date.UTC(2026, 9, 17));
-    expect(rangeStartMs(30, now)).toBe(Date.UTC(2026, 8, 24));
+    expect(dayRangeMs(7, now)).toEqual({
+      startMs: Date.UTC(2026, 9, 18),
+      endMs: Date.UTC(2026, 9, 25),
+    });
+    expect(dayRangeMs(30, now)).toEqual({
+      startMs: Date.UTC(2026, 8, 25),
+      endMs: Date.UTC(2026, 9, 25),
+    });
   });
 
   it("counts the sample behind every number", () => {
