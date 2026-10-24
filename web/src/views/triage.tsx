@@ -2,7 +2,8 @@
 // first. Read-only except Snooze and Dismiss; prompt answers and the
 // special cards arrive in the follow-up slice. Data: the TRIAGE watch
 // topic, SnoozeTriageItem and DismissTriageItem for the two buttons.
-import { useMemo, useState, type JSX } from "react";
+import { useMemo, useState, type FormEvent, type JSX } from "react";
+import { Code, ConnectError } from "@connectrpc/connect";
 import { create } from "@bufbuild/protobuf";
 import {
   DismissTriageItemRequestSchema,
@@ -13,7 +14,7 @@ import {
   type TriageItem,
 } from "../../../gen/ts/fleet/hub/v1/triage_pb.ts";
 import { ChangeType, WatchTopic } from "../../../gen/ts/fleet/hub/v1/watch_pb.ts";
-import { fleetClient } from "../client.ts";
+import { fleetClient, setApprovalSecret } from "../client.ts";
 import { useWatch } from "../watch.ts";
 import styles from "./triage.module.css";
 
@@ -111,10 +112,15 @@ function itemKey(item: TriageItem): string {
   return item.fingerprint !== "" ? item.fingerprint : (item.id?.value ?? "");
 }
 
-type ActState = { status: "idle" } | { status: "busy" } | { status: "error"; message: string };
+type ActState =
+  | { status: "idle" }
+  | { status: "busy" }
+  | { status: "needs-secret" }
+  | { status: "error"; message: string };
 
 function TriageCard({ item }: { item: TriageItem }): JSX.Element {
   const [act, setAct] = useState<ActState>({ status: "idle" });
+  const [secret, setSecret] = useState("");
   const kind = kindTitle(item.kind);
   const detail = detailText(item);
 
@@ -146,8 +152,22 @@ function TriageCard({ item }: { item: TriageItem }): JSX.Element {
       }
       setAct({ status: "idle" });
     } catch (err) {
-      setAct({ status: "error", message: err instanceof Error ? err.message : String(err) });
+      if (err instanceof ConnectError && err.code === Code.PermissionDenied) {
+        // Usually the local_trusted hub asking for its approval secret
+        // (ADR 0032); sometimes a missing scope. Either way the owner
+        // types the secret and retries, so ask for it, don't just fail.
+        setAct({ status: "needs-secret" });
+      } else {
+        setAct({ status: "error", message: err instanceof Error ? err.message : String(err) });
+      }
     }
+  };
+
+  const saveSecret = (event: FormEvent): void => {
+    event.preventDefault();
+    setApprovalSecret(secret);
+    setSecret("");
+    setAct({ status: "idle" });
   };
 
   return (
@@ -179,6 +199,26 @@ function TriageCard({ item }: { item: TriageItem }): JSX.Element {
         </button>
       </div>
       {act.status === "error" && <p role="alert">That did not go through: {act.message}</p>}
+      {act.status === "needs-secret" && (
+        <form onSubmit={saveSecret}>
+          <p role="alert">
+            The hub refused that action. If this hub runs in local-trusted mode, type its
+            local approval secret, then try again.
+          </p>
+          <label>
+            Approval secret{" "}
+            <input
+              type="password"
+              value={secret}
+              autoComplete="off"
+              onChange={(event) => {
+                setSecret(event.target.value);
+              }}
+            />
+          </label>{" "}
+          <button type="submit">Save secret</button>
+        </form>
+      )}
     </li>
   );
 }
@@ -187,7 +227,10 @@ export function TriageView(): JSX.Element {
   const [rows, setRows] = useState<Map<string, TriageItem>>(new Map());
   const [initialDone, setInitialDone] = useState(false);
   const state = useWatch(
-    useMemo(() => [{ topic: WatchTopic.TRIAGE, sendInitial: true }], []),
+    // The feed shows open items only (ListTriageItems defaults the same
+    // way). A snoozed or dismissed card leaves the filter, arriving once
+    // as UNMATCHED so the view drops it (02c, "Leaving a filter").
+    useMemo(() => [{ topic: WatchTopic.TRIAGE, sendInitial: true, filter: "state = OPEN" }], []),
     useMemo(
       () => ({
         onResponse: (msg) => {
@@ -204,7 +247,7 @@ export function TriageView(): JSX.Element {
           }
           setRows((prev) => {
             const next = new Map(prev);
-            if (msg.changeType === ChangeType.DELETED) {
+            if (msg.changeType === ChangeType.DELETED || msg.changeType === ChangeType.UNMATCHED) {
               next.delete(itemKey(triage));
             } else {
               const key = itemKey(triage);
