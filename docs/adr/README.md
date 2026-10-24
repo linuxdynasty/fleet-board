@@ -39,7 +39,7 @@ The owner's decisions of 2026-09-28 to 2026-10-05 are recorded in
 | [0017](0017-contract-packages.md) | Contract packages and names | Accepted | Amended by 0018, 0019 |
 | [0018](0018-hub-api-and-contract-amendments.md) | Hub API, principals and devices, routines, profiles | Accepted | Amended by 0019, 0022 |
 | [0019](0019-pre-implementation-contract-decisions.md) | Pre-implementation contract decisions: reuse, sign-in, freeze, log access | Accepted | Amended by 0022; decision 9 (the freeze) amended by 0024 |
-| [0020](0020-dependencies.md) | Languages, frameworks and libraries | Accepted | Amended by 0021 (OTLP exporters), 0022, 0023, 0029 (`golang.org/x/sys`) |
+| [0020](0020-dependencies.md) | Languages, frameworks and libraries | Accepted | Amended by 0021 (OTLP exporters), 0022, 0023, 0029 (`golang.org/x/sys`), 0035 (Router, Styling rows) |
 | [0021](0021-insights-and-observability.md) | Insights from the fleet's own data, and observability of the fleet itself | Accepted | Questions 1 to 5 answered by 0022 (question 1 in its 2026-10-02 addendum); amends 0020's table |
 | [0022](0022-drift-audit-decisions.md) | Drift audit decisions: pane context, hub runtime, dependencies, GitHub App | Accepted | Answers 0021; superseded in part by 0023 (decision 3); decision 9 (flows in the order of authority) superseded in part by 0026; addendum of 2026-10-02: owner decisions, the v1 command path (changes decision 5), open questions; its questions 1 to 11 answered by 0024; addendum A.1 terminal-only/headless restriction superseded in part by 0034 |
 | [0023](0023-additional-libraries.md) | Additional libraries: mDNS and system sampling | Accepted | Builds on 0020; supersedes in part 0022; questions 1 and 2 answered by 0028; superseded in part by 0028 (the exec fallback) and 0031 (the list of approved gopsutil subpackages) |
@@ -54,6 +54,7 @@ The owner's decisions of 2026-09-28 to 2026-10-05 are recorded in
 | [0032](0032-local-trusted-approval-secret.md) | Approvals and settings changes in local_trusted mode need a local secret | Accepted | Decides 0024 decision 20; builds on 0019, 0025, 0008 |
 | [0033](0033-native-sessions-and-handoff.md) | Qualified native sessions and explicit handoff | Accepted | Supersedes part of 0024 decisions 1 and 10 and 0027 decision 1; confirms 0027 decision 4; builds on 0008, 0025, 0032; supersession references amended by 0034 |
 | [0034](0034-native-policy-supersession.md) | Native policy supersession references | Accepted | Supersedes part of 0022 addendum A.1; amends only 0033 supersession references |
+| [0035](0035-web-dashboard-router-and-styling.md) | Web dashboard router and styling without new dependencies | Proposed | Amends 0020's table (adds Router and Styling rows) |
 
 ## Template
 

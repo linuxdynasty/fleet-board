@@ -58,6 +58,7 @@ observed), so paths below read `Account.status.pacing` or `Machine.spec.labels`
 | ⌘K entries for windows | `ListSessions` → `Session.status.windows[].name`, `Session.status.name`, `started_by_fleet` | `TmuxWindow.name`, `TmuxSession.name` (E1) | v1 |
 | ⌘K entries for accounts (waste line) and "Audit log" | `ListAccounts` → `Account.status.pacing`; audit opens on Machines (`ListAuditEntries`) | D2, M1 | v1 |
 | ⌘K entries for work items | `ListWorkItems` → `WorkItem.item.ref{display, provider}` | `WorkItemRef` (ADR 0012) | v1 |
+| View links (the switcher beside ⌘K) | plain links with `#/...` hrefs (`#/usage`), no router package (ADR 0020); unknown names fall back to Machines | web/ shell | v1 |
 
 ### View keys
 
