@@ -4,6 +4,7 @@ import { MachinesView } from "./views/machines.tsx";
 import { UsageView } from "./views/usage.tsx";
 import { SessionView } from "./views/session.tsx";
 import { TriageView } from "./views/triage.tsx";
+import { WorkView } from "./views/work.tsx";
 import styles from "./app.module.css";
 
 const LABELS: Record<RouteName, string> = {
@@ -50,6 +51,8 @@ export function App(): JSX.Element {
           <SessionView />
         ) : route === "triage" ? (
           <TriageView />
+        ) : route === "work" ? (
+          <WorkView />
         ) : (
           <PlannedView name={route} />
         )}
