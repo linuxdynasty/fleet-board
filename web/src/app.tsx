@@ -1,5 +1,6 @@
 import type { JSX } from "react";
 import { ROUTES, routeHref, useHashRoute, type RouteName } from "./router.ts";
+import { InsightsView } from "./views/insights.tsx";
 import { MachinesView } from "./views/machines.tsx";
 import { UsageView } from "./views/usage.tsx";
 import { SessionView } from "./views/session.tsx";
@@ -53,6 +54,8 @@ export function App(): JSX.Element {
           <TriageView />
         ) : route === "work" ? (
           <WorkView />
+        ) : route === "insights" ? (
+          <InsightsView />
         ) : (
           <PlannedView name={route} />
         )}
