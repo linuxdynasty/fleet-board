@@ -1,8 +1,8 @@
 // Work view (row 14): the work board by stage with provider chips, the
 // change requests no goal owns, and the goal list with phase and first
 // line. One Watch stream over WORK_ITEMS, CHANGE_REQUESTS and GOALS,
-// deduped by (id, version). Read-only except RequeueWorkItem: a button on
-// manual-only cards that a click is allowed to requeue.
+// deduped by (id, version). Read-only for now: the requeue control stays
+// out until the hub implements RequeueWorkItem (row 23).
 import { useMemo, useState, type JSX } from "react";
 import type { Goal } from "../../../gen/ts/fleet/hub/v1/goal_pb.ts";
 import { GoalPhase } from "../../../gen/ts/fleet/hub/v1/goal_pb.ts";
@@ -17,7 +17,6 @@ import {
   WatchTopic,
 } from "../../../gen/ts/fleet/hub/v1/watch_pb.ts";
 import {
-  canRequeue,
   changeRequestKey,
   checksText,
   columnFor,
@@ -25,7 +24,6 @@ import {
   goalWords,
   manualReasonText,
   providerName,
-  requeueWorkItem,
   workItemKey,
   COLUMNS,
 } from "./work-helpers.ts";
@@ -45,17 +43,7 @@ function GoalLine({ goal }: { goal: Goal | undefined }): JSX.Element | null {
   );
 }
 
-function WorkCard({
-  item,
-  goal,
-  requeue,
-  onRequeue,
-}: {
-  item: WorkItem;
-  goal: Goal | undefined;
-  requeue: string | null;
-  onRequeue: () => void;
-}): JSX.Element {
+function WorkCard({ item, goal }: { item: WorkItem; goal: Goal | undefined }): JSX.Element {
   const ref = item.item?.ref;
   const claims = item.item?.claims ?? [];
   const repos = item.item?.repos ?? [];
@@ -81,14 +69,6 @@ function WorkCard({
         <p className={styles.meta}>{manualReasonText(item.manualReason)}</p>
       )}
       <GoalLine goal={goal} />
-      {canRequeue(item.stage, item.manualReason) && item.id !== undefined && (
-        <div>
-          <button type="button" onClick={onRequeue}>
-            Put it back in the queue
-          </button>
-          {requeue !== null && <p role="alert">{requeue}</p>}
-        </div>
-      )}
       <details>
         <summary>Details</summary>
         <p className={styles.meta}>
@@ -104,7 +84,6 @@ export function WorkView(): JSX.Element {
   const [changes, setChanges] = useState<Map<string, ChangeRequest>>(new Map());
   const [goals, setGoals] = useState<Map<string, Goal>>(new Map());
   const [done, setDone] = useState({ items: false, changes: false, goals: false });
-  const [requeues, setRequeues] = useState<Map<string, string>>(new Map());
   const state = useWatch(
     useMemo(
       () => [
@@ -173,7 +152,15 @@ export function WorkView(): JSX.Element {
                 next.delete(key);
               } else {
                 const seen = next.get(key);
-                if (seen === undefined || goal.version >= seen.version) {
+                // Goal status changes do not bump the version; the status
+                // sequence orders equal versions (02c, "Dedupe").
+                const seq = goal.status?.hubSeq ?? 0n;
+                const seenSeq = seen?.status?.hubSeq ?? 0n;
+                if (
+                  seen === undefined ||
+                  goal.version > seen.version ||
+                  (goal.version === seen.version && seq > seenSeq)
+                ) {
                   next.set(key, goal);
                 }
               }
@@ -236,30 +223,6 @@ export function WorkView(): JSX.Element {
     );
   }
 
-  async function requeue(item: WorkItem): Promise<void> {
-    if (item.id === undefined) {
-      return;
-    }
-    const key = workItemKey(item);
-    try {
-      await requeueWorkItem(item.id, item.version);
-      setRequeues((prev) => {
-        const next = new Map(prev);
-        next.delete(key);
-        return next;
-      });
-    } catch (err) {
-      setRequeues((prev) => {
-        const next = new Map(prev);
-        next.set(
-          key,
-          `Could not put it back in the queue: ${err instanceof Error ? err.message : "unknown error"}`,
-        );
-        return next;
-      });
-    }
-  }
-
   return (
     <section>
       <h1>Work</h1>
@@ -288,8 +251,6 @@ export function WorkView(): JSX.Element {
                           ? undefined
                           : goals.get(item.goal.value)
                       }
-                      requeue={requeues.get(workItemKey(item)) ?? null}
-                      onRequeue={() => void requeue(item)}
                     />
                   ))}
                 </ul>

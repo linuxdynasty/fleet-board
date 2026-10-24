@@ -1,6 +1,6 @@
-// Work board data shaping (row 14): keys, columns, plain goal words,
-// manual-only reasons, and the requeue call. No rendering here.
-import { create } from "@bufbuild/protobuf";
+// Work board data shaping (row 14): keys, columns, plain goal words and
+// manual-only reasons. No rendering here, and no write calls until row 23
+// implements RequeueWorkItem on the hub.
 import type { Goal } from "../../../gen/ts/fleet/hub/v1/goal_pb.ts";
 import { GoalPhase } from "../../../gen/ts/fleet/hub/v1/goal_pb.ts";
 import type {
@@ -8,14 +8,11 @@ import type {
   WorkItem,
 } from "../../../gen/ts/fleet/hub/v1/work_pb.ts";
 import {
-  RequeueWorkItemRequestSchema,
   WorkManualReason,
   WorkStage,
 } from "../../../gen/ts/fleet/hub/v1/work_pb.ts";
-import type { WorkItemKey } from "../../../gen/ts/fleet/type/v1/work_pb.ts";
 import { ProviderKind } from "../../../gen/ts/fleet/type/v1/work_pb.ts";
 import type { CheckSummary } from "../../../gen/ts/fleet/integration/v1/model_pb.ts";
-import { fleetClient } from "../client.ts";
 
 export function workItemKey(item: WorkItem): string {
   const id = item.id;
@@ -149,16 +146,8 @@ export function manualReasonText(reason: WorkManualReason): string {
   }
 }
 
-// canRequeue is true where a click may put the item back: manual-only, and
-// never past the trusted-issues gate (untrusted or edited-after-trust
-// needs a label from an allow-listed person instead).
-export function canRequeue(stage: WorkStage, reason: WorkManualReason): boolean {
-  return (
-    stage === WorkStage.MANUAL_ONLY &&
-    (reason === WorkManualReason.GOAL_CLEARED ||
-      reason === WorkManualReason.START_EXHAUSTED)
-  );
-}
+// Requeue returns with row 23, when the hub implements RequeueWorkItem;
+// until then the board stays read-only and this file holds no write call.
 
 export function providerName(provider: ProviderKind): string {
   switch (provider) {
@@ -183,17 +172,4 @@ export function checksText(checks: CheckSummary | undefined): string {
     return "no checks yet";
   }
   return `${checks.passing} passing · ${checks.failing} failing · ${checks.pending} pending`;
-}
-
-export async function requeueWorkItem(
-  id: WorkItemKey,
-  expectedVersion: bigint,
-): Promise<void> {
-  await fleetClient().requeueWorkItem(
-    create(RequeueWorkItemRequestSchema, {
-      requestId: crypto.randomUUID(),
-      id,
-      expectedVersion,
-    }),
-  );
 }

@@ -1,7 +1,7 @@
-// Work view tests (row 14, issue #42): helpers for keys, columns, goal
-// lines and requeue rules, plus the view fed through the Watch handlers.
+// Work view tests (row 14, issue #42): helpers for keys, columns and goal
+// lines, plus the view fed through the Watch handlers.
 import { create } from "@bufbuild/protobuf";
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { GoalPhase, GoalSchema } from "../../../gen/ts/fleet/hub/v1/goal_pb.ts";
 import type { WatchResponse } from "../../../gen/ts/fleet/hub/v1/watch_pb.ts";
@@ -19,7 +19,6 @@ import {
 import type { WatchHandlers } from "../watch.ts";
 import { WorkView } from "./work.tsx";
 import {
-  canRequeue,
   changeRequestKey,
   columnFor,
   goalKey,
@@ -28,13 +27,8 @@ import {
   workItemKey,
 } from "./work-helpers.ts";
 
-const { requeueMock, useWatchMock } = vi.hoisted(() => ({
-  requeueMock: vi.fn(),
+const { useWatchMock } = vi.hoisted(() => ({
   useWatchMock: vi.fn(),
-}));
-
-vi.mock("../client.ts", () => ({
-  fleetClient: () => ({ requeueWorkItem: requeueMock }),
 }));
 
 vi.mock("../watch.ts", () => ({
@@ -59,7 +53,6 @@ function initialDone(topic: WatchTopic): WatchResponse {
 afterEach(() => {
   cleanup();
   useWatchMock.mockReset();
-  requeueMock.mockReset();
 });
 
 function showView(state: string): void {
@@ -139,15 +132,6 @@ describe("manual-only reasons", () => {
     expect(manualReasonText(WorkManualReason.START_EXHAUSTED)).toContain("failed to start");
   });
 
-  it("only offers requeue where a click is allowed", () => {
-    expect(canRequeue(WorkStage.MANUAL_ONLY, WorkManualReason.GOAL_CLEARED)).toBe(true);
-    expect(canRequeue(WorkStage.MANUAL_ONLY, WorkManualReason.START_EXHAUSTED)).toBe(true);
-    expect(canRequeue(WorkStage.MANUAL_ONLY, WorkManualReason.UNTRUSTED)).toBe(false);
-    expect(canRequeue(WorkStage.MANUAL_ONLY, WorkManualReason.EDITED_AFTER_TRUST)).toBe(
-      false,
-    );
-    expect(canRequeue(WorkStage.READY, WorkManualReason.UNSPECIFIED)).toBe(false);
-  });
 });
 
 describe("WorkView", () => {
@@ -201,26 +185,33 @@ describe("WorkView", () => {
     expect(screen.getByText("eshu#7398")).toBeDefined();
   });
 
-  it("requeues a manual-only item through the RPC", async () => {
-    requeueMock.mockResolvedValueOnce({ workItem: undefined });
+  it("keeps the newer goal status when an older one arrives at the same version", () => {
     showView("live");
+    const goalId = { value: "g-9" };
     feed(
       create(WatchResponseSchema, {
-        topic: WatchTopic.WORK_ITEMS,
-        changeType: ChangeType.INITIAL,
+        topic: WatchTopic.GOALS,
+        changeType: ChangeType.UPDATED,
         resource: {
-          case: "workItem",
-          value: create(WorkItemSchema, {
-            id: {
-              integration: { value: "github" },
-              kind: 1,
-              project: "eshu",
-              key: "7398",
-            },
-            version: 3n,
-            stage: WorkStage.MANUAL_ONLY,
-            manualReason: WorkManualReason.GOAL_CLEARED,
-            item: { ref: { display: "eshu#7398" }, title: "Cleared item" },
+          case: "goal",
+          value: create(GoalSchema, {
+            id: goalId,
+            version: 1n,
+            status: { phase: GoalPhase.RUNNING, hubSeq: 10n, firstLine: "new line" },
+          }),
+        },
+      }),
+    );
+    feed(
+      create(WatchResponseSchema, {
+        topic: WatchTopic.GOALS,
+        changeType: ChangeType.UPDATED,
+        resource: {
+          case: "goal",
+          value: create(GoalSchema, {
+            id: goalId,
+            version: 1n,
+            status: { phase: GoalPhase.WAITING, hubSeq: 9n, firstLine: "old line" },
           }),
         },
       }),
@@ -228,19 +219,8 @@ describe("WorkView", () => {
     feed(initialDone(WatchTopic.WORK_ITEMS));
     feed(initialDone(WatchTopic.CHANGE_REQUESTS));
     feed(initialDone(WatchTopic.GOALS));
-    const button = screen.getByRole("button", { name: "Put it back in the queue" });
-    await act(async () => {
-      fireEvent.click(button);
-    });
-    expect(requeueMock).toHaveBeenCalledTimes(1);
-    const firstCall = requeueMock.mock.calls[0];
-    expect(firstCall).toBeDefined();
-    const request = (firstCall as unknown[])[0] as {
-      id: unknown;
-      expectedVersion: bigint;
-    };
-    expect(request.expectedVersion).toBe(3n);
-    expect(request.id).toBeDefined();
+    expect(screen.getByText(/new line/)).toBeDefined();
+    expect(screen.queryByText(/old line/)).toBeNull();
   });
 
   it("shows the denied state when the hub refuses access", () => {
