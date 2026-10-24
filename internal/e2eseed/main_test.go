@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/linuxdynasty/fleet-board/internal/seed"
+	"github.com/linuxdynasty/fleet-board/internal/store"
 	_ "modernc.org/sqlite" // the "sqlite" driver: pure Go, ADR 0014
 )
 
@@ -35,15 +36,23 @@ func writeConfig(t *testing.T, stateDir string) string {
 	return path
 }
 
-func machineState(t *testing.T, dir, id string) string {
+// openSeedDB reads through the project's own read-only opener, whose
+// pragmas (busy wait included) match every other store reader. A raw
+// sql.Open has no busy wait and flakes when a writer is still settling.
+func openSeedDB(t *testing.T, dir string) *sql.DB {
 	t.Helper()
-	db, err := sql.Open("sqlite", filepath.Join(dir, "state.db"))
+	db, err := store.OpenReadOnly(filepath.Join(dir, "state.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = db.Close() }()
+	t.Cleanup(func() { _ = db.Close() })
+	return db
+}
+
+func machineState(t *testing.T, db *sql.DB, id string) string {
+	t.Helper()
 	var state string
-	if err := db.QueryRowContext(context.Background(), `SELECT state FROM machines WHERE machine_id = ?`, id).Scan(&state); err != nil {
+	if err := db.QueryRowContext(t.Context(), `SELECT state FROM machines WHERE machine_id = ?`, id).Scan(&state); err != nil {
 		t.Fatalf("machine %s: %v", id, err)
 	}
 	return state
@@ -59,6 +68,7 @@ func TestRunInitsAndSeeds(t *testing.T) {
 	if got := stdout.String(); got != dir+"\n" {
 		t.Fatalf("stdout = %q, want %q", got, dir+"\n")
 	}
+	db := openSeedDB(t, dir)
 	for _, tc := range []struct {
 		name, machine, want string
 	}{
@@ -67,7 +77,7 @@ func TestRunInitsAndSeeds(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			if got := machineState(t, dir, tc.machine); got != tc.want {
+			if got := machineState(t, db, tc.machine); got != tc.want {
 				t.Errorf("machine %s state %q, want %q", tc.machine, got, tc.want)
 			}
 		})
