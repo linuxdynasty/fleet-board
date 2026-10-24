@@ -15,7 +15,7 @@ import {
   type UsageReading,
 } from "../../../gen/ts/fleet/hub/v1/account_pb.ts";
 import type { Percent } from "../../../gen/ts/fleet/type/v1/status_pb.ts";
-import { UsageSource, type ResetTime } from "../../../gen/ts/fleet/type/v1/usage_pb.ts";
+import { UsageSource, type LimitBucket, type ResetTime } from "../../../gen/ts/fleet/type/v1/usage_pb.ts";
 import { fleetClient } from "../client.ts";
 import { useWatch } from "../watch.ts";
 import styles from "./usage.module.css";
@@ -41,7 +41,7 @@ export function percentText(p: Percent | undefined): string | null {
   return null;
 }
 
-function resetText(resetsTime: ResetTime | undefined, nowMs: number): string {
+export function resetText(resetsTime: ResetTime | undefined, nowMs: number): string {
   if (resetsTime === undefined) {
     return "reset unknown";
   }
@@ -51,7 +51,9 @@ function resetText(resetsTime: ResetTime | undefined, nowMs: number): string {
   }
   const at = new Date(resolved);
   if (resetsTime.dateOnly) {
-    return `resets ${at.toLocaleDateString(undefined, { month: "short", day: "numeric" })}`;
+    // The contract says the UI shows original_text, not a countdown: the
+    // resolved midnight belongs to the next day by design (usage.proto).
+    return resetsTime.originalText === "" ? "reset unknown" : resetsTime.originalText;
   }
   const diffMs = at.getTime() - nowMs;
   if (diffMs <= 0) {
@@ -65,16 +67,38 @@ function resetText(resetsTime: ResetTime | undefined, nowMs: number): string {
   return `resets in ${hours}h`;
 }
 
-function wasteLine(a: Account, nowMs: number): string {
+export function bucketDisplay(
+  bucket: LimitBucket | undefined,
+): { label: "left" | "used"; text: string | null } {
+  if (bucket === undefined) {
+    return { label: "used", text: null };
+  }
+  // percent_used always stores the used share; a harness that showed
+  // remaining has it converted, so "left" displays 100 minus used.
+  const label = bucket.shownAsRemaining ? "left" : "used";
+  const used =
+    bucket.percentUsed?.kind.case === "value" ? bucket.percentUsed.kind.value : null;
+  if (used === null) {
+    return { label, text: null };
+  }
+  return { label, text: `${bucket.shownAsRemaining ? 100 - used : used}%` };
+}
+
+export function wasteLine(a: Account, nowMs: number, unknown: boolean): string {
   const pacing = a.status?.pacing;
-  const left = percentText(a.status?.usage?.buckets?.[0]?.percentUsed);
   const parts = [`${a.spec?.displayName ?? accountKey(a)}`];
-  parts.push(left === null ? "usage unknown" : `${left} left`);
   const bucket = a.status?.usage?.buckets?.[0];
-  parts.push(resetText(bucket?.resetsTime, nowMs));
+  if (unknown) {
+    // Cached buckets may still hold old numbers; never present them as live.
+    parts.push("usage unknown");
+  } else {
+    const shown = bucketDisplay(bucket);
+    parts.push(shown.text === null ? "usage unknown" : `${shown.text} ${shown.label}`);
+    parts.push(resetText(bucket?.resetsTime, nowMs));
+  }
   parts.push(`${pacing?.activeGoals ?? 0} goal running`);
   const projected = pacing?.projectedUnusedPercent;
-  if (projected !== undefined) {
+  if (!unknown && projected !== undefined) {
     parts.push(`on pace to leave ~${projected}% unused`);
   }
   return parts.join(" · ");
@@ -193,20 +217,23 @@ function AccountCard({ account }: { account: Account }): JSX.Element {
   const now = useNow();
   return (
     <li className={isHighlighted(account) ? styles.highlight : undefined}>
-      <p className={styles.waste}>{wasteLine(account, now)}</p>
+      <p className={styles.waste}>{wasteLine(account, now, unknown)}</p>
       {pacing?.readingStale === true && <p role="status">Stale — reset passed, re-probe pending.</p>}
       {unknown ? (
         <p>Unknown: no numbers yet, nothing old shown.</p>
       ) : (
         <table className={styles.shown}>
           <tbody>
-            {buckets.map((b, i) => (
+            {buckets.map((b, i) => {
+            const shown = bucketDisplay(b);
+            return (
               <tr key={i}>
-                <td>{b.shownAsRemaining ? "left" : "used"}</td>
-                <td>{percentText(b.percentUsed) ?? "unknown"}</td>
+                <td>{shown.label}</td>
+                <td>{shown.text ?? "unknown"}</td>
                 <td>{resetText(b.resetsTime, now)}</td>
               </tr>
-            ))}
+            );
+          })}
           </tbody>
         </table>
       )}
@@ -271,6 +298,16 @@ export function UsageView(): JSX.Element {
   );
 
   const list = [...rows.values()];
+  if (state === "denied") {
+    return (
+      <section>
+        <h1>Usage</h1>
+        <p role="alert">
+          The hub refused access: sign-in expired or permission revoked. Nothing shown is live.
+        </p>
+      </section>
+    );
+  }
   if (state === "reconnecting" && list.length === 0 && !initialDone) {
     return (
       <section aria-busy="true">

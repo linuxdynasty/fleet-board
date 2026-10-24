@@ -21,6 +21,7 @@ import {
   WatchTopic,
 } from "../../../gen/ts/fleet/hub/v1/watch_pb.ts";
 import type { PaneKey } from "../../../gen/ts/fleet/type/v1/ids_pb.ts";
+import { Status } from "../../../gen/ts/fleet/type/v1/status_pb.ts";
 import { fleetClient } from "../client.ts";
 import { useWatch } from "../watch.ts";
 import styles from "./session.module.css";
@@ -94,6 +95,11 @@ async function captureScreen(
       create(GetOperationRequestSchema, { id: opId }),
     );
     if (got.operation?.state === OperationState.DONE) {
+      // DONE means finished, not successful: an expired or refused capture
+      // carries no screen, so it must reach the error state, not "(empty screen)".
+      if (got.operation.status !== Status.OK) {
+        throw new Error(`capture ended ${Status[got.operation.status] ?? got.operation.status}`);
+      }
       return got.operation.outputText;
     }
     await sleep(400);
@@ -232,6 +238,16 @@ export function SessionView(): JSX.Element {
     windows.find((w) => w.active) ??
     windows.at(0);
 
+  if (state === "denied") {
+    return (
+      <section>
+        <h1>Session</h1>
+        <p role="alert">
+          The hub refused access: sign-in expired or permission revoked. Nothing shown is live.
+        </p>
+      </section>
+    );
+  }
   if (state === "reconnecting" && list.length === 0 && !initialDone) {
     return (
       <section aria-busy="true">

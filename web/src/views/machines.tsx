@@ -66,6 +66,16 @@ export function MachinesView(): JSX.Element {
     (a.spec?.displayName ?? "").localeCompare(b.spec?.displayName ?? ""),
   );
 
+  if (state === "denied") {
+    return (
+      <section>
+        <h1>Machines</h1>
+        <p role="alert">
+          The hub refused access: sign-in expired or permission revoked. Nothing shown is live.
+        </p>
+      </section>
+    );
+  }
   if (state === "reconnecting" && list.length === 0 && !initialDone) {
     return (
       <section aria-busy="true">

@@ -15,7 +15,7 @@ import {
 } from "../../gen/ts/fleet/hub/v1/watch_pb.ts";
 import { fleetClient } from "./client.ts";
 
-export type WatchState = "live" | "reconnecting";
+export type WatchState = "live" | "reconnecting" | "denied";
 
 export interface WatchHandlers {
   onResponse: (msg: WatchResponse) => void;
@@ -84,7 +84,11 @@ export function useWatch(
           }
           handlersRef.current.onResponse(msg);
           resumeToken = msg.resumeToken;
-          attempt = 0;
+          if (attempt > 0) {
+            // The stream recovered after a failure: views show live again.
+            attempt = 0;
+            setState("live");
+          }
         }
         // The stream ended without resync: reopen from the token.
         throw new Error("watch stream closed");
@@ -93,11 +97,14 @@ export function useWatch(
           return;
         }
         if (err instanceof ConnectError) {
-          // A permission loss stays visible instead of looping quietly.
+          // A permission loss stays rendered instead of looping quietly.
           if (err.code === Code.PermissionDenied || err.code === Code.Unauthenticated) {
-            throw err;
+            setState("denied");
+            return;
           }
         }
+        // Show the outage for the whole backoff, not just after the retry.
+        setState("reconnecting");
         timer = setTimeout(() => {
           void open(resumeToken, attempt + 1);
         }, backoffMs(attempt));

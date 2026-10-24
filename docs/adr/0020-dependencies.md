@@ -60,8 +60,6 @@ Go; generated code via `buf generate` (`protoc-gen-go`, `protoc-gen-connect-go`,
 | Build | `vite` 8, `@vitejs/plugin-react` | |
 | API client | `@connectrpc/connect`, `@connectrpc/connect-web`, `@bufbuild/protobuf` (same version as `protoc-gen-es`) | generated from `fleet.hub.v1` |
 | Server state | `@tanstack/react-query` | caching, refetch on `RESYNC_REQUIRED` |
-| Router | none: a small hand-written hash router (`#/...` links) | the views need no nested routes; no dependency (row 14, #42) |
-| Styling | plain CSS with CSS Modules (`.module.css`), no framework | Vite supports modules with no new package; phone width first (row 14, #42) |
 | Terminal | `@xterm/xterm`, `@xterm/addon-fit` | scoped packages, not the old `xterm` |
 | Passkeys | `@simplewebauthn/browser` | new major; fall back to `navigator.credentials` |
 | Charts | `uplot` (burn-down and time series) | small and fast; thin React wrapper |
