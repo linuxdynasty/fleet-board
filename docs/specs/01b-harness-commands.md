@@ -398,7 +398,7 @@ the trusted repo for a read-only child start) and `~/.codex/config.toml` have
 the same sha256 before and after; `~/.claude.json` was never opened; no auth
 file was opened; all pane captures were deleted. Unlike the 2026-10-10 probe,
 this Codex start left `config.toml` byte-identical, and no key was ever sent
-to an unread screen. Re-verified 2026-10-19 on the installed versions with the same shapes (full record in [folder-trust-fixtures.md](../research/folder-trust-fixtures.md)): Claude Code 2.1.296, Codex 0.163.0, Muse 1.4.10, Cursor 2026.10.01, OpenCode 1.19.3.
+to an unread screen. Re-verified 2026-10-19 on the installed versions with the same shapes (full record in [folder-trust-fixtures.md](../research/folder-trust-fixtures.md)): Claude Code 2.1.296, Codex 0.163.0, Muse 1.4.10, Cursor 2026.10.01, OpenCode 1.19.3. Re-verified 2026-10-25 (same file, issue #54): Claude Code 2.1.310 same shape; Codex 0.163.0 same shape; Muse 1.4.13 shows a new trust-screen shape, flagged for the adapter lane; Cursor 2026.10.01 same shape; OpenCode 1.19.3 still none.
 
 ## Sending a message into a session
 
