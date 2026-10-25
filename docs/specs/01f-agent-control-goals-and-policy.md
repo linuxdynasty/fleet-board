@@ -253,7 +253,12 @@ All pass local policy, carry a `command_id`, and are idempotent except F3.
 - **L2 Effective settings:** tighten-only merge of A8 under the local ceiling;
   report effective values, layers, refused and unknown fields (03e).
 - **L3 Local approval**: desktop notification plus
-  `fleet-agent approve|deny <command_id>` before the deadline.
+  `fleet-agent approve|deny <command_id>` before the deadline. Landed
+  (`internal/agent/exec`, `cmd/fleet-agent`, issue #67): the CLI writes one
+  decision file per command id into the state folder and the run's file
+  approver consumes it mid-wait (channel `cli`); with no answer the
+  wait ends `LOCAL_CONFIRM_TIMEOUT`. The desktop notification is a later
+  slice.
 
 ## M. Self-management
 
