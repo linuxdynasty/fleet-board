@@ -1,8 +1,9 @@
 // Package control runs the agent's pane-control commands (plan row 18,
 // issue #67): F1 EnsureSession, F2 EnsureWindow, F3 SendKeys
 // (OPERATOR_TEXT only), F4 Interrupt, F5 RespawnPane (the pane's own
-// command only), F6 KillWindow and E11 SetPaneAvailability here, the
-// rest in later slices. Production registers only F4 for the default server;
+// command only), F6 KillWindow, F8 RunHarnessCommand and E11
+// SetPaneAvailability here, the rest in later slices. Production registers
+// only F4 for the default server;
 // its capability is tmux.default_server.interrupt version 1.
 //
 // A command arrives from the hub through the executor, which already checked
@@ -16,5 +17,7 @@
 // check. It never imports os/exec directly (the depguard rule names who
 // may).
 // Interrupt, SendKeys, and RespawnPane share a pane lock for each live call;
-// the last holder or waiter removes it after the pane operation ends.
+// the last holder or waiter removes it after the pane operation ends. F8
+// types chunked literals plus Enter under that lock and settles OBSERVE
+// screens past the pre-send capture before returning them.
 package control

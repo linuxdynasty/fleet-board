@@ -79,8 +79,8 @@ type Options struct {
 
 // Ensurer runs EnsureSession (F1), EnsureWindow (F2), SendKeys (F3,
 // OPERATOR_TEXT only), Interrupt (F4), RespawnPane (F5, the pane's own
-// command only), KillWindow (F6) and SetPaneAvailability (E11) against
-// one tmux server.
+// command only), KillWindow (F6), RunHarnessCommand (F8) and
+// SetPaneAvailability (E11) against one tmux server.
 // One goroutine owns each
 // Ensurer call; tmux serializes the commands itself. F3 additionally holds
 // one pane's check-and-send lock (lockPane) across its read of the pane

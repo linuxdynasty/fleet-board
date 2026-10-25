@@ -17,7 +17,21 @@ harness restart field waits for the adapter slice. F6 `KillWindow` kills
 a window by its `@N` id: a stale start id or a window the listing does
 not know reads `WINDOW_NOT_FOUND`, and the scheduler's fleet cell is
 refused `ROLE_INSUFFICIENT` on a window the fleet's tags do not mark.
-E11 `SetPaneAvailability` records the developer's board mark for one pane on
+F8 `RunHarnessCommand` types one allow-listed slash command at an idle
+prompt: the command is in the adapter's catalog with the class the hub
+believes and the agent's catalog hash, and the pane proves a ready prompt
+with an empty input line through the same gate as F3. `DENY` commands are
+never typed. The command plus its args types as bounded literals (one
+typing line each) plus Enter under the same pane lock, so full 4 KiB args
+still fit the per-line cap. The class is `RepeatSafe` only for `OBSERVE`
+(a replay reads the screen again); every other class is `NotRepeatSafe`:
+a resume ends `UNKNOWN_OUTCOME` and never retypes. An `OBSERVE` result
+carries the class and the settled follow-up screen (64 KiB cap): after
+Enter the agent waits until two back-to-back reads agree and differ from
+the pre-send screen, and a screen that never settles ends `READY_TIMEOUT`,
+retryable, instead of recording stale output. Other classes carry the
+class only. A Cursor pane stays `PANE_BUSY`: row 30 owns the styled-input
+rule. E11 `SetPaneAvailability` records the developer's board mark for one pane on
 the observer's in-memory overlay (or clears it): no tmux call, no screen
 gate, `RepeatSafe` like the other declarative kinds.
 
@@ -53,6 +67,7 @@ e, err := control.New(control.Options{
 res := e.EnsureSession(ctx, cmd.GetEnsureSession())
 res := e.EnsureWindow(ctx, cmd.GetEnsureWindow())
 res := e.SendKeys(ctx, cmd.GetSendKeys())
+res := e.RunHarnessCommand(ctx, cmd.GetRunHarnessCommand())
 res := e.SetAvailability(ctx, cmd.GetSetPaneAvailability())
 // Handlers: h := e.Handler() satisfies exec.Handler (Kind EnsureSession)
 // and w := e.WindowHandler() (Kind EnsureWindow), each with tmux.control
@@ -64,7 +79,11 @@ res := e.SetAvailability(ctx, cmd.GetSetPaneAvailability())
 // SetPaneAvailability) is RepeatSafe: a resume records the mark again;
 // k := e.KillWindowHandler() (Kind KillWindow) is RepeatSafe: a resume
 // kills again, and answers the role-matrix variant (fleet_window only
-// for a window the fleet's tags mark, developer_window else). The
+// for a window the fleet's tags mark, developer_window else);
+// r := e.RunHarnessHandler() (Kind RunHarnessCommand) is RepeatSafe for
+// OBSERVE and NotRepeatSafe else: a resume re-reads an OBSERVE screen
+// and never retypes any other class; it also advertises harness.catalog
+// version 1, the 02e capability for the kind. The
 // wiring row registers them.
 ```
 
@@ -187,6 +206,31 @@ res := e.SetAvailability(ctx, cmd.GetSetPaneAvailability())
     drops it. The overlay's refusal (unknown pane, stale start) reads
     `PANE_NOT_FOUND`, not retryable: the hub re-reads the Snapshot and
     re-sends. The OK result names the pane and carries no detail.
+14. **Catalog, gate and send** (F8): the command carries its leading slash
+    and a believed class that is neither `UNSPECIFIED` nor `DENY`
+    (`INVALID_ARGUMENT` else, before any tmux call), arguments fit 4 KiB
+    and are empty for `DESTRUCTIVE` (a destructive command carries no
+    args). One pane's check-and-send holds that pane's lock, shared with
+    F3. The start id still matches the server's and the pane is listed (a
+    stale key or a missing pane reads `PANE_NOT_FOUND`) and alive (a dead
+    pane reads `PANE_BUSY`, retryable). The developer-input check runs
+    next, like F3: a key within the last 10 minutes reads `PANE_BUSY`,
+    retryable. The pane runs a known harness that proves ready here
+    (a shell or unknown program reads `PANE_BUSY`, retryable; a Cursor
+    pane reads `PANE_BUSY`, retryable: row 30 owns the styled-input
+    rule). The command is in that harness's catalog (`COMMAND_NOT_IN_CATALOG`
+    else), its class is the hub's believed one (`INVALID_ARGUMENT` on a
+    mismatch, `COMMAND_CLASS_DENIED` for a deny class, which no catalog
+    names today), and the catalog hash is the agent's (`CATALOG_STALE`
+    for an empty or foreign hash). The fresh styled capture proves a
+    ready prompt with an empty input line through the probe's classifier
+    (trust, startup and draft refusals as in F3). The command plus its
+    args type as bounded literals plus Enter, through the observer client
+    like F3. The OK result carries the class; `OBSERVE` also carries the
+    settled follow-up screen (64 KiB cap): two back-to-back reads agreeing
+    past the pre-send screen, else `READY_TIMEOUT`, retryable. A follow-up
+    read that fails after typing returns its refusal instead of silent
+    success with no screen.
 
 ## Results report stored tags
 

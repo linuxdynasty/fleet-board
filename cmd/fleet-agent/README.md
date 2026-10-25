@@ -92,7 +92,9 @@ fleet-agent run    # logs to stderr; stop with Ctrl-C or SIGTERM
   production control handler: it advertises `tmux.default_server.interrupt`
   version 1, requires effective `default_server: control`, and sends fixed
   C-c through the observer's default-server client. A local approval rule
-  waits without typing and times out until the local approval command lands.
+  waits without typing: `fleet-agent approve|deny <command_id>` answers it
+  (channel `cli`), `deny` ends `LOCAL_DENIED`, and with no answer the wait
+  ends at `LOCAL_CONFIRM_TIMEOUT`.
   Scheduler requests are refused until an agent-local fleet-ownership guard
   can prove they target a fleet session; manual owner/operator requests remain
   allowed by the role matrix.

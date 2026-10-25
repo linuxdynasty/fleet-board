@@ -147,7 +147,17 @@ All pass local policy, carry a `command_id`, and are idempotent except F3.
   where `command` must be in the machine's catalog (C4) and its class must be
   allowed for the requester. Only typed at an idle prompt (ready pattern
   matched), never into a running turn. Replaces free-typed slash commands
-  through F3.
+  through F3. Landed (`internal/agent/control`, issue #67): the catalog is
+  the adapters' own classification tables with the agent's hash over the
+  sorted names, the gate is F3's (developer input, known harness, styled
+  ready-plus-empty-line read under the shared pane lock), `DENY` is never
+  typed, the command plus full 4 KiB args types as bounded literals plus
+  Enter under that lock, `OBSERVE` carries the settled screen (two matching
+  reads past the pre-send capture, else `READY_TIMEOUT` retryable) and is
+  RepeatSafe while every other class ends `UNKNOWN_OUTCOME` on resume;
+  Cursor stays `PANE_BUSY` (row 30). The snapshot catalog reporting that
+  hands the dashboard its hash (C4) is a later slice: until it lands, the
+  agent refuses an empty or foreign hash.
 
 ## G. Goals
 
@@ -246,7 +256,13 @@ All pass local policy, carry a `command_id`, and are idempotent except F3.
 - **L2 Effective settings:** tighten-only merge of A8 under the local ceiling;
   report effective values, layers, refused and unknown fields (03e).
 - **L3 Local approval**: desktop notification plus
-  `fleet-agent approve|deny <command_id>` before the deadline.
+  `fleet-agent approve|deny <command_id>` before the deadline. Landed
+  (`internal/agent/exec`, `cmd/fleet-agent`, issue #67): the CLI writes one
+  claim file holding the verdict per command id into the state folder and
+  the run's file approver consumes it mid-wait (channel `cli`); concurrent
+  answers meet on the same atomic create, so exactly one wins; with no
+  answer the wait ends `LOCAL_CONFIRM_TIMEOUT`. The desktop notification is
+  a later slice.
 
 ## M. Self-management
 

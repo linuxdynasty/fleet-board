@@ -1,6 +1,8 @@
 package codex
 
 import (
+	"slices"
+
 	typev1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/type/v1"
 )
 
@@ -59,4 +61,16 @@ func Classify(command string) typev1.CommandClass {
 		return class
 	}
 	return typev1.CommandClass_COMMAND_CLASS_DENY
+}
+
+// CommandNames lists every slash command the catalog classifies, sorted,
+// as shown with the leading slash. The agent hashes this list for the F8
+// catalog check (C4); a name added here changes the hash.
+func CommandNames() []string {
+	names := make([]string, 0, len(classes))
+	for name := range classes {
+		names = append(names, name)
+	}
+	slices.Sort(names)
+	return names
 }

@@ -1,6 +1,7 @@
 package cursor
 
 import (
+	"slices"
 	"testing"
 
 	typev1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/type/v1"
@@ -58,5 +59,25 @@ func TestClassify(t *testing.T) {
 				t.Fatalf("Classify(%q) = %v, want %v", tc.command, got, tc.want)
 			}
 		})
+	}
+}
+
+// TestCommandNamesReviewed pins the F8 catalog list to the reviewed 01b
+// classes: sorted, every name sendable, exactly the four reviewed names.
+// A table edit without a reviewed expectation fails here.
+func TestCommandNamesReviewed(t *testing.T) {
+	t.Parallel()
+	names := CommandNames()
+	if !slices.IsSorted(names) {
+		t.Fatalf("CommandNames = %q, want sorted", names)
+	}
+	want := []string{"/goal", "/model", "/quit", "/usage"}
+	if !slices.Equal(names, want) {
+		t.Fatalf("CommandNames = %q, want %q", names, want)
+	}
+	for _, n := range names {
+		if got := Classify(n); got == typev1.CommandClass_COMMAND_CLASS_DENY {
+			t.Fatalf("CommandNames lists %q, which classifies DENY", n)
+		}
 	}
 }

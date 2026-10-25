@@ -223,6 +223,10 @@ func runAgentWithDeps(ctx context.Context, dir, cfgDir, version, boot string, te
 		DB: db, Sender: loop, Clock: loop.HubClock(), Policy: sm,
 		Audit: pol.audit, Handlers: handlers, Telemetry: tel,
 		Logger: tel.Logger.With("component", "exec", "machine_id", id.MachineID),
+		// L3: a wait for local approval reads the person's answer
+		// from the state folder (`fleet-agent approve|deny`). With no
+		// answer the wait ends at the deadline as LOCAL_CONFIRM_TIMEOUT.
+		Approver: exec.FileApprover{Dir: dir},
 	})
 	if err != nil {
 		return failed("executor", err)

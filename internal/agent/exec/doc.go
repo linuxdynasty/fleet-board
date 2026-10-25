@@ -24,5 +24,7 @@
 // context ([Variant]): anything it cannot place reads the developer's
 // window, the strictest row.
 // The strict deadline is rechecked after the running-state write and before
-// handler entry; a late approval cannot start a handler.
+// handler entry; a late approval cannot start a handler. Production approves
+// through FileApprover: `fleet-agent approve|deny` writes one claim file
+// per command id, consumed on read, one winner on concurrent answers.
 package exec
