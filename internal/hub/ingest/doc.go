@@ -16,7 +16,8 @@
 // recovered panic).
 //
 // Events: [CleanEvent] cuts and scrubs an Event's free text before the
-// job; [EventIn] encodes it (wire bytes, [EventKind]) and decides whether
+// job (row 20's hook session ids, raw event names and registry fields
+// with it); [EventIn] encodes it (wire bytes, [EventKind]) and decides whether
 // it gets a history row; [SubmitEvent] queues ONE writer job per event,
 // statedb.ApplyEvent then each [EventApplier], without waiting for the
 // commit; [EventPending.Result] delivers the outcomes in order and

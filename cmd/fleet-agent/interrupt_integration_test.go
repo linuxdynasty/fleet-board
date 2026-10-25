@@ -84,8 +84,17 @@ func TestInterruptPaneTravelsFromHubToRealTmux(t *testing.T) {
 					t.Fatal(seen.err)
 				}
 				caps := seen.hello.GetCapabilities()
-				if len(caps) != 1 || caps[0].GetName() != interruptCapability || caps[0].GetVersion() != 1 {
-					t.Fatalf("production Hello capabilities = %v, want only %s v1", caps, interruptCapability)
+				want := map[string]bool{interruptCapability: false, "goal.registry": false}
+				for _, c := range caps {
+					if _, ok := want[c.GetName()]; !ok || c.GetVersion() != 1 {
+						t.Fatalf("production Hello capabilities = %v, want interrupt and goal.registry v1", caps)
+					}
+					want[c.GetName()] = true
+				}
+				for name, seen := range want {
+					if !seen {
+						t.Fatalf("production Hello capabilities = %v, missing %s v1", caps, name)
+					}
 				}
 			case <-time.After(time.Second):
 				t.Fatal("no production Hello captured")

@@ -74,6 +74,9 @@ fleet-agent run    # logs to stderr; stop with Ctrl-C or SIGTERM
   start, refused commands, tmux control clients down, and its own resident
   memory). A reading that failed is left out, not sent as 0
   (`internal/agent/machine`; `sample.failed` in the log).
+- The production command handlers are `InterruptPane` and the goal
+  registry's `RegisterGoal`/`ReleaseGoal` (`tmux.default_server.interrupt`
+  and `goal.registry`, both version 1).
 - It makes the config folder (mode 0700) when it is missing, loads
   `policy.yaml` once, and watches the folder: an edit, a replace by rename, a
   delete or a new file is noticed 500 ms after the last event (no polling),
@@ -85,11 +88,15 @@ fleet-agent run    # logs to stderr; stop with Ctrl-C or SIGTERM
   A missing file is a normal first run; an invalid one starts
   the agent in safe mode (`policy.safe_mode`, one line naming the line number and
   key, never the file's text). `run` never writes `policy.yaml`.
+- It binds the goal registry (`internal/agent/goalregistry`): `RegisterGoal`
+  and `ReleaseGoal` (capability `goal.registry` v1) name a goal's pane, and
+  the snapshot carries the registry for the hub's reconcile. The goal-file
+  and pane-checkout seams land with row 20 lane 1 and row 21.
 - It loads saved hub settings from `agent.db`, merges them under local
   policy, and answers new settings on the connection. Its Snapshot carries
   the held settings generation. The executor uses the same merged settings
-  for rate limits, safe mode and local approval. `InterruptPane` is the only
-  production control handler: it advertises `tmux.default_server.interrupt`
+  for rate limits, safe mode and local approval. `InterruptPane`
+  is the tmux control handler: it advertises `tmux.default_server.interrupt`
   version 1, requires effective `default_server: control`, and sends fixed
   C-c through the observer's default-server client. A local approval rule
   waits without typing: `fleet-agent approve|deny <command_id>` answers it

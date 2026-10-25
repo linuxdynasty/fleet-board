@@ -32,7 +32,9 @@
 // machine.enroll_token audit row with the token), the watched-repo
 // writes CreateRepo, UpdateRepo and DeleteRepo (each with its repo.* audit
 // row), the machine admin writes UpdateMachine, RevokeMachine and
-// DeleteMachine (each with its machine.* audit row), the config import
+// DeleteMachine (each with its machine.* audit row), EnsureMachineHooks
+// fans out to one EnsureGoalHooks per harness and enabled repo (each
+// with its machine.ensure_hooks audit row), the config import
 // and export ImportConfig and ExportConfig (repos and machines apply in
 // one writer transaction with a config.import audit row; other sections
 // are not built yet; hub ids travel as portable refs, resolved against

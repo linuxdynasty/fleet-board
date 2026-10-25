@@ -284,8 +284,7 @@ Signals: `fleet_hub_repo_writes_total{op, outcome}` (`ok`, `replayed`,
 `actor`) and `repo.write_failed` (`step` `encode`/`decode`/`store`,
 `err_kind`, `op`, `actor`).
 
-`UpdateMachine` needs `SETTINGS`; `RevokeMachine` and `DeleteMachine`
-need `ADMIN` (02d). All three need the local approval secret. Then, in
+`UpdateMachine` needs `SETTINGS`; `RevokeMachine` and `DeleteMachine` need `ADMIN` (02d). All three need the local approval secret. Then, in
 02b's order, the caller, the local approval secret in `local_trusted`
 mode, the fields, and the `request_id` replay inside the writer
 transaction (same principal, id, body and RPC kind replays the stored
@@ -297,6 +296,8 @@ response for 24 h; anything else under the key is `REQUEST_ID_CONFLICT`).
 | a missing machine | `NOT_FOUND` / `RESOURCE_NOT_FOUND` |
 | a stale `expected_version` (0 skips the check) | `FAILED_PRECONDITION` / `VERSION_MISMATCH` with `metadata["current_version"]` |
 | `DeleteMachine` on a machine that is not `REVOKED` | `FAILED_PRECONDITION` / `MACHINE_NOT_REVOKED` |
+
+`EnsureMachineHooks` needs `SETTINGS` plus the local approval secret: it fans out to one `EnsureGoalHooks` per (harness, enabled repo), replayed per command and audited as `machine.ensure_hooks`; live goals and ESHU repos guard.
 
 `RevokeMachine` decides replay, refusal or commit on the read pool
 (`statedb.PrecheckRevoke`) before staging any serial, so a retried or
