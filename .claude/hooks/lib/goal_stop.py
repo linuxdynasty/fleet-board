@@ -49,7 +49,10 @@ Stop for real only when one of these is true, and say which:
 MAX_BLOCKS = 3
 
 PR_SIGNALS = re.compile(r"(?i)(pull request|\bprs?\b|review (thread|comment)s?|\bCI\b|\bchecks\b|merge conflict)")
-PR_EVIDENCE = re.compile(r"(?i)(stable read|green twice|two stable|no open|no unresolved|\bmerged\b|\bclosed\b|green on)")
+PR_EVIDENCE = re.compile(r"(?i)(stable reads?|green twice|two stable|no open|no unresolved|green on|checks pass|ci green|all green)")
+PR_VETO = re.compile(r"(?i)\bnot\s+(green|stable|merged|closed|done)\b|n't\s+(green|stable)|\bnever\b"
+                     r"|\bstill\s+(open|failing|red)\b|\bwithout\s+(stable|evidence|proof)\b"
+                     r"|\bno\s+(stable|green|evidence|proof)\b")
 
 
 def sid12(sid):
@@ -86,13 +89,22 @@ def note_block(sid):
     return count
 
 
-def pr_done_refusal(body):
-    if PR_SIGNALS.search(body or "") and not PR_EVIDENCE.search(body or ""):
-        return ("Your goal closes with DONE but names PR/review work without stable-read evidence. "
-                "Verify the PR head, checks and review threads first "
-                "(`gh pr view`, `gh pr checks`, thread list), address what is open, "
-                "or leave BLOCKED with a live WATCH pid instead of DONE.")
-    return None
+def close_refusal(first_line, body):
+    """Refusal when a closed goal names PR/review work with no stated evidence.
+
+    Signals come from the whole body (the retained task names the PR);
+    evidence must be an affirmative claim on the DONE first line itself, so
+    retained instructions and negative status cannot satisfy the guard.
+    """
+    if not PR_SIGNALS.search(body or ""):
+        return None
+    claim = first_line or ""
+    if PR_EVIDENCE.search(claim) and not PR_VETO.search(claim):
+        return None
+    return ("Your goal closes with DONE but states no PR completion evidence. "
+            "Verify the PR head, checks and review threads first "
+            "(`gh pr view`, `gh pr checks`, thread list), address what is open, "
+            "or leave BLOCKED with a live WATCH pid instead of DONE.")
 
 
 def retired_pr_refusal(sid, cwd):
@@ -121,7 +133,7 @@ def retired_pr_refusal(sid, cwd):
                 first = (body.split("\n", 1)[0] if body else "")
                 if not goal_lib.DONE_RE.match(first):
                     continue
-                refusal = pr_done_refusal(body)
+                refusal = close_refusal(first, body)
                 if refusal is not None:
                     return str(path), refusal, body
             except OSError:
@@ -164,6 +176,17 @@ def refusal_head(goal):
             "now, or name a watcher with WATCH=<pid>, or a person with OWNER=<who> ACTION=<what>." % reason), None
 
 
+def spend_or_block(sid, reason):
+    """Count this refusal against the no-progress budget. Returns True if blocked."""
+    count = note_block(sid)
+    if count > MAX_BLOCKS:
+        reset_blocks(sid)
+        print("goal-continue: no-progress budget spent (%d), stop allowed" % MAX_BLOCKS, file=sys.stderr)
+        return False
+    print(json.dumps({"decision": "block", "reason": reason}))
+    return True
+
+
 def main():
     payload = json.load(sys.stdin)
     if not isinstance(payload, dict) or os.environ.get("CLAUDE_GOAL_OFF") == "1":
@@ -179,16 +202,18 @@ def main():
             reset_blocks(sid)
             return
         path, refusal, body = retired
-        count = note_block(sid)
-        if count > MAX_BLOCKS:
-            reset_blocks(sid)
-            print("goal-continue: no-progress budget spent (%d), stop allowed" % MAX_BLOCKS, file=sys.stderr)
-            return
-        print(json.dumps({"decision": "block", "reason": refusal + "\n\nRETIRED GOAL (%s):\n%s\n\n%s" % (
-            path, goal_lib.clip(body, path), REASON_TAIL.format(path=path))}))
+        spend_or_block(sid, refusal + "\n\nRETIRED GOAL (%s):\n%s\n\n%s" % (
+            path, goal_lib.clip(body, path), REASON_TAIL.format(path=path)))
         return
     if goal.done:
-        reset_blocks(sid)
+        # Only an explicit goal file override reaches here with DONE, since
+        # find_file skips retired files; the PR guard applies on that path too.
+        refusal = close_refusal(goal.first_line, goal.body)
+        if refusal is None:
+            reset_blocks(sid)
+            return
+        spend_or_block(sid, refusal + "\n\nACTIVE GOAL (%s):\n%s\n\n%s" % (
+            goal.path, goal_lib.clip(goal.body, goal.path), REASON_TAIL.format(path=goal.path)))
         return
     head, why_allowed = refusal_head(goal)
     if why_allowed:

@@ -177,6 +177,18 @@ expect_contains "DONE naming PR reviews without stable evidence refuses" "$out" 
 printf 'SESSION: %s\nDONE: PR #85 open, CI green on two stable reads, no open threads\nFix pane control\n' "$g" >"$gf"
 run "$hooks/goal-continue.sh" "$(stop_payload "$g" "$gdir" false)"
 expect_empty "DONE with stable-read evidence allows" "$out"
+printf 'SESSION: %s\nDONE\nGet PR #416 merged\nFix pane control\n' "$g" >"$gf"
+run "$hooks/goal-continue.sh" "$(stop_payload "$g" "$gdir" false)"
+expect_contains "DONE with only instruction words still refuses" "$out" '"decision": "block"'
+printf 'SESSION: %s\nDONE: PR #416 open; checks not green on current head\nFix pane control\n' "$g" >"$gf"
+run "$hooks/goal-continue.sh" "$(stop_payload "$g" "$gdir" false)"
+expect_contains "DONE with negative status still refuses" "$out" '"decision": "block"'
+printf 'SESSION: sess-exp\nDONE: PR #1 open, address review threads\nFix pane control\n' >"$work/expgoal"
+run "$hooks/goal-continue.sh" "$(stop_payload "sess-exp" "$gdir" false)" CLAUDE_GOAL_FILE="$work/expgoal"
+expect_contains "explicit goal file DONE with PR text refuses" "$out" '"decision": "block"'
+printf 'SESSION: sess-exp\nDONE\nFinish the migration\n' >"$work/expgoal"
+run "$hooks/goal-continue.sh" "$(stop_payload "sess-exp" "$gdir" false)" CLAUDE_GOAL_FILE="$work/expgoal"
+expect_empty "explicit goal file plain DONE allows" "$out"
 
 sleep 30 &
 live=$!
@@ -229,6 +241,15 @@ run "$hooks/goal-refresh.sh" "$(prompt_payload "$r" "$gdir" "/goal done")"
 expect_empty "/goal done restates nothing" "$out"
 run "$hooks/goal-continue.sh" "$(stop_payload "$r" "$gdir" false)"
 expect_empty "retired goal allows the stop" "$out"
+c="sess-clear"
+run "$hooks/goal-refresh.sh" "$(prompt_payload "$c" "$gdir" "/goal Address review threads for PR #416")"
+cf="$gdir/.claude/active-goal.$c"
+[ -f "$cf" ] || bad "clear test setup: goal file written"
+run "$hooks/goal-refresh.sh" "$(prompt_payload "$c" "$gdir" "/goal clear")"
+expect_rc "/goal clear exits 0" 0
+if [ -f "$cf" ]; then bad "/goal clear removes the goal file"; else ok; fi
+run "$hooks/goal-continue.sh" "$(stop_payload "$c" "$gdir" false)"
+expect_empty "cleared PR goal allows the stop" "$out"
 run "$hooks/goal-refresh.sh" "$(prompt_payload "$r" "$gdir" "just a prompt")"
 expect_empty "retired goal is not restated" "$out"
 

@@ -316,7 +316,7 @@ same path for all four harnesses) when a prompt starts with `/goal ` or
 | First line | Stop hook | Meaning |
 |---|---|---|
 | goal text | refuses the stop | working |
-| `DONE` | allows | goal met |
+| `DONE` | allows, unless it closes PR/review work with no stated evidence | goal met |
 | `BLOCKED: <reason> WATCH=<pid>` | allows while the pid is alive; a dead pid refuses | waiting on outside work |
 | `BLOCKED: <reason> OWNER=<who> ACTION=<what>` | allows | a named person must act; the hub turns it into one Triage item ([design](../design.md)) |
 | `BLOCKED: <reason>` | refuses, tells the agent to escalate to `arbiter-fleet` | stuck |
@@ -325,17 +325,21 @@ A no-progress budget bounds the loop: each block is counted per session
 (`fleet-stop-blocks-<session>` in the hook state dir, reset by the next prompt
 or any allowed stop). The stop is allowed once the count passes the budget
 (3, MAX_BLOCKS in `goal_stop.py`), in Claude Code and in Muse. Every parse failure still
-allows the stop. A `DONE` first line that names PR/review work without
-stable-read evidence (`stable read`, `green twice`, `no open`, `merged`,
-`closed`) is refused, so a closed goal cannot hide an open review. A
+allows the stop. A close that names PR/review work anywhere in the goal
+but states no affirmative completion evidence on the `DONE` line itself
+(`stable reads`, `green twice`, `no open threads`, `checks pass`) is refused,
+so a closed goal cannot hide an open review; retained instructions and
+negative status (`not green`, `still open`) do not count as evidence. A
 `CONSENT: <acts>` line records a grant the owner already gave; the hooks echo
 it so the agent does not stop to ask again, and nothing verifies it, so each
 honoured grant is also printed to stderr.
 
-Commands: `/goal <text>`, `/goal done` (or `clear`), `/goal consent <acts>`,
+Commands: `/goal <text>`, `/goal done`, `/goal clear`, `/goal consent <acts>`,
 `/goal consent <acts> -- <text>` (start a goal with the grant attached, the
-form a dispatch uses), `/goal revoke-consent`. Consent and retire only edit a
-file this session owns; an unheaded file is the owner's hand-written goal and
+form a dispatch uses), `/goal revoke-consent`. `/goal done` marks the file
+`DONE` and keeps it; `/goal clear` deletes the file, so cancelling never looks
+like an unfinished close. Consent, retire and clear only touch a file this
+session owns; an unheaded file is the owner's hand-written goal and
 is never amended, and the machine-wide `~/.claude/active-goal` is never
 written. `/goal <path>/goal.md` reads a prepared goal file inside the
 workspace.
