@@ -312,7 +312,7 @@ listed in [../research/folder-trust-fixtures.md](../research/folder-trust-fixtur
 |---|---|---|---|
 | Claude Code | "Accessing workspace:" box, then "No, exit" / "Yes, I trust this folder" | the Esc key (it exits to the shell) | "No, exit" (so the owner presses Down before Enter to trust) |
 | Codex | "Folder access" / "Trust this folder? ..." with "1. Trust and continue" / "2. Quit". **Only in a git repo.** A plain folder shows no screen, with this machine's settings (YOLO mode) and with `-s workspace-write -a on-request` | the Esc key (quits) | "1. Trust and continue" |
-| Muse | "Do you trust this workspace?" with "1 Trust and continue" / "2 Quit". Inside a git repo it adds a line "Trust target: <repo root>" | the Esc key (quits) | "1 Trust and continue" |
+| Muse | Through 1.4.11: "Do you trust this workspace?" with "1 Trust and continue" / "2 Quit". Inside a git repo it adds a line "Trust target: <repo root>". On 1.4.13 the box reads "Confirm folder trust" / "Do you trust the files in this folder?" with "1. Yes" / "2. Yes, and remember this folder for future sessions" / "3. No (Esc)" (see [folder-trust-fixtures.md](../research/folder-trust-fixtures.md)) | the Esc key (quits) | "1 Trust and continue" (1.4.11 shape) |
 | Cursor | "Workspace Trust Required" box with "[a] Trust this workspace" / "[q] Quit" | `q` | "[a] Trust this workspace" |
 | OpenCode | **no trust screen**, in a plain folder or a fresh git repo; it goes straight to the ready screen | none needed | none |
 
@@ -398,7 +398,7 @@ the trusted repo for a read-only child start) and `~/.codex/config.toml` have
 the same sha256 before and after; `~/.claude.json` was never opened; no auth
 file was opened; all pane captures were deleted. Unlike the 2026-10-10 probe,
 this Codex start left `config.toml` byte-identical, and no key was ever sent
-to an unread screen. Re-verified 2026-10-19 on the installed versions with the same shapes (full record in [folder-trust-fixtures.md](../research/folder-trust-fixtures.md)): Claude Code 2.1.296, Codex 0.163.0, Muse 1.4.10, Cursor 2026.10.01, OpenCode 1.19.3.
+to an unread screen. Re-verified 2026-10-19 on the installed versions with the same shapes (full record in [folder-trust-fixtures.md](../research/folder-trust-fixtures.md)): Claude Code 2.1.296, Codex 0.163.0, Muse 1.4.10, Cursor 2026.10.01, OpenCode 1.19.3. Re-verified 2026-10-25 (same file, issue #54): Claude Code 2.1.310 same shape; Codex 0.163.0 same shape; Muse 1.4.13 shows a new trust-screen shape, flagged for the adapter lane; Cursor 2026.10.01 same shape; OpenCode 1.19.3 still none.
 
 ## Sending a message into a session
 

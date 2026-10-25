@@ -92,6 +92,41 @@ mtime is unchanged since the probe window, so nothing newer was disturbed.
 OpenCode touched only its own run state (`opencode.db`/log), left as is.
 No auth file was opened; raw captures were deleted.
 
+Still open after the 2026-10-19 run, unchanged: the Claude Code
+plain-parent cell and the Codex YOLO-off plain-folder cell. Both need an owner
+hand act (a yes-answer on a trust screen, or a `config.toml` edit), which the
+agent never does (01 C3).
+
+## Re-verification, 2026-10-25 (issue #54)
+
+Environment: macOS 27.0.1, tmux 3.8, panes 200x50.
+
+Read-only first screens on the installed versions, same `fleet-live-probe`
+shape: throwaway servers (`-L probe54d-<harness> -f /dev/null`), empty scratch
+folders (a plain folder; a fresh git repo for Codex and OpenCode),
+`capture-pane -p` read before every key, no prompt sent to any model (no
+quota). Every trust screen got the documented "no" answer (the Esc key; `q`
+then Ctrl-C for Cursor — neither dismissed the box, so its server was killed
+instead). Nothing was trusted, and no config file was edited by hand.
+
+| Harness and version | Observed | Against the fixture |
+|---|---|---|
+| Claude Code 2.1.310 (newer than the fixture's 2.1.296) | "Accessing workspace" box, "No, exit" selected; Esc exits to the shell | same shape as `trust-folder.txt`; not a new fixture (a new version dir needs its golden-table row; claiming a version is the adapter lane's call) |
+| Codex 0.163.0 | update prompt first ("0.163.0 → 0.164.0", Esc skips it; `codex --version` afterwards still reads 0.163.0, so no upgrade ran), then "Folder access" / "Trust this folder?", "1. Trust and continue" selected; Esc backs out to the Agent Command Center | same shape as the 0.163.0 `trust-folder-git.txt` |
+| Muse 1.4.13 (newer than the fixture's 1.4.11) | **New shape.** The TUI brands as "Copilot v1.0.100"; the box reads "Confirm folder trust" / "Do you trust the files in this folder?" with "1. Yes" / "2. Yes, and remember this folder for future sessions" / "3. No (Esc)", "1. Yes" selected; Esc quits to the shell | differs from the 1.4.x `trust-workspace*.txt` fixtures ("Do you trust this workspace?" / "1 Trust and continue"). The 01 C3 doctor line for Muse still names the old screen; updating that wording and adding a 1.4.13 fixture row is the adapter lane's call — flagged here, not done here |
+| Cursor `cursor-agent` 2026.10.01 | "Workspace Trust Required" box, "[a] Trust this workspace" selected; neither `q` nor Ctrl-C dismissed the box, so no key reached the trust option (no Enter was ever pressed) and the server was killed | same shape as `trust-workspace.txt` |
+| OpenCode 1.19.3 | straight to the ready screen ("Ask anything…") plus the passive "/update to install v1.19.4" line | still no trust screen, as `ready-new-folder.txt` says |
+
+Cleanup: all five servers killed (no `probe54d-*` socket remains); scratch
+folders removed. Starting Cursor created one empty workspace folder under
+`~/.cursor/projects/`; it was removed and the listing matches the baseline.
+`~/.codex/config.toml` and Muse's `trust.json`/`settings.json` kept their
+baselined checksums. `~/.claude.json` (checksummed, never opened) changed
+under the Claude start's own bookkeeping — the same class as the 2026-10-19
+note — and was left as is: restoring it blind (its contents were never read)
+would risk owner state for no verified gain. No auth file was opened; raw
+captures were deleted after the redacted notes above were written.
+
 Still open, unchanged: the Claude Code plain-parent cell and the Codex
 YOLO-off plain-folder cell. Both need an owner hand act (a yes-answer on a
 trust screen, or a `config.toml` edit), which the agent never does (01 C3).
