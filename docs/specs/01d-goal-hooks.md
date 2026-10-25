@@ -245,11 +245,13 @@ a key was sent.
 point at Muse's cached copy of the package). No pane variables.
 
 **Continuation works like Claude's:** `decision: block` plus `reason` keeps
-the turn going, and `stop_hook_active` tells the hook a block already
-happened, so the fleet Stop guard must allow the stop when it is `true` to
-avoid a loop. The model in the probe still answered "OK" because the prompt
-demanded exactly that word; the reason reached its context as a separate
-block.
+the turn going. At probe time the dev hook allowed the stop when
+`stop_hook_active` was `true`; the dev hook now counts blocks per session
+(no-progress budget, 3) instead of allowing on the flag, so up to three
+refusals land before the loop breaker releases the turn
+([hooks.md](../development/hooks.md)). The model in the probe still answered
+"OK" because the prompt demanded exactly that word; the reason reached its
+context as a separate block.
 
 **Cleanup:** tmux server killed, plugin removed (`muse plugins list` empty),
 `~/.config/muse/trust.json` restored byte for byte (trusting the scratch

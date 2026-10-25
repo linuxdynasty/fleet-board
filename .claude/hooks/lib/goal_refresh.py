@@ -151,6 +151,12 @@ def main():
     sid = payload.get("session_id")
     if not isinstance(sid, str) or not sid:
         return
+    try:
+        saved = re.sub(r"[^A-Za-z0-9._-]", "-", sid)[:12] or "na"
+        os.unlink(os.path.join(os.environ.get("FLEET_HOOK_STATE_DIR") or os.environ.get("TMPDIR") or "/tmp",
+                               "fleet-stop-blocks-" + saved))
+    except OSError:
+        pass
     cwd = str(payload.get("cwd") or "")
     prompt = str(payload.get("prompt") or "").lstrip()
     target = goal_lib.write_target(sid, cwd)

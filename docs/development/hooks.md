@@ -61,7 +61,7 @@ cursor.com/docs/hooks (fetched 2026-10-04).
 |---|---|---|
 | `skill-nudge.sh` (PreToolUse Edit, MultiEdit, Write) | `preToolUse` (`Write`), `failClosed` | exit 2 becomes `{"permission": "deny", "user_message", "agent_message"}`, else `{"permission": "allow"}` |
 | `doc-staleness.sh` (PostToolUse) | `postToolUse` (`Write`) | the reminder becomes `additional_context` |
-| `goal-continue.sh` (Stop) | `stop` | a refusal becomes `followup_message`; `loop_count > 0` is `stop_hook_active`, so it refuses once per user turn, as in Claude (cursor-agent resets `loop_count` on each prompt, so Cursor's `loop_limit` of 5 is never reached); a turn whose `status` is not `completed` (aborted, error) is never refused, as Claude's Stop hook does not fire then |
+| `goal-continue.sh` (Stop) | `stop` | a refusal becomes `followup_message`; `loop_count` maps to the shared no-progress budget (up to 3 refusals, then it allows, as in Claude; cursor-agent resets `loop_count` on each prompt, so Cursor's `loop_limit` of 5 is never reached); a turn whose `status` is not `completed` (aborted, error) is never refused, as Claude's Stop hook does not fire then |
 | `on-compact.sh` (SessionStart `compact\|resume`) | `preCompact` | clears this session's skill markers; the re-injection text goes to `user_message` (the owner sees it, the agent does not). The `resume` half is **not portable**: Cursor has no resume event, so on a resumed conversation the skill markers outlive the discarded skill content and skill-nudge can wave through an edit |
 | `goal-refresh.sh` (UserPromptSubmit) | `beforeSubmitPrompt` | writes the goal file for `/goal` lines, always plain `{"continue": true}` (Cursor shows `user_message` only when `continue` is false, so the restated goal is dropped) |
 | `skill-loaded.sh` (PostToolUse Skill) | `postToolUse` (`Read`) | **approximation**: Cursor has no Skill tool, so reading `<root>/.agents/skills`, `.claude/skills` or `.cursor/skills` `/<name>/SKILL.md` records the marker, where `<root>` is the project or a worktree of the same repo (see the Worktrees note below; symlinks that leave the root, other repos, and any other read do nothing) |
@@ -321,8 +321,13 @@ same path for all four harnesses) when a prompt starts with `/goal ` or
 | `BLOCKED: <reason> OWNER=<who> ACTION=<what>` | allows | a named person must act; the hub turns it into one Triage item ([design](../design.md)) |
 | `BLOCKED: <reason>` | refuses, tells the agent to escalate to `arbiter-fleet` | stuck |
 
-`stop_hook_active: true` always allows the stop: that is the loop breaker, in
-Claude Code and in Muse (probed, 01d). Every parse failure also allows it. A
+A no-progress budget bounds the loop: each block is counted per session
+(`fleet-stop-blocks-<session>` in the hook state dir, reset by the next prompt
+or any allowed stop). The stop is allowed once the count passes the budget
+(3, MAX_BLOCKS in `goal_stop.py`), in Claude Code and in Muse. Every parse failure still
+allows the stop. A `DONE` first line that names PR/review work without
+stable-read evidence (`stable read`, `green twice`, `no open`, `merged`,
+`closed`) is refused, so a closed goal cannot hide an open review. A
 `CONSENT: <acts>` line records a grant the owner already gave; the hooks echo
 it so the agent does not stop to ask again, and nothing verifies it, so each
 honoured grant is also printed to stderr.
@@ -376,9 +381,10 @@ without it.
 
 ## Not ported
 
-- eshu's transcript-based no-progress budget for the Stop hook. `stop_hook_active`
-  bounds the loop to one refusal per turn instead; if that proves too weak, a
-  progress budget is the place to add back.
+- eshu's transcript-based variant of the no-progress budget for the Stop hook.
+  fleet-board counts blocks per session (reset by the next prompt or any allowed
+  stop) and allows the stop after the budget (3) is spent; eshu keys its budget on
+  `prompt_id` and resets it on real tool calls between stops.
 - eshu's `guard-live-gate` (blocks a second live gate on shared ports). fleet-board
   has no live gates yet. When live probes run routinely, a Bash PreToolUse guard
   for "one live harness probe at a time" (a second `tmux -L` probe server, or a

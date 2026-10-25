@@ -151,7 +151,11 @@ expect_contains "reason carries the goal" "$(json_field "$out" 'd["reason"]')" "
 expect_contains "reason names arbiter-fleet" "$(json_field "$out" 'd["reason"]')" "arbiter-fleet"
 
 run "$hooks/goal-continue.sh" "$(stop_payload "$g" "$gdir" true)"
-expect_empty "stop_hook_active=true allows the stop (loop breaker)" "$out"
+expect_contains "no-progress budget: second stop still blocks (1/3)" "$out" '"decision": "block"'
+run "$hooks/goal-continue.sh" "$(stop_payload "$g" "$gdir" true)"
+expect_contains "no-progress budget: third stop still blocks (2/3)" "$out" '"decision": "block"'
+run "$hooks/goal-continue.sh" "$(stop_payload "$g" "$gdir" true)"
+expect_empty "no-progress budget spent: fourth stop allows (loop breaker)" "$out"
 run "$hooks/goal-continue.sh" "$(stop_payload "$g" "$gdir" false)" CLAUDE_GOAL_OFF=1
 expect_empty "CLAUDE_GOAL_OFF=1 allows the stop" "$out"
 run "$hooks/goal-continue.sh" "$(stop_payload "other-session" "$gdir" false)"
@@ -164,6 +168,15 @@ expect_empty "unparseable payload allows the stop" "$out"
 printf 'SESSION: %s\nDONE\nFinish the migration\n' "$g" >"$gf"
 run "$hooks/goal-continue.sh" "$(stop_payload "$g" "$gdir" false)"
 expect_empty "DONE allows the stop" "$out"
+printf 'SESSION: %s\nDONE: PR #416 open, address review threads\nFix pane control\n' "$g" >"$gf"
+run "$hooks/goal-continue.sh" "$(stop_payload "sess-prguard" "$gdir" false)"
+expect_empty "other session PR DONE does not bind (control)" "$out"
+printf 'SESSION: %s\nDONE: PR #416 open, address review threads\nFix pane control\n' "$g" >"$gf"
+run "$hooks/goal-continue.sh" "$(stop_payload "$g" "$gdir" false)"
+expect_contains "DONE naming PR reviews without stable evidence refuses" "$out" '"decision": "block"'
+printf 'SESSION: %s\nDONE: PR #85 open, CI green on two stable reads, no open threads\nFix pane control\n' "$g" >"$gf"
+run "$hooks/goal-continue.sh" "$(stop_payload "$g" "$gdir" false)"
+expect_empty "DONE with stable-read evidence allows" "$out"
 
 sleep 30 &
 live=$!
