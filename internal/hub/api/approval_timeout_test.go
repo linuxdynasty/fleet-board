@@ -213,10 +213,12 @@ func TestGatedCommandRefusesBoundaryNanosOverflow(t *testing.T) {
 
 // TestGatedCommandHonorsBoundarySecond: the exact ceiling
 // (9223372036s + 854775807ns) still fits time.Duration, so a hand-set
-// layer there must raise a live approval, not fail or fall back.
+// layer there must raise a live approval stamped with the full ceiling
+// wait, not fail and not silently stamp the 30-minute default.
 func TestGatedCommandHonorsBoundarySecond(t *testing.T) {
 	t.Parallel()
-	e := newFleetEnv(t, localUser("alice"), trusted(false))
+	now := fleetNow
+	e := newFleetEnv(t, localUser("alice"), trusted(false), envOpt{now: func() time.Time { return now }})
 	seedLayer(t, e, &hubv1.SettingsSpec{
 		Scope: fleetScope(),
 		Hub: &hubv1.HubSettings{ApprovalTimeout: &durationpb.Duration{
@@ -231,6 +233,20 @@ func TestGatedCommandHonorsBoundarySecond(t *testing.T) {
 	}
 	if gated.Msg.GetApproval().GetValue() == "" {
 		t.Fatal("no approval raised at the representable ceiling")
+	}
+	got, err := e.client.GetApproval(context.Background(), connect.NewRequest(&hubv1.GetApprovalRequest{
+		Id: &hubv1.ApprovalId{Value: gated.Msg.GetApproval().GetValue()},
+	}))
+	if err != nil {
+		t.Fatalf("GetApproval: %v", err)
+	}
+	ceiling := time.Duration(9223372036)*time.Second + 854775807*time.Nanosecond
+	// The store keeps millisecond precision, so compare against the
+	// truncated stamp. What pins the fix is the ~292-year wait versus
+	// the 30-minute default, not the sub-millisecond tail.
+	if want := now.Add(ceiling).Truncate(time.Millisecond); !got.Msg.GetApproval().GetExpireTime().AsTime().Equal(want) {
+		t.Fatalf("expire_time = %v, want %v: the ceiling wait is stamped, not the default",
+			got.Msg.GetApproval().GetExpireTime().AsTime(), want)
 	}
 	listed, err := e.client.ListApprovals(context.Background(), connect.NewRequest(&hubv1.ListApprovalsRequest{}))
 	if err != nil {
