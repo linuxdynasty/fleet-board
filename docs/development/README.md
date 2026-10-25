@@ -62,6 +62,11 @@ scripts/check-pr-base.sh      fails unless a PR targets main (pr-meta.yml, and f
 scripts/check-versions.sh     keeps the copies of a pin (.node-version, go.mod, buf.gen.yaml,
                               tools/tscheck) equal to tool-versions.env
 scripts/smoke-binaries.sh     builds each cmd/<name> and checks that --version prints its name
+scripts/release-build.sh    builds the release archives for a tag (one archive per
+                              program and platform plus SHA256SUMS under dist/; `make dist`;
+                              .github/workflows/release.yml runs it on a pushed tag)
+scripts/test-install-script.py   install, tamper-refusal and unlisted-refusal cases for
+                              packaging/install.sh against a fake release server (make selftest)
 scripts/changed-go-packages.sh   the Go packages a change affects, for make test and make lint
 scripts/check-gofumpt.sh      fails on a Go file gofumpt would change
 scripts/test-check-versions.sh, test-changed-go-packages.sh, test-check-gofumpt.sh,

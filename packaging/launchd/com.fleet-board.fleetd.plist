@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  com.fleet-board.fleetd: the hub as a macOS LaunchAgent (02j). fleetd runs
+  under `caffeinate -s`, so the hub stays awake while on power; on battery
+  the laptop may still sleep, and the agents reconnect when it wakes.
+
+  `@HOME@` is replaced with the owner's home folder by packaging/install.sh.
+  Logs: ~/Library/Logs/fleetd.log. Enrollment and config are separate steps;
+  this unit only starts the hub (`fleetd run` refuses to start with no store).
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.fleet-board.fleetd</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/bin/caffeinate</string>
+    <string>-s</string>
+    <string>@HOME@/.local/bin/fleetd</string>
+    <string>run</string>
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>ThrottleInterval</key>
+  <integer>5</integer>
+  <key>WorkingDirectory</key>
+  <string>@HOME@</string>
+  <key>StandardOutPath</key>
+  <string>@HOME@/Library/Logs/fleetd.log</string>
+  <key>StandardErrorPath</key>
+  <string>@HOME@/Library/Logs/fleetd.log</string>
+</dict>
+</plist>

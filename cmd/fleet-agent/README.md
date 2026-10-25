@@ -187,6 +187,10 @@ audit log. The loaded policy stays in force until the next start.
 usage. Release builds set the version with `-ldflags -X` (see
 `internal/buildinfo`); other builds say `dev`.
 
+`fleet-agent upgrade [--version TAG] [--repo OWNER/NAME]` fetches the
+release, checks its checksum, swaps the binary and restarts the service
+(`internal/release`); a mismatch or an older release installs nothing.
+
 ```bash
 make build
 go run ./cmd/fleet-agent --version

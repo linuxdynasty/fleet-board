@@ -10,6 +10,10 @@ __pycache__/
 # Generated code from `buf generate` (buf.gen.yaml); never committed.
 gen/
 
+# Release archives from `make dist` (scripts/release-build.sh); published to
+# GitHub Releases, never committed.
+dist/
+
 # review marker read by the global agent-config push hook (never committed)
 .claude-review-ok
 

@@ -21,6 +21,10 @@
 // them, and the connection loop sends them on the stream. `run` also merges
 // saved hub settings under local policy, and executes only default-server F4
 // Interrupt commands through the durable command executor and observer.
+// `upgrade [--version TAG]`
+// fetches the release, checks its checksum, swaps the binary and restarts
+// the service (internal/release); a mismatch or an older release installs
+// nothing;
 // `doctor [--json]`
 // prints the local checks of internal/agent/doctor (exit 1 when one fails);
 // its probe-trust check starts each installed harness once in the probe

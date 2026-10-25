@@ -65,6 +65,7 @@ func TestVersionAndUsage(t *testing.T) {
 		{[]string{"bogus"}, 2, ""},
 		{[]string{"run", "--bogus"}, 2, ""},
 		{[]string{"run", "extra"}, 2, ""},
+		{[]string{"upgrade", "extra"}, 2, ""},
 	}
 	for _, tc := range cases {
 		t.Run(strings.Join(tc.args, " "), func(t *testing.T) {
@@ -218,5 +219,17 @@ func TestInitRunSecondRunAndSIGTERM(t *testing.T) {
 	}
 	if err := next.Wait(); exitCode(err) != 0 {
 		t.Errorf("restart after SIGKILL: exit %d, want 0", exitCode(err))
+	}
+}
+
+// `upgrade --help` names the checksum check without touching the network.
+func TestUpgradeHelp(t *testing.T) {
+	t.Parallel()
+	out, err := fleetd(t, "upgrade", "--help").Output()
+	if exitCode(err) != 0 {
+		t.Fatalf("upgrade --help: exit %d, want 0", exitCode(err))
+	}
+	if !strings.Contains(string(out), "checksum") {
+		t.Errorf("upgrade --help = %q, want it to name the checksum", out)
 	}
 }

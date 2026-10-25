@@ -61,7 +61,7 @@ ACTIONLINT := go run github.com/rhysd/actionlint/cmd/actionlint@$(ACTIONLINT_VER
 # cgo" on Linux). Only the test binaries use it; shipped binaries stay cgo-free.
 RACE_CGO := $(if $(filter Darwin,$(shell uname -s)),0,1)
 
-.PHONY: tools versions gen build smoke proto-check ts-check mod-check fmt fmt-check
+.PHONY: tools versions gen build smoke dist proto-check ts-check mod-check fmt fmt-check
 .PHONY: vet test test-all fuzz bench-report lint vuln actionlint selftest diff-check doc-names doc-tables telemetry-names capability-tests
 .PHONY: docs-stale docs-stale-ci gates hooks
 
@@ -106,6 +106,13 @@ build:
 # smoke builds each cmd/<name> binary and runs it with --version once.
 smoke:
 	scripts/smoke-binaries.sh
+
+# dist builds the release archives for VERSION (plan row 16): one archive per
+# program and platform plus SHA256SUMS, all under dist/ (scripts/release-build.sh).
+# Run `make gen` first, and build the dashboard first for a real release
+# (`npm run build` in web/, so fleetd embeds it).
+dist:
+	scripts/release-build.sh "$(VERSION)"
 
 # proto-check is the contract compile check (docs/specs/02e-contract-rules.md).
 proto-check:
@@ -278,6 +285,7 @@ selftest: tools
 	python3 scripts/test-gen-doc-tables.py
 	python3 scripts/test-report-capability-tests.py
 	python3 scripts/test-linux-agent-unit.py
+	python3 scripts/test-install-script.py
 
 # diff-check fails on a file named like a git ref (HEAD, main, ...) at any path,
 # tracked or not yet added: it makes `git diff HEAD` ambiguous and one was once

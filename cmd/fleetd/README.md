@@ -12,6 +12,8 @@ fleetd restore BACKUP [--address A]
                               # replace state.db with a backup; refused while fleetd run is up
 fleetd setup github [--app-name N] [--org ORG] [--installation-id ID]
                               # connect GitHub through the App manifest flow (writes the github keys)
+fleetd upgrade [--version TAG] [--repo OWNER/NAME]
+                              # fetch the release, check its checksum, swap the binary, restart
 fleetd --version              # "fleetd dev", or the release version set with -ldflags -X
 ```
 
