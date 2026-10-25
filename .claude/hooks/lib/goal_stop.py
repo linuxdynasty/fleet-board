@@ -4,7 +4,8 @@
 stdin : {session_id, cwd, stop_hook_active, hook_event_name: "Stop", ...}
 stdout: {"decision": "block", "reason": "..."} to refuse the stop, else nothing
 exit  : always 0. A hook that can refuse to end a session must never be the
-        reason a session breaks, so every parse failure allows the stop.
+        reason a session breaks, so every parse failure allows the stop, and
+        so does an unwritable state dir (the budget fails open).
 
 The first line of the goal file decides (the agent writes it, so each escape
 is something the hook can check or the owner can see on stderr):
@@ -80,12 +81,14 @@ def reset_blocks(sid):
 
 
 def note_block(sid):
+    """Record one more refusal. Returns the new count, or None when the state
+    dir is unwritable, in which case the caller must fail open (allow)."""
     count = block_count(sid) + 1
     try:
         with open(os.path.join(state_dir(), "fleet-stop-blocks-" + sid12(sid)), "w") as fh:
             fh.write(str(count))
     except OSError:
-        pass
+        return None
     return count
 
 
@@ -116,7 +119,7 @@ def retired_pr_refusal(sid, cwd):
     """
     try:
         from pathlib import Path
-        names = [".claude/active-goal." + goal_lib.safe(sid)]
+        names = [".claude/active-goal." + goal_lib.safe(sid), ".claude/active-goal"]
         dirs = goal_lib.goal_dirs(cwd)
         explicit = os.environ.get("CLAUDE_GOAL_FILE")
         paths = [d / n for n in names for d in dirs if d is not None]
@@ -179,6 +182,9 @@ def refusal_head(goal):
 def spend_or_block(sid, reason):
     """Count this refusal against the no-progress budget. Returns True if blocked."""
     count = note_block(sid)
+    if count is None:
+        print("goal-continue: state dir unwritable, failing open (stop allowed)", file=sys.stderr)
+        return False
     if count > MAX_BLOCKS:
         reset_blocks(sid)
         print("goal-continue: no-progress budget spent (%d), stop allowed" % MAX_BLOCKS, file=sys.stderr)
@@ -221,6 +227,9 @@ def main():
         print("goal-continue: stop allowed, " + why_allowed, file=sys.stderr)
         return
     count = note_block(sid)
+    if count is None:
+        print("goal-continue: state dir unwritable, failing open (stop allowed)", file=sys.stderr)
+        return
     if count > MAX_BLOCKS:
         reset_blocks(sid)
         print("goal-continue: no-progress budget spent (%d), stop allowed" % MAX_BLOCKS, file=sys.stderr)

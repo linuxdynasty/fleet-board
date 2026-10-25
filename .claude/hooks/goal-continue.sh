@@ -5,7 +5,7 @@
 # Stop hook runs whether or not the model remembered the rule.
 #
 # The decision lives in lib/goal_stop.py (goal file protocol, DONE / BLOCKED
-# WATCH= / BLOCKED OWNER= ACTION=, stop_hook_active loop breaker). This wrapper
+# WATCH= / BLOCKED OWNER= ACTION=, per-session no-progress budget). This wrapper
 # only applies the off switches and fails open: exit 0 always, so a broken
 # environment never traps a session.
 #

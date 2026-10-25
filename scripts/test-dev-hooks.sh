@@ -189,6 +189,16 @@ expect_contains "explicit goal file DONE with PR text refuses" "$out" '"decision
 printf 'SESSION: sess-exp\nDONE\nFinish the migration\n' >"$work/expgoal"
 run "$hooks/goal-continue.sh" "$(stop_payload "sess-exp" "$gdir" false)" CLAUDE_GOAL_FILE="$work/expgoal"
 expect_empty "explicit goal file plain DONE allows" "$out"
+printf 'DONE: PR #416 open, address review threads\nFix pane control\n' >"$gdir/.claude/active-goal"
+run "$hooks/goal-continue.sh" "$(stop_payload "sess-shared" "$gdir" false)"
+expect_contains "shared retired PR goal refuses" "$out" '"decision": "block"'
+rm -f "$gdir/.claude/active-goal"
+run "$hooks/goal-continue.sh" "$(stop_payload "sess-shared" "$gdir" false)"
+expect_empty "shared file gone allows the stop" "$out"
+printf 'SESSION: %s\nFix the migration\n' "$g" >"$gf"
+touch "$work/broken-state"
+run "$hooks/goal-continue.sh" "$(stop_payload "$g" "$gdir" false)" FLEET_HOOK_STATE_DIR="$work/broken-state"
+expect_empty "unwritable state dir fails open" "$out"
 
 sleep 30 &
 live=$!
