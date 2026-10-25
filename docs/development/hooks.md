@@ -327,9 +327,10 @@ or any allowed stop). The stop is allowed once the count passes the budget
 (3, MAX_BLOCKS in `goal_stop.py`), in Claude Code and in Muse. Every parse failure still
 allows the stop. A close that names PR/review work anywhere in the goal
 but states no affirmative completion evidence on the `DONE` line itself
-(`stable reads`, `green twice`, `no open threads`, `checks pass`) is refused,
-so a closed goal cannot hide an open review; retained instructions and
-negative status (`not green`, `still open`) do not count as evidence. A
+(`stable reads`, `green twice`, `no open threads`, `checks pass`, or a plain
+merged or cleanly closed PR) is refused, so a closed goal cannot hide an open
+review; retained instructions and negative status (`not green`, `still open`,
+a close without merge) do not count as evidence. A
 `CONSENT: <acts>` line records a grant the owner already gave; the hooks echo
 it so the agent does not stop to ask again, and nothing verifies it, so each
 honoured grant is also printed to stderr.

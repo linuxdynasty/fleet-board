@@ -50,10 +50,12 @@ Stop for real only when one of these is true, and say which:
 MAX_BLOCKS = 3
 
 PR_SIGNALS = re.compile(r"(?i)(pull request|\bprs?\b|review (thread|comment)s?|\bCI\b|\bchecks\b|merge conflict)")
-PR_EVIDENCE = re.compile(r"(?i)(stable reads?|green twice|two stable|no open|no unresolved|green on|checks pass|ci green|all green)")
+PR_EVIDENCE = re.compile(r"(?i)(stable reads?|green twice|two stable|no open|no unresolved|green on|checks pass|ci green|all green"
+                         r"|\bmerged\b|\bclosed\b)")
 PR_VETO = re.compile(r"(?i)\bnot\s+(green|stable|merged|closed|done)\b|n't\s+(green|stable)|\bnever\b"
-                     r"|\bstill\s+(open|failing|red)\b|\bwithout\s+(stable|evidence|proof)\b"
-                     r"|\bno\s+(stable|green|evidence|proof)\b")
+                     r"|\bstill\s+(open|failing|red)\b|\bwithout\s+(stable|evidence|proof|merge)\b"
+                     r"|\bno\s+(stable|green|evidence|proof)\b|\bunmerged\b|\breverted\b"
+                     r"|\bclosed\s+(without|as\s+(a\s+)?duplicate|unmerged)\b")
 
 
 def sid12(sid):
@@ -125,6 +127,9 @@ def retired_pr_refusal(sid, cwd):
         paths = [d / n for n in names for d in dirs if d is not None]
         if explicit:
             paths.insert(0, Path(explicit))
+        home = os.environ.get("HOME")
+        if home:
+            paths.append(Path(home) / ".claude" / "active-goal")
         for path in paths:
             try:
                 if not path.is_file():
