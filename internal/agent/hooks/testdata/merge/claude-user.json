@@ -1,0 +1,17 @@
+{
+  "mcpServers": {
+    "demo": {
+      "command": "demo-server",
+      "args": ["--fast"]
+    }
+  },
+  "hooks": {
+    "PreToolUse": [{"matcher": "Edit","hooks": [{"type": "command","command": "exec \"$r/.claude/hooks/skill-nudge.sh\""}]}],
+    "UserPromptSubmit": [
+      {"matcher": "","hooks": [{"type": "command","command": "command -v python3 >/dev/null 2>&1 || exit 0; exec python3 \"/data/hooks/claude/fleet-goal-hook.py\" claude --old-flag"}]},
+      {"matcher": "route","hooks": [{"type": "command","command": "python3 \"$r/scripts/goal-role-router.py\" claude-dispatch"}]}
+    ],
+    "Stop": [{"matcher": "","hooks": [{"type": "command","command": "exec \"$r/.claude/hooks/goal-continue.sh\""}]}]
+  },
+  "statusLine": {"type": "command","command": "demo-status"}
+}

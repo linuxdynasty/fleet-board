@@ -1,0 +1,59 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "command -v python3 >/dev/null 2>&1 || exit 0; exec python3 \"/data/hooks/codex/fleet-goal-hook.py\" codex",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "command -v python3 >/dev/null 2>&1 || exit 0; exec python3 \"/data/hooks/codex/fleet-goal-hook.py\" codex",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "command -v python3 >/dev/null 2>&1 || exit 0; exec python3 \"/data/hooks/codex/fleet-goal-hook.py\" codex",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "command -v python3 >/dev/null 2>&1 || exit 0; exec python3 \"/data/hooks/codex/fleet-goal-hook.py\" codex",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "Interrupt": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "command -v python3 >/dev/null 2>&1 || exit 0; exec python3 \"/data/hooks/codex/fleet-goal-hook.py\" codex",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

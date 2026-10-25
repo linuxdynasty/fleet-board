@@ -1,0 +1,10 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {"matcher": "Edit", "hooks": [{"type": "command", "command": "exec \"$r/.claude/hooks/skill-nudge.sh\""}]}
+    ],
+    "Stop": [
+      {"matcher": "", "hooks": [{"type": "command", "command": "echo stopped"}]}
+    ]
+  }
+}

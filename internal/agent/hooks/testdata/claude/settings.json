@@ -1,0 +1,40 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "command -v python3 >/dev/null 2>&1 || exit 0; exec python3 \"/data/hooks/claude/fleet-goal-hook.py\" claude",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "command -v python3 >/dev/null 2>&1 || exit 0; exec python3 \"/data/hooks/claude/fleet-goal-hook.py\" claude",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "command -v python3 >/dev/null 2>&1 || exit 0; exec python3 \"/data/hooks/claude/fleet-goal-hook.py\" claude",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}
