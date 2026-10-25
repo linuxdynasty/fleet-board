@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
+	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/durationpb"
 
 	hubv1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/hub/v1"
@@ -117,6 +118,48 @@ func TestGatedCommandRefusesCorruptTimeout(t *testing.T) {
 	}
 	if len(listed.Msg.GetApprovals()) != 0 {
 		t.Fatalf("list = %d approvals, want 0: nothing is raised when the timeout is unreadable",
+			len(listed.Msg.GetApprovals()))
+	}
+}
+
+// TestGatedCommandRefusesOverflowingTimeout: a fleet layer with an
+// approval_timeout time.Duration cannot represent (past ~292 years)
+// fails the gating call instead of wrapping negative and silently
+// falling back to the default. Written straight to the store because
+// only a hand edit can put such a value past the validated settings
+// path, which rejects negative serializations.
+func TestGatedCommandRefusesOverflowingTimeout(t *testing.T) {
+	t.Parallel()
+	raw, err := protojson.Marshal(&hubv1.SettingsSpec{
+		Scope: fleetScope(),
+		Hub: &hubv1.HubSettings{ApprovalTimeout: &durationpb.Duration{
+			Seconds: int64(300) * 365 * 24 * 3600, // ~300 years
+		}},
+	})
+	if err != nil {
+		t.Fatalf("marshal overflowing layer: %v", err)
+	}
+	e := newFleetEnv(t, localUser("alice"), trusted(false))
+	if err := e.st.Write(context.Background(), func(tx *sql.Tx) error {
+		_, err := tx.ExecContext(context.Background(), `INSERT INTO settings_layers(scope, spec_json, version, create_ms, update_ms, hub_seq)
+			VALUES ('fleet', ?, 1, ?, ?, 0)`, string(raw), fleetNow.UnixMilli(), fleetNow.UnixMilli())
+		return err
+	}); err != nil {
+		t.Fatalf("seed overflowing layer: %v", err)
+	}
+	enrollMachine(t, e, "m1")
+	sess := createSession(t, e, "m1", "work")
+	if _, err := e.client.RunHarnessCommand(context.Background(), connect.NewRequest(destructiveReq(sess))); err == nil {
+		t.Fatal("gating over an overflowing timeout succeeded")
+	} else if code, _, _ := detail(t, err); code != connect.CodeInternal {
+		t.Fatalf("gating: %v, want CodeInternal", code)
+	}
+	listed, err := e.client.ListApprovals(context.Background(), connect.NewRequest(&hubv1.ListApprovalsRequest{}))
+	if err != nil {
+		t.Fatalf("ListApprovals: %v", err)
+	}
+	if len(listed.Msg.GetApprovals()) != 0 {
+		t.Fatalf("list = %d approvals, want 0: nothing is raised when the timeout overflows",
 			len(listed.Msg.GetApprovals()))
 	}
 }
