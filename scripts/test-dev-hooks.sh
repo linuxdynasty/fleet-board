@@ -151,7 +151,11 @@ expect_contains "reason carries the goal" "$(json_field "$out" 'd["reason"]')" "
 expect_contains "reason names arbiter-fleet" "$(json_field "$out" 'd["reason"]')" "arbiter-fleet"
 
 run "$hooks/goal-continue.sh" "$(stop_payload "$g" "$gdir" true)"
-expect_empty "stop_hook_active=true allows the stop (loop breaker)" "$out"
+expect_contains "no-progress budget: second stop still blocks (1/3)" "$out" '"decision": "block"'
+run "$hooks/goal-continue.sh" "$(stop_payload "$g" "$gdir" true)"
+expect_contains "no-progress budget: third stop still blocks (2/3)" "$out" '"decision": "block"'
+run "$hooks/goal-continue.sh" "$(stop_payload "$g" "$gdir" true)"
+expect_empty "no-progress budget spent: fourth stop allows (loop breaker)" "$out"
 run "$hooks/goal-continue.sh" "$(stop_payload "$g" "$gdir" false)" CLAUDE_GOAL_OFF=1
 expect_empty "CLAUDE_GOAL_OFF=1 allows the stop" "$out"
 run "$hooks/goal-continue.sh" "$(stop_payload "other-session" "$gdir" false)"
@@ -164,6 +168,50 @@ expect_empty "unparseable payload allows the stop" "$out"
 printf 'SESSION: %s\nDONE\nFinish the migration\n' "$g" >"$gf"
 run "$hooks/goal-continue.sh" "$(stop_payload "$g" "$gdir" false)"
 expect_empty "DONE allows the stop" "$out"
+printf 'SESSION: %s\nDONE: PR #416 open, address review threads\nFix pane control\n' "$g" >"$gf"
+run "$hooks/goal-continue.sh" "$(stop_payload "sess-prguard" "$gdir" false)"
+expect_empty "other session PR DONE does not bind (control)" "$out"
+printf 'SESSION: %s\nDONE: PR #416 open, address review threads\nFix pane control\n' "$g" >"$gf"
+run "$hooks/goal-continue.sh" "$(stop_payload "$g" "$gdir" false)"
+expect_contains "DONE naming PR reviews without stable evidence refuses" "$out" '"decision": "block"'
+printf 'SESSION: %s\nDONE: PR #85 open, CI green on two stable reads, no open threads\nFix pane control\n' "$g" >"$gf"
+run "$hooks/goal-continue.sh" "$(stop_payload "$g" "$gdir" false)"
+expect_empty "DONE with stable-read evidence allows" "$out"
+printf 'SESSION: %s\nDONE\nGet PR #416 merged\nFix pane control\n' "$g" >"$gf"
+run "$hooks/goal-continue.sh" "$(stop_payload "$g" "$gdir" false)"
+expect_contains "DONE with only instruction words still refuses" "$out" '"decision": "block"'
+printf 'SESSION: %s\nDONE: PR #416 open; checks not green on current head\nFix pane control\n' "$g" >"$gf"
+run "$hooks/goal-continue.sh" "$(stop_payload "$g" "$gdir" false)"
+expect_contains "DONE with negative status still refuses" "$out" '"decision": "block"'
+printf 'SESSION: sess-exp\nDONE: PR #1 open, address review threads\nFix pane control\n' >"$work/expgoal"
+run "$hooks/goal-continue.sh" "$(stop_payload "sess-exp" "$gdir" false)" CLAUDE_GOAL_FILE="$work/expgoal"
+expect_contains "explicit goal file DONE with PR text refuses" "$out" '"decision": "block"'
+printf 'SESSION: sess-exp\nDONE\nFinish the migration\n' >"$work/expgoal"
+run "$hooks/goal-continue.sh" "$(stop_payload "sess-exp" "$gdir" false)" CLAUDE_GOAL_FILE="$work/expgoal"
+expect_empty "explicit goal file plain DONE allows" "$out"
+printf 'DONE: PR #416 open, address review threads\nFix pane control\n' >"$gdir/.claude/active-goal"
+run "$hooks/goal-continue.sh" "$(stop_payload "sess-shared" "$gdir" false)"
+expect_contains "shared retired PR goal refuses" "$out" '"decision": "block"'
+rm -f "$gdir/.claude/active-goal"
+run "$hooks/goal-continue.sh" "$(stop_payload "sess-shared" "$gdir" false)"
+expect_empty "shared file gone allows the stop" "$out"
+printf 'SESSION: %s\nDONE: PR #416 merged\nFix pane control\n' "$g" >"$gf"
+run "$hooks/goal-continue.sh" "$(stop_payload "$g" "$gdir" false)"
+expect_empty "DONE stating merged allows" "$out"
+printf 'SESSION: %s\nDONE: PR #416 closed without merge\nFix pane control\n' "$g" >"$gf"
+run "$hooks/goal-continue.sh" "$(stop_payload "$g" "$gdir" false)"
+expect_contains "DONE closed-without-merge refuses" "$out" '"decision": "block"'
+mkdir -p "$HOME/.claude"
+printf 'DONE: PR #416 open, address review threads\nFix pane control\n' >"$HOME/.claude/active-goal"
+run "$hooks/goal-continue.sh" "$(stop_payload "sess-home" "$gdir" false)"
+expect_contains "machine-wide retired PR goal refuses" "$out" '"decision": "block"'
+rm -f "$HOME/.claude/active-goal"
+run "$hooks/goal-continue.sh" "$(stop_payload "sess-home" "$gdir" false)"
+expect_empty "machine-wide file gone allows the stop" "$out"
+printf 'SESSION: %s\nFix the migration\n' "$g" >"$gf"
+touch "$work/broken-state"
+run "$hooks/goal-continue.sh" "$(stop_payload "$g" "$gdir" false)" FLEET_HOOK_STATE_DIR="$work/broken-state"
+expect_empty "unwritable state dir fails open" "$out"
 
 sleep 30 &
 live=$!
@@ -216,6 +264,15 @@ run "$hooks/goal-refresh.sh" "$(prompt_payload "$r" "$gdir" "/goal done")"
 expect_empty "/goal done restates nothing" "$out"
 run "$hooks/goal-continue.sh" "$(stop_payload "$r" "$gdir" false)"
 expect_empty "retired goal allows the stop" "$out"
+c="sess-clear"
+run "$hooks/goal-refresh.sh" "$(prompt_payload "$c" "$gdir" "/goal Address review threads for PR #416")"
+cf="$gdir/.claude/active-goal.$c"
+[ -f "$cf" ] || bad "clear test setup: goal file written"
+run "$hooks/goal-refresh.sh" "$(prompt_payload "$c" "$gdir" "/goal clear")"
+expect_rc "/goal clear exits 0" 0
+if [ -f "$cf" ]; then bad "/goal clear removes the goal file"; else ok; fi
+run "$hooks/goal-continue.sh" "$(stop_payload "$c" "$gdir" false)"
+expect_empty "cleared PR goal allows the stop" "$out"
 run "$hooks/goal-refresh.sh" "$(prompt_payload "$r" "$gdir" "just a prompt")"
 expect_empty "retired goal is not restated" "$out"
 

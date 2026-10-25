@@ -4,7 +4,8 @@
 stdin : {session_id, cwd, stop_hook_active, hook_event_name: "Stop", ...}
 stdout: {"decision": "block", "reason": "..."} to refuse the stop, else nothing
 exit  : always 0. A hook that can refuse to end a session must never be the
-        reason a session breaks, so every parse failure allows the stop.
+        reason a session breaks, so every parse failure allows the stop, and
+        so does an unwritable state dir (the budget fails open).
 
 The first line of the goal file decides (the agent writes it, so each escape
 is something the hook can check or the owner can see on stderr):
@@ -20,8 +21,11 @@ is something the hook can check or the owner can see on stderr):
                                       REFUSE: escalate to arbiter-fleet instead
   anything else                       REFUSE: keep working
 
-stop_hook_active=true means this stop already follows one refusal, so it is
-allowed: that is the loop breaker, in Claude Code and in Muse (both send it).
+A no-progress budget bounds the loop instead of stopping after one refusal:
+each block is counted per session (reset by the next prompt, which clears it
+via goal-refresh, or by any allowed stop); the stop is allowed once the count
+passes MAX_BLOCKS. DONE naming PR/review work without stable-read evidence is
+also refused, so a closed goal cannot hide an open review.
 CONSENT: lines (and $CLAUDE_GOAL_CONSENT) are echoed back so the agent does not
 stop to ask again for something the owner already granted; nothing verifies
 them, so every honoured grant is also echoed to stderr.
@@ -41,6 +45,110 @@ Stop for real only when one of these is true, and say which:
   - the goal is met: put DONE on the first line of {path}
   - you are waiting on outside work behind a live watcher: put BLOCKED: <reason> WATCH=<pid> on the first line
   - a named person must act: put BLOCKED: <reason> OWNER=<who> ACTION=<what> on the first line"""
+
+
+MAX_BLOCKS = 3
+
+PR_SIGNALS = re.compile(r"(?i)(pull request|\bprs?\b|review (thread|comment)s?|\bCI\b|\bchecks\b|merge conflict)")
+PR_EVIDENCE = re.compile(r"(?i)(stable reads?|green twice|two stable|no open|no unresolved|green on|checks pass|ci green|all green"
+                         r"|\bmerged\b|\bclosed\b)")
+PR_VETO = re.compile(r"(?i)\bnot\s+(green|stable|merged|closed|done)\b|n't\s+(green|stable)|\bnever\b"
+                     r"|\bstill\s+(open|failing|red)\b|\bwithout\s+(stable|evidence|proof|merge)\b"
+                     r"|\bno\s+(stable|green|evidence|proof)\b|\bunmerged\b|\breverted\b"
+                     r"|\bclosed\s+(without|as\s+(a\s+)?duplicate|unmerged)\b")
+
+
+def sid12(sid):
+    return re.sub(r"[^A-Za-z0-9._-]", "-", sid or "")[:12] or "na"
+
+
+def state_dir():
+    return os.environ.get("FLEET_HOOK_STATE_DIR") or os.environ.get("TMPDIR") or "/tmp"
+
+
+def block_count(sid):
+    path = os.path.join(state_dir(), "fleet-stop-blocks-" + sid12(sid))
+    try:
+        with open(path) as fh:
+            return max(0, int(fh.read().strip() or 0))
+    except (OSError, ValueError):
+        return 0
+
+
+def reset_blocks(sid):
+    try:
+        os.unlink(os.path.join(state_dir(), "fleet-stop-blocks-" + sid12(sid)))
+    except OSError:
+        pass
+
+
+def note_block(sid):
+    """Record one more refusal. Returns the new count, or None when the state
+    dir is unwritable, in which case the caller must fail open (allow)."""
+    count = block_count(sid) + 1
+    try:
+        with open(os.path.join(state_dir(), "fleet-stop-blocks-" + sid12(sid)), "w") as fh:
+            fh.write(str(count))
+    except OSError:
+        return None
+    return count
+
+
+def close_refusal(first_line, body):
+    """Refusal when a closed goal names PR/review work with no stated evidence.
+
+    Signals come from the whole body (the retained task names the PR);
+    evidence must be an affirmative claim on the DONE first line itself, so
+    retained instructions and negative status cannot satisfy the guard.
+    """
+    if not PR_SIGNALS.search(body or ""):
+        return None
+    claim = first_line or ""
+    if PR_EVIDENCE.search(claim) and not PR_VETO.search(claim):
+        return None
+    return ("Your goal closes with DONE but states no PR completion evidence. "
+            "Verify the PR head, checks and review threads first "
+            "(`gh pr view`, `gh pr checks`, thread list), address what is open, "
+            "or leave BLOCKED with a live WATCH pid instead of DONE.")
+
+
+def retired_pr_refusal(sid, cwd):
+    """A retired (DONE) goal of this session naming PR work without evidence.
+
+    DONE files are tombstones that active_goal ignores, so a premature DONE
+    would otherwise release the stop with an open review. Returns (path,
+    refusal, body) or None. Fail open: any read problem means no refusal.
+    """
+    try:
+        from pathlib import Path
+        names = [".claude/active-goal." + goal_lib.safe(sid), ".claude/active-goal"]
+        dirs = goal_lib.goal_dirs(cwd)
+        explicit = os.environ.get("CLAUDE_GOAL_FILE")
+        paths = [d / n for n in names for d in dirs if d is not None]
+        if explicit:
+            paths.insert(0, Path(explicit))
+        home = os.environ.get("HOME")
+        if home:
+            paths.append(Path(home) / ".claude" / "active-goal")
+        for path in paths:
+            try:
+                if not path.is_file():
+                    continue
+                text = goal_lib.read_text(path)
+                header, _, body = goal_lib.parse(text)
+                if header is not None and header != sid:
+                    continue
+                first = (body.split("\n", 1)[0] if body else "")
+                if not goal_lib.DONE_RE.match(first):
+                    continue
+                refusal = close_refusal(first, body)
+                if refusal is not None:
+                    return str(path), refusal, body
+            except OSError:
+                continue
+    except Exception:
+        pass
+    return None
 
 
 def pid_alive(pid):
@@ -76,6 +184,20 @@ def refusal_head(goal):
             "now, or name a watcher with WATCH=<pid>, or a person with OWNER=<who> ACTION=<what>." % reason), None
 
 
+def spend_or_block(sid, reason):
+    """Count this refusal against the no-progress budget. Returns True if blocked."""
+    count = note_block(sid)
+    if count is None:
+        print("goal-continue: state dir unwritable, failing open (stop allowed)", file=sys.stderr)
+        return False
+    if count > MAX_BLOCKS:
+        reset_blocks(sid)
+        print("goal-continue: no-progress budget spent (%d), stop allowed" % MAX_BLOCKS, file=sys.stderr)
+        return False
+    print(json.dumps({"decision": "block", "reason": reason}))
+    return True
+
+
 def main():
     payload = json.load(sys.stdin)
     if not isinstance(payload, dict) or os.environ.get("CLAUDE_GOAL_OFF") == "1":
@@ -83,14 +205,39 @@ def main():
     sid = payload.get("session_id")
     if not isinstance(sid, str) or not sid:
         return
-    if payload.get("stop_hook_active") in (True, "true", "True"):
+    cwd = str(payload.get("cwd") or "")
+    goal = goal_lib.active_goal(sid, cwd)
+    if goal is None:
+        retired = retired_pr_refusal(sid, cwd)
+        if retired is None:
+            reset_blocks(sid)
+            return
+        path, refusal, body = retired
+        spend_or_block(sid, refusal + "\n\nRETIRED GOAL (%s):\n%s\n\n%s" % (
+            path, goal_lib.clip(body, path), REASON_TAIL.format(path=path)))
         return
-    goal = goal_lib.active_goal(sid, str(payload.get("cwd") or ""))
-    if goal is None or goal.done:
+    if goal.done:
+        # Only an explicit goal file override reaches here with DONE, since
+        # find_file skips retired files; the PR guard applies on that path too.
+        refusal = close_refusal(goal.first_line, goal.body)
+        if refusal is None:
+            reset_blocks(sid)
+            return
+        spend_or_block(sid, refusal + "\n\nACTIVE GOAL (%s):\n%s\n\n%s" % (
+            goal.path, goal_lib.clip(goal.body, goal.path), REASON_TAIL.format(path=goal.path)))
         return
     head, why_allowed = refusal_head(goal)
     if why_allowed:
+        reset_blocks(sid)
         print("goal-continue: stop allowed, " + why_allowed, file=sys.stderr)
+        return
+    count = note_block(sid)
+    if count is None:
+        print("goal-continue: state dir unwritable, failing open (stop allowed)", file=sys.stderr)
+        return
+    if count > MAX_BLOCKS:
+        reset_blocks(sid)
+        print("goal-continue: no-progress budget spent (%d), stop allowed" % MAX_BLOCKS, file=sys.stderr)
         return
     consent = goal.consent + goal_lib.env_consent()
     note = ""

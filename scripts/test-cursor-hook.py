@@ -245,9 +245,12 @@ class StopTests(Base):
         self.assertIn("Finish the migration", value["followup_message"])
         self.assertIn("arbiter-fleet", value["followup_message"])
 
-    def test_green_the_loop_breaker_done_and_no_goal_allow_the_stop(self):
+    def test_green_the_budget_done_and_no_goal_allow_the_stop(self):
         self.assertEqual(self.stop(), {})
         self.p.goal("Finish the migration")
+        self.assertIn("Finish the migration", self.stop(loop_count=1)["followup_message"])
+        self.assertIn("Finish the migration", self.stop(loop_count=1)["followup_message"])
+        self.assertIn("Finish the migration", self.stop(loop_count=1)["followup_message"])
         self.assertEqual(self.stop(loop_count=1), {})
         self.p.goal("DONE\nFinish the migration")
         self.assertEqual(self.stop(), {})

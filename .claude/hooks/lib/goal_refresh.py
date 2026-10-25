@@ -8,7 +8,9 @@ exit  : always 0; this runs on every prompt and must never stop one sending.
 
 Producer (the single write path; there is no fuzzy goal inference):
   /goal <text>  |  GOAL: <text>          set this session's goal
-  /goal done | clear                     retire it (DONE is prepended)
+  /goal done                               retire it (DONE is prepended)
+  /goal clear                              cancel it (the file is removed, so
+                                           the PR guard never fires on it)
   /goal consent <acts>                   replace the CONSENT: line
   /goal consent <acts> -- <text>         start a goal with the grant attached
   /goal revoke-consent                   remove the CONSENT: line
@@ -89,7 +91,18 @@ def new_goal(sid, target, text, acts=""):
 
 def produce(prompt, sid, cwd, target, found):
     """Handle a /goal command. Returns (handled_and_done, goal_file_to_restate)."""
-    if re.match(PREFIX + r"(?:done|clear)(?:\s|$)", prompt):
+    if re.match(PREFIX + r"clear(?:\s|$)", prompt):
+        path = found or target
+        problem = writable(path, target, sid, "cancellation")
+        if problem:
+            warn(problem)
+        else:
+            try:
+                os.unlink(path)
+            except OSError:
+                pass
+        return True, None
+    if re.match(PREFIX + r"done(?:\s|$)", prompt):
         path = found or target
         problem = writable(path, target, sid, "retirement")
         if problem:
@@ -151,6 +164,12 @@ def main():
     sid = payload.get("session_id")
     if not isinstance(sid, str) or not sid:
         return
+    try:
+        saved = re.sub(r"[^A-Za-z0-9._-]", "-", sid)[:12] or "na"
+        os.unlink(os.path.join(os.environ.get("FLEET_HOOK_STATE_DIR") or os.environ.get("TMPDIR") or "/tmp",
+                               "fleet-stop-blocks-" + saved))
+    except OSError:
+        pass
     cwd = str(payload.get("cwd") or "")
     prompt = str(payload.get("prompt") or "").lstrip()
     target = goal_lib.write_target(sid, cwd)
