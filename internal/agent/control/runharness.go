@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
+	"unicode/utf8"
 
 	agentv1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/agent/v1"
 	typev1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/type/v1"
@@ -19,6 +21,15 @@ const maxHarnessArgs = 4 * 1024
 
 // observeScreenCap is the 64 KiB cap on the OBSERVE result screen.
 const observeScreenCap = 64 * 1024
+
+// observeSettleTimeout bounds the wait for the harness to redraw after
+// Enter: an OBSERVE result must carry the screen after the command settled
+// (command_tmux.proto), never the pre-send screen. observeSettlePoll is the
+// gap between screen reads while waiting.
+const (
+	observeSettleTimeout = 3 * time.Second
+	observeSettlePoll    = 50 * time.Millisecond
+)
 
 // runHarnessHandler is the exec.Handler for RunHarnessCommand. The wiring
 // row registers one per server the agent serves, next to the session,
@@ -195,17 +206,22 @@ func (e *Ensurer) RunHarnessCommand(ctx context.Context, cmd *agentv1.RunHarness
 	if args := cmd.GetArgs(); args != "" {
 		text += " " + args
 	}
-	lit, err := typing.NewLiteral(e.rec, pane, typing.PurposeHarnessCommand, text)
-	if err != nil {
-		return refuse(typev1.Status_STATUS_FAILED, typev1.ReasonCode_REASON_CODE_INVALID_ARGUMENT,
-			fmt.Sprintf("that command is not typeable: %s", err.Error()))
+	lines := make([]typing.Line, 0, 2)
+	for _, chunk := range splitLiteral(text, typing.MaxLiteralBytes) {
+		lit, err := typing.NewLiteral(e.rec, pane, typing.PurposeHarnessCommand, chunk)
+		if err != nil {
+			return refuse(typev1.Status_STATUS_FAILED, typev1.ReasonCode_REASON_CODE_INVALID_ARGUMENT,
+				fmt.Sprintf("that command is not typeable: %s", err.Error()))
+		}
+		lines = append(lines, lit)
 	}
 	enter, err := typing.NewKeys(e.rec, pane, typing.PurposeHarnessCommand, typing.KeyEnter)
 	if err != nil {
 		return refuse(typev1.Status_STATUS_FAILED, typev1.ReasonCode_REASON_CODE_INTERNAL,
 			"the Enter key is not typeable")
 	}
-	if res := e.sendLines(ctx, paneID, []typing.Line{lit, enter}); res.GetStatus() != typev1.Status_STATUS_OK {
+	lines = append(lines, enter)
+	if res := e.sendLines(ctx, paneID, lines); res.GetStatus() != typev1.Status_STATUS_OK {
 		return res
 	}
 	result := &agentv1.CommandResult{
@@ -218,10 +234,9 @@ func (e *Ensurer) RunHarnessCommand(ctx context.Context, cmd *agentv1.RunHarness
 	if class != typev1.CommandClass_COMMAND_CLASS_OBSERVE {
 		return result
 	}
-	settled, res := e.readScreen(ctx, paneID)
+	settled, res := e.waitForSettledScreen(ctx, paneID, screen)
 	if res != nil {
-		result.Message += "; the follow-up screen read failed, so no screen is attached"
-		return result
+		return res
 	}
 	detail, ok := result.GetDetail().(*agentv1.CommandResult_RunHarnessCommand)
 	if !ok || detail.RunHarnessCommand == nil {
@@ -231,6 +246,73 @@ func (e *Ensurer) RunHarnessCommand(ctx context.Context, cmd *agentv1.RunHarness
 	screen, _ = scrub.Bound(cleanScreen(settled), observeScreenCap)
 	detail.RunHarnessCommand.Screen = screen
 	return result
+}
+
+// waitForSettledScreen waits for the harness to redraw after Enter and
+// returns the settled screen. It polls the pane until two back-to-back
+// reads agree and differ from the pre-send screen, so a fast capture of the
+// old ready prompt is never recorded as the result. A screen that never
+// changes reads READY_TIMEOUT, retryable: OBSERVE is RepeatSafe, so the hub
+// may ask again rather than keep a stale screen. A failed follow-up read
+// returns its refusal instead of silent success with no screen.
+func (e *Ensurer) waitForSettledScreen(ctx context.Context, paneID, before string) (string, *agentv1.CommandResult) {
+	deadline := time.Now().Add(observeSettleTimeout)
+	var prev string
+	first := true
+	for {
+		cur, res := e.readScreen(ctx, paneID)
+		if res != nil {
+			return "", res
+		}
+		if cur != before && !first && cur == prev {
+			return cur, nil
+		}
+		prev, first = cur, false
+		if time.Now().After(deadline) {
+			return "", refuseRetryable(typev1.ReasonCode_REASON_CODE_READY_TIMEOUT,
+				"the harness screen never settled after the command")
+		}
+		select {
+		case <-ctx.Done():
+			return "", refuse(typev1.Status_STATUS_FAILED, typev1.ReasonCode_REASON_CODE_INTERNAL,
+				"the settle wait ended with the command context")
+		case <-time.After(observeSettlePoll):
+		}
+	}
+}
+
+// splitLiteral cuts text into pieces of at most max bytes on UTF-8
+// boundaries, so a command plus full 4 KiB args types as several bounded
+// literals under the same pane lock followed by Enter. The typing cap counts
+// bytes; a split never cuts a multi-byte rune, and an invalid rune boundary
+// falls back to one byte so progress is always made.
+func splitLiteral(text string, max int) []string {
+	if max <= 0 || len(text) <= max {
+		return []string{text}
+	}
+	var out []string
+	for len(text) > 0 {
+		if len(text) <= max {
+			out = append(out, text)
+			break
+		}
+		cut := max
+		for cut > 0 && !utf8.RuneStart(text[cut]) {
+			cut--
+		}
+		if cut == 0 {
+			cut = max
+			for cut < len(text) && !utf8.RuneStart(text[cut]) {
+				cut++
+			}
+			if cut > len(text) {
+				cut = len(text)
+			}
+		}
+		out = append(out, text[:cut])
+		text = text[cut:]
+	}
+	return out
 }
 
 // cleanScreen renders one styled capture as plain text for the OBSERVE

@@ -33,8 +33,12 @@ func TestApproveWritesADecisionFile(t *testing.T) {
 	if !strings.Contains(out, "01kcliapprove1 approved") {
 		t.Fatalf("approve printed %q, want the id and the verb", out)
 	}
-	if _, err := os.Stat(filepath.Join(dir, "approvals", "01kcliapprove1.approved")); err != nil {
+	raw, err := os.ReadFile(filepath.Join(dir, "approvals", "01kcliapprove1"))
+	if err != nil {
 		t.Fatalf("approve wrote no decision file: %v", err)
+	}
+	if string(raw) != "approved" {
+		t.Fatalf("approve wrote %q, want the approved verdict", raw)
 	}
 }
 
@@ -47,8 +51,12 @@ func TestDenyWritesADecisionFile(t *testing.T) {
 	if !strings.Contains(out, "01kclideny0001 denied") {
 		t.Fatalf("deny printed %q, want the id and the verb", out)
 	}
-	if _, err := os.Stat(filepath.Join(dir, "approvals", "01kclideny0001.denied")); err != nil {
+	raw, err := os.ReadFile(filepath.Join(dir, "approvals", "01kclideny0001"))
+	if err != nil {
 		t.Fatalf("deny wrote no decision file: %v", err)
+	}
+	if string(raw) != "denied" {
+		t.Fatalf("deny wrote %q, want the denied verdict", raw)
 	}
 }
 

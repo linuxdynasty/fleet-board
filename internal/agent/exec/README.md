@@ -17,8 +17,11 @@ go ex.Run(ctx)
 
 The production wiring also passes `settingsManager.Hook` as the connection's
 Settings hook and runs that manager before connecting. F4's handler checks the
-effective default-server mode again when it executes or resumes. With no local
-approver yet, a required approval waits until `LOCAL_CONFIRM_TIMEOUT`.
+effective default-server mode again when it executes or resumes. The run wires
+`FileApprover{Dir: stateDir}` as the `Approver`: `fleet-agent approve|deny
+<command_id>` writes one claim file holding the verdict, and the waiting
+command answers `LOCAL_DENIED` or runs; with no answer the wait still ends at
+`LOCAL_CONFIRM_TIMEOUT`.
 
 ## Order of checks
 
@@ -44,8 +47,10 @@ approver yet, a required approval waits until `LOCAL_CONFIRM_TIMEOUT`.
    the developer's window, the strictest row.
 8. **Approval**: an `L!` cell, or a `local_approval` rule for the kind,
    sends `AWAITING_LOCAL_CONFIRM` and waits for the `Approver` until the
-   deadline: `LOCAL_DENIED` or `LOCAL_CONFIRM_TIMEOUT`. With no approver
-   (until rows 18, 20, 24) a wait ends at the deadline.
+   deadline: `LOCAL_DENIED` or the handler runs, `LOCAL_CONFIRM_TIMEOUT`
+   with no answer. Production approves through `FileApprover`: the CLI
+   claim file (`fleet-agent approve|deny`), consumed on read (channel
+   `cli`), one winner on concurrent answers.
 
 Rules the 6e ruling settled, each stated in its spec: an observe command,
 the only kind safe mode runs, is one the 02g VIEWER column allows

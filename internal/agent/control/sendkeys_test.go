@@ -19,9 +19,9 @@ import (
 // number (0 never fails), for the partial-send test; failErr is the error
 // it fails with (a tmux.ErrMaybeApplied stands in for a lost reply).
 type stubSender struct {
-	// mu guards sent: one stub serves concurrent commands in the
-	// serialization test. Hooks run outside it; tests guard their own
-	// state.
+	// mu guards sent and the capture sequence: one stub serves concurrent
+	// commands in the serialization test. Hooks run outside it; tests
+	// guard their own state.
 	mu              sync.Mutex
 	sent            []typing.Line
 	styledLines     []string
@@ -29,6 +29,12 @@ type stubSender struct {
 	styledErr       error
 	failAt          int
 	failErr         error
+	// seq, when set, scripts one screen per CaptureStyled call in order;
+	// the last entry repeats. It models a harness that redraws after
+	// Enter, so the settle wait can prove it never records the pre-send
+	// screen. When empty the stub serves styledLines every time.
+	seq      [][]string
+	seqCalls int
 	// captureHook runs on every CaptureStyled, sendHook on every Send.
 	captureHook func()
 	sendHook    func(typing.Line)
@@ -59,6 +65,16 @@ func (s *stubSender) CaptureStyled(context.Context, tmux.PaneID) (tmux.Capture, 
 	}
 	if s.styledErr != nil {
 		return tmux.Capture{}, s.styledErr
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.seq) > 0 {
+		i := s.seqCalls
+		if i >= len(s.seq) {
+			i = len(s.seq) - 1
+		}
+		s.seqCalls++
+		return tmux.Capture{Lines: s.seq[i], Truncated: s.styledTruncated}, nil
 	}
 	return tmux.Capture{Lines: s.styledLines, Truncated: s.styledTruncated}, nil
 }

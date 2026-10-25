@@ -22,12 +22,22 @@ import (
 // agent state folder.
 const approvalsDirName = "approvals"
 
-// approvedSuffix and deniedSuffix name a decision file: the command id plus
-// one suffix. Command ids are 1 to 32 characters of [a-z0-9-] starting with
-// [a-z0-9] (ids.proto), so a validated id is a safe file name.
+// approvedSuffix and deniedSuffix name the previous decision layout: the
+// command id plus one suffix. Command ids are 1 to 32 characters of
+// [a-z0-9-] starting with [a-z0-9] (ids.proto), so a validated id is a
+// safe file name. Decide now writes one suffix-less claim file holding the
+// verdict instead, so concurrent approve and deny races fail atomically on
+// the same O_EXCL create; takeDecision still consumes the old suffix files
+// so a decision written before the switch is not lost and no orphan stays.
 const (
 	approvedSuffix = ".approved"
 	deniedSuffix   = ".denied"
+)
+
+// claimVerdicts are the only contents Decide writes into the claim file.
+const (
+	claimApproved = "approved"
+	claimDenied   = "denied"
 )
 
 // commandIDRE is the ids.proto shape every decision file name holds.
@@ -38,11 +48,12 @@ func ApprovalDir(stateDir string) string {
 	return filepath.Join(stateDir, approvalsDirName)
 }
 
-// Decide records the person's answer for one waiting command: approved
-// writes the approved file, denied the denied file. The create is atomic
-// (O_EXCL): a second answer for the same command fails instead of
-// overwriting the first. A decision for a command no wait asks about stays
-// until a wait consumes it.
+// Decide records the person's answer for one waiting command by creating
+// one claim file named for the command id holding the verdict. The create
+// is atomic (O_EXCL on the shared name): concurrent approve and deny races
+// meet on the same file, so exactly one succeeds and the other fails
+// already-decided instead of overwriting the first. A decision for a
+// command no wait asks about stays until a wait consumes it.
 func Decide(stateDir, commandID string, approved bool) error {
 	if !commandIDRE.MatchString(commandID) {
 		return fmt.Errorf("exec: command id %q is not 1 to 32 characters of [a-z0-9-]", commandID)
@@ -50,16 +61,17 @@ func Decide(stateDir, commandID string, approved bool) error {
 	if err := os.MkdirAll(ApprovalDir(stateDir), 0o700); err != nil {
 		return fmt.Errorf("exec: make the approvals folder: %w", err)
 	}
+	dir := ApprovalDir(stateDir)
 	for _, suffix := range []string{approvedSuffix, deniedSuffix} {
-		if _, err := os.Stat(filepath.Join(ApprovalDir(stateDir), commandID+suffix)); err == nil {
+		if _, err := os.Stat(filepath.Join(dir, commandID+suffix)); err == nil {
 			return fmt.Errorf("exec: %s is already decided", commandID)
 		}
 	}
-	suffix := deniedSuffix
+	verdict := claimDenied
 	if approved {
-		suffix = approvedSuffix
+		verdict = claimApproved
 	}
-	path := filepath.Join(ApprovalDir(stateDir), commandID+suffix)
+	path := filepath.Join(dir, commandID)
 	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600) //nolint:gosec // G304: commandID is the ids.proto shape, the state folder is the agent's own
 	if err != nil {
 		if errors.Is(err, os.ErrExist) {
@@ -67,7 +79,13 @@ func Decide(stateDir, commandID string, approved bool) error {
 		}
 		return fmt.Errorf("exec: record the decision: %w", err)
 	}
+	if _, err := f.WriteString(verdict); err != nil {
+		_ = f.Close()
+		_ = os.Remove(path)
+		return fmt.Errorf("exec: record the decision: %w", err)
+	}
 	if err := f.Close(); err != nil {
+		_ = os.Remove(path)
 		return fmt.Errorf("exec: record the decision: %w", err)
 	}
 	return nil
@@ -111,9 +129,18 @@ func (f FileApprover) Await(ctx context.Context, commandID, _ string) (bool, str
 	}
 }
 
-// takeDecision consumes one pending decision file for the command id.
-// found is false when nobody answered yet.
+// takeDecision consumes one pending decision for the command id. It reads
+// the shared claim file first, then the previous suffix layout, and removes
+// every decision file it finds for the id so no orphan (including the loser
+// of the old two-file race) stays behind. found is false when nobody
+// answered yet.
 func takeDecision(dir, commandID string) (approved, found bool) {
+	if raw, err := os.ReadFile(filepath.Join(dir, commandID)); err == nil { //nolint:gosec // G304: commandID is the ids.proto shape, the dir is the agent's own
+		_ = os.Remove(filepath.Join(dir, commandID))
+		_ = os.Remove(filepath.Join(dir, commandID+approvedSuffix))
+		_ = os.Remove(filepath.Join(dir, commandID+deniedSuffix))
+		return string(raw) == claimApproved, true
+	}
 	for _, tc := range []struct {
 		suffix   string
 		approved bool
@@ -127,8 +154,10 @@ func takeDecision(dir, commandID string) (approved, found bool) {
 		}
 		// The decision is taken even when the remove fails: a second
 		// wait that finds the leftover answers the same way, and the
-		// O_EXCL create keeps a new answer from landing on it.
-		_ = os.Remove(path)
+		// O_EXCL create keeps a new answer from landing on it. Both
+		// suffixes come out so the loser's file never orphans.
+		_ = os.Remove(filepath.Join(dir, commandID+approvedSuffix))
+		_ = os.Remove(filepath.Join(dir, commandID+deniedSuffix))
 		return tc.approved, true
 	}
 	return false, false

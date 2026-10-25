@@ -21,10 +21,15 @@ F8 `RunHarnessCommand` types one allow-listed slash command at an idle
 prompt: the command is in the adapter's catalog with the class the hub
 believes and the agent's catalog hash, and the pane proves a ready prompt
 with an empty input line through the same gate as F3. `DENY` commands are
-never typed. The class is `RepeatSafe` only for `OBSERVE` (a replay reads
-the screen again); every other class is `NotRepeatSafe`: a resume ends
-`UNKNOWN_OUTCOME` and never retypes. An `OBSERVE` result carries the class
-and the stripped follow-up screen (64 KiB cap); other classes carry the
+never typed. The command plus its args types as bounded literals (one
+typing line each) plus Enter under the same pane lock, so full 4 KiB args
+still fit the per-line cap. The class is `RepeatSafe` only for `OBSERVE`
+(a replay reads the screen again); every other class is `NotRepeatSafe`:
+a resume ends `UNKNOWN_OUTCOME` and never retypes. An `OBSERVE` result
+carries the class and the settled follow-up screen (64 KiB cap): after
+Enter the agent waits until two back-to-back reads agree and differ from
+the pre-send screen, and a screen that never settles ends `READY_TIMEOUT`,
+retryable, instead of recording stale output. Other classes carry the
 class only. A Cursor pane stays `PANE_BUSY`: row 30 owns the styled-input
 rule. E11 `SetPaneAvailability` records the developer's board mark for one pane on
 the observer's in-memory overlay (or clears it): no tmux call, no screen
@@ -220,11 +225,12 @@ res := e.SetAvailability(ctx, cmd.GetSetPaneAvailability())
     for an empty or foreign hash). The fresh styled capture proves a
     ready prompt with an empty input line through the probe's classifier
     (trust, startup and draft refusals as in F3). The command plus its
-    args type as one literal and Enter as its own line, through the
-    observer client like F3. The OK result carries the class; `OBSERVE`
-    also carries the stripped follow-up screen (64 KiB cap). A follow-up
-    read that fails after typing still returns OK without the screen:
-    the command took effect.
+    args type as bounded literals plus Enter, through the observer client
+    like F3. The OK result carries the class; `OBSERVE` also carries the
+    settled follow-up screen (64 KiB cap): two back-to-back reads agreeing
+    past the pre-send screen, else `READY_TIMEOUT`, retryable. A follow-up
+    read that fails after typing returns its refusal instead of silent
+    success with no screen.
 
 ## Results report stored tags
 

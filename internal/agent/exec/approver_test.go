@@ -2,6 +2,10 @@ package exec
 
 import (
 	"context"
+	"os"
+	"path/filepath"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -101,5 +105,82 @@ func TestFileApproverStopsWithContext(t *testing.T) {
 	}
 	if _, _, err := (FileApprover{}).Await(t.Context(), "01knothing2", "SendKeys"); err == nil {
 		t.Fatal("Await waited with no approvals folder")
+	}
+}
+
+// TestDecideConcurrentOppositesProvesAtomicClaim is the P2 regression: a
+// simultaneous approve and deny for one command must leave exactly one
+// winner, so the second answer never silently orphans. The shared
+// suffix-less claim file makes the O_EXCL create the atomic point.
+func TestDecideConcurrentOppositesProvesAtomicClaim(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	const id = "01krace0001"
+	var approvedWins atomic.Int32
+	var deniedWins atomic.Int32
+	var wg sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			if err := Decide(dir, id, true); err == nil {
+				approvedWins.Add(1)
+			}
+		}()
+		go func() {
+			defer wg.Done()
+			if err := Decide(dir, id, false); err == nil {
+				deniedWins.Add(1)
+			}
+		}()
+	}
+	wg.Wait()
+	if got := approvedWins.Load() + deniedWins.Load(); got != 1 {
+		t.Fatalf("concurrent approve/deny left %d winners, want exactly 1", got)
+	}
+	a := FileApprover{Dir: dir}
+	approved, _, err := a.Await(t.Context(), id, "RunHarnessCommand")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if approvedWins.Load() == 1 && !approved {
+		t.Fatal("Await denied a command approve won")
+	}
+	if deniedWins.Load() == 1 && approved {
+		t.Fatal("Await approved a command deny won")
+	}
+	if entries, err := os.ReadDir(ApprovalDir(dir)); err != nil {
+		t.Fatal(err)
+	} else {
+		for _, e := range entries {
+			if e.Name() == id || e.Name() == id+approvedSuffix || e.Name() == id+deniedSuffix {
+				t.Fatalf("decision file %q stayed after consume", e.Name())
+			}
+		}
+	}
+}
+
+// TestTakeDecisionCleansBothSuffixes proves no orphan stays when the
+// previous two-file layout raced: both suffix files present still answer
+// once and both come out.
+func TestTakeDecisionCleansBothSuffixes(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	approvalDir := ApprovalDir(dir)
+	if err := os.MkdirAll(approvalDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for _, suffix := range []string{approvedSuffix, deniedSuffix} {
+		if err := os.WriteFile(filepath.Join(approvalDir, "01korphan01"+suffix), nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, found := takeDecision(approvalDir, "01korphan01"); !found {
+		t.Fatal("takeDecision missed the orphaned suffix pair")
+	}
+	for _, suffix := range []string{approvedSuffix, deniedSuffix} {
+		if _, err := os.Stat(filepath.Join(approvalDir, "01korphan01"+suffix)); err == nil {
+			t.Fatalf("orphan suffix file %q stayed after consume", suffix)
+		}
 	}
 }

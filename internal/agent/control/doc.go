@@ -17,5 +17,7 @@
 // check. It never imports os/exec directly (the depguard rule names who
 // may).
 // Interrupt, SendKeys, and RespawnPane share a pane lock for each live call;
-// the last holder or waiter removes it after the pane operation ends.
+// the last holder or waiter removes it after the pane operation ends. F8
+// types chunked literals plus Enter under that lock and settles OBSERVE
+// screens past the pre-send capture before returning them.
 package control

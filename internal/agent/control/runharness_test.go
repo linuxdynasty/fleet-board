@@ -7,10 +7,12 @@ package control
 import (
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	agentv1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/agent/v1"
 	typev1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/type/v1"
 	"github.com/linuxdynasty/fleet-board/internal/agent/exec"
+	"github.com/linuxdynasty/fleet-board/internal/agent/tmux/typing"
 )
 
 // runHarnessCmd builds an OBSERVE /status for pane %1 with a placeholder
@@ -172,10 +174,16 @@ func TestRunHarnessCatalogRefusals(t *testing.T) {
 
 // TestRunHarnessObserveHappyPath proves the F8 allow-list end to end on a
 // scripted idle prompt: /status types as one literal plus Enter, and the
-// OBSERVE result carries the class and the stripped follow-up screen.
+// OBSERVE result carries the class and the stripped follow-up screen. The
+// scripted screens redraw after Enter: the first follow-up read still shows
+// the old prompt, then the answer lands and repeats, so the settle wait
+// proves it never records the pre-send screen.
 func TestRunHarnessObserveHappyPath(t *testing.T) {
 	t.Parallel()
-	o, start, stub := gateOptions("codex", []string{"whatever", "› Ask Codex to do anything"})
+	prompt := []string{"whatever", "› Ask Codex to do anything"}
+	settled := []string{"whatever", "status: ok", "› Ask Codex to do anything"}
+	o, start, stub := gateOptions("codex", prompt)
+	stub.seq = [][]string{prompt, prompt, settled, settled}
 	e, err := New(o)
 	if err != nil {
 		t.Fatal(err)
@@ -199,11 +207,100 @@ func TestRunHarnessObserveHappyPath(t *testing.T) {
 		t.Fatalf("result class = %v, want OBSERVE", got)
 	}
 	screen := detail.RunHarnessCommand.GetScreen()
-	if screen == "" || !strings.Contains(screen, "Ask Codex") {
-		t.Fatalf("result screen = %q, want the follow-up screen", screen)
+	if screen == "" || !strings.Contains(screen, "status: ok") {
+		t.Fatalf("result screen = %q, want the settled follow-up screen", screen)
 	}
 	if strings.Contains(screen, "\x1b") {
 		t.Fatalf("result screen keeps escape bytes: %q", screen)
+	}
+}
+
+// TestRunHarnessObserveStaleNeverSettles is the P1 regression: a harness
+// that never redraws after Enter must not record the old prompt as the
+// settled result. The command ends READY_TIMEOUT, retryable, so the hub may
+// ask again instead of keeping stale output as success.
+func TestRunHarnessObserveStaleNeverSettles(t *testing.T) {
+	t.Parallel()
+	prompt := []string{"whatever", "› Ask Codex to do anything"}
+	o, start, stub := gateOptions("codex", prompt)
+	stub.seq = [][]string{prompt}
+	e, err := New(o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd := runHarnessCmd()
+	cmd.Pane.PaneId = "%1"
+	cmd.Pane.ServerStartId = start
+	res := e.RunHarnessCommand(t.Context(), cmd)
+	if res.GetStatus() != typev1.Status_STATUS_FAILED ||
+		res.GetReason() != typev1.ReasonCode_REASON_CODE_READY_TIMEOUT {
+		t.Fatalf("RunHarnessCommand = (%v, %v), want (FAILED, READY_TIMEOUT) for a stale screen: %q",
+			res.GetStatus(), res.GetReason(), res.GetMessage())
+	}
+	if !res.GetRetryable() {
+		t.Fatalf("stale settle retryable = false, want true: %q", res.GetMessage())
+	}
+	if detail, ok := res.GetDetail().(*agentv1.CommandResult_RunHarnessCommand); ok && detail.RunHarnessCommand != nil &&
+		detail.RunHarnessCommand.GetScreen() != "" {
+		t.Fatalf("stale settle attached screen %q, want none", detail.RunHarnessCommand.GetScreen())
+	}
+}
+
+// TestRunHarnessObserveFullArgsChunked is the 4 KiB P2 regression: a full
+// 4096-byte argument plus the command text exceeds one typing literal, so
+// it types as two bounded literals plus Enter under the same pane lock and
+// still settles. The command is valid input the agent must not refuse.
+func TestRunHarnessObserveFullArgsChunked(t *testing.T) {
+	t.Parallel()
+	prompt := []string{"whatever", "› Ask Codex to do anything"}
+	settled := []string{"whatever", "args seen", "› Ask Codex to do anything"}
+	o, start, stub := gateOptions("codex", prompt)
+	stub.seq = [][]string{prompt, prompt, settled, settled}
+	e, err := New(o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd := runHarnessCmd()
+	cmd.Pane.PaneId = "%1"
+	cmd.Pane.ServerStartId = start
+	cmd.Args = strings.Repeat("x", 4096)
+	res := e.RunHarnessCommand(t.Context(), cmd)
+	if res.GetStatus() != typev1.Status_STATUS_OK {
+		t.Fatalf("RunHarnessCommand = (%v, %v), want OK for full 4 KiB args: %q",
+			res.GetStatus(), res.GetReason(), res.GetMessage())
+	}
+	if len(stub.sent) != 3 {
+		t.Fatalf("RunHarnessCommand typed %d lines, want two literals plus Enter for full args", len(stub.sent))
+	}
+	detail, ok := res.GetDetail().(*agentv1.CommandResult_RunHarnessCommand)
+	if !ok || detail.RunHarnessCommand == nil {
+		t.Fatalf("RunHarnessCommand detail = %T, want the F8 result", res.GetDetail())
+	}
+	if screen := detail.RunHarnessCommand.GetScreen(); !strings.Contains(screen, "args seen") {
+		t.Fatalf("result screen = %q, want the settled follow-up screen", screen)
+	}
+}
+
+// TestSplitLiteralKeepsUTF8Boundaries proves the chunker never cuts a
+// multi-byte rune: every piece stays valid UTF-8, fits the typing cap, and
+// joins back to the input.
+func TestSplitLiteralKeepsUTF8Boundaries(t *testing.T) {
+	t.Parallel()
+	text := strings.Repeat("é", 2000) + strings.Repeat("x", 500)
+	chunks := splitLiteral(text, typing.MaxLiteralBytes)
+	if got := strings.Join(chunks, ""); got != text {
+		t.Fatal("splitLiteral did not join back to the input")
+	}
+	for i, c := range chunks {
+		if len(c) > typing.MaxLiteralBytes {
+			t.Fatalf("chunk %d holds %d bytes, want at most the typing cap", i, len(c))
+		}
+		if !utf8.ValidString(c) {
+			t.Fatalf("chunk %d is not valid UTF-8", i)
+		}
+	}
+	if len(chunks) < 2 {
+		t.Fatalf("splitLiteral returned %d chunks for %d bytes, want more than one", len(chunks), len(text))
 	}
 }
 
