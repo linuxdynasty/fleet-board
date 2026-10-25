@@ -14,6 +14,10 @@
 // rate-limited enrollment requests count as enrollment refusals.
 // ListApprovals validates paging without reading rows before quota admission;
 // it expires due approvals and reads the page afterward in one writer job.
+// New approvals stamp expire_time from spec.hub.approval_timeout (30-minute
+// default when unset or non-positive; an unreadable layer fails the call,
+// as does a wait past ~292 years either way that time.Duration cannot
+// represent; the validated settings path refuses such a wait at write time).
 // A refused Host or Origin is Connect permission_denied (HTTP 403), with
 // ErrorDetail reason HOST_NOT_ALLOWED or ORIGIN_NOT_ALLOWED, counted in
 // fleet_hub_auth_failures_total{reason="host"|"origin"}. Unsupported

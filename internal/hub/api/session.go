@@ -23,9 +23,10 @@ import (
 	"github.com/linuxdynasty/fleet-board/internal/hub/statedb"
 )
 
-// approvalTimeout is HubSettings.approval_timeout (defaults.md): a pending
-// approval gets the DENY fallback past this. It is a constant until plan
-// row 13a lands the settings store the value lives in.
+// approvalTimeout is the default HubSettings.approval_timeout
+// (defaults.md): a pending approval gets the DENY fallback past this.
+// approvalTimeoutTx prefers the fleet layer's configured value and falls
+// back here when the owner never set one.
 const approvalTimeout = 30 * time.Minute
 
 // sessionNameRule is the CreateSession name rule (session.proto field 3).

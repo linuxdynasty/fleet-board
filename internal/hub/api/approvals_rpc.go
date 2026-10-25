@@ -371,6 +371,10 @@ func (f *Fleet) gateCommand(ctx context.Context, who *typev1.Principal, req prot
 			approval, err = approvals.Get(ctx, tx, id, now)
 			return err
 		}
+		timeout, err := approvalTimeoutTx(ctx, tx)
+		if err != nil {
+			return err
+		}
 		created, seq, err := approvals.CreateApproval(ctx, tx, approvals.Create{
 			Kind:      hubv1.ApprovalKind_APPROVAL_KIND_COMMAND_CONFIRM,
 			Severity:  hubv1.Severity_SEVERITY_WARNING,
@@ -379,7 +383,7 @@ func (f *Fleet) gateCommand(ctx context.Context, who *typev1.Principal, req prot
 			Allowed:       []approvals.Choice{{Key: "approve"}, {Key: "deny"}},
 			DefaultChoice: "deny",
 			Fallback:      hubv1.ApprovalFallback_APPROVAL_FALLBACK_DENY,
-			ExpireTime:    now.Add(approvalTimeout),
+			ExpireTime:    now.Add(timeout),
 			RequiredRole:  typev1.Role_ROLE_OWNER,
 			Command:       cmd,
 			Now:           now,

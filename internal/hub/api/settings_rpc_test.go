@@ -51,6 +51,54 @@ func metadataOf(t *testing.T, err error) map[string]string {
 	return nil
 }
 
+// TestUpdateSettingsRejectsUnrepresentableApprovalTimeout: a wait past
+// what time.Duration can stamp in either direction is refused at write
+// time, so a fully validated write can never brick later gating calls
+// (which fail closed on it). Ordinary negatives still pass: they fall
+// back to the 30-minute default at gating time per 02b.
+func TestUpdateSettingsRejectsUnrepresentableApprovalTimeout(t *testing.T) {
+	t.Parallel()
+	e := newFleetEnv(t, localUser("alice"), trusted(false))
+	reject := []*durationpb.Duration{
+		{Seconds: int64(300) * 365 * 24 * 3600},   // +300y wraps AsDuration negative
+		{Seconds: int64(-300) * 365 * 24 * 3600},  // -300y wraps AsDuration positive
+		{Seconds: 9223372036, Nanos: 854775808},   // past the ceiling band
+		{Seconds: -9223372036, Nanos: -854775809}, // past the floor band
+	}
+	for _, d := range reject {
+		_, err := e.client.UpdateSettings(t.Context(), connect.NewRequest(&hubv1.UpdateSettingsRequest{
+			RequestId: "req-unrepresentable", Settings: &hubv1.Settings{Spec: &hubv1.SettingsSpec{
+				Scope: fleetScope(),
+				Hub:   &hubv1.HubSettings{ApprovalTimeout: d},
+			}}, UpdateMask: fieldMask([]string{"spec.hub.approval_timeout"}),
+		}))
+		code, _, fields := detail(t, err)
+		if code != connect.CodeInvalidArgument {
+			t.Errorf("seconds=%d nanos=%d: = %v, want INVALID_ARGUMENT", d.GetSeconds(), d.GetNanos(), code)
+			continue
+		}
+		found := false
+		for _, f := range fields {
+			if f == "spec.hub.approval_timeout" {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("seconds=%d nanos=%d: fields = %v, want spec.hub.approval_timeout", d.GetSeconds(), d.GetNanos(), fields)
+		}
+	}
+	// An ordinary negative still writes: gating falls back to the
+	// default for it. The exact ceiling still writes too.
+	updateFleetSettings(t, e, "req-ordinary-negative", &hubv1.SettingsSpec{
+		Scope: fleetScope(),
+		Hub:   &hubv1.HubSettings{ApprovalTimeout: durationpb.New(-5 * time.Minute)},
+	}, []string{"spec.hub.approval_timeout"}, 0)
+	updateFleetSettings(t, e, "req-exact-ceiling", &hubv1.SettingsSpec{
+		Scope: fleetScope(),
+		Hub:   &hubv1.HubSettings{ApprovalTimeout: &durationpb.Duration{Seconds: 9223372036, Nanos: 854775807}},
+	}, []string{"spec.hub.approval_timeout"}, 1)
+}
+
 func TestUpdateSettingsWritesTheFleetLayer(t *testing.T) {
 	t.Parallel()
 	e := newFleetEnv(t, localUser("alice"), trusted(false))
