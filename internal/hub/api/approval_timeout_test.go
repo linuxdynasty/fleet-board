@@ -14,6 +14,24 @@ import (
 	typev1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/type/v1"
 )
 
+// seedLayer writes a fleet settings layer straight to the store, for
+// values the validated settings path cannot express (corrupt or
+// out-of-range serializations a hand edit could still leave behind).
+func seedLayer(t *testing.T, e *fleetEnv, spec *hubv1.SettingsSpec) {
+	t.Helper()
+	raw, err := protojson.Marshal(spec)
+	if err != nil {
+		t.Fatalf("marshal layer: %v", err)
+	}
+	if err := e.st.Write(context.Background(), func(tx *sql.Tx) error {
+		_, err := tx.ExecContext(context.Background(), `INSERT INTO settings_layers(scope, spec_json, version, create_ms, update_ms, hub_seq)
+			VALUES ('fleet', ?, 1, ?, ?, 0)`, string(raw), fleetNow.UnixMilli(), fleetNow.UnixMilli())
+		return err
+	}); err != nil {
+		t.Fatalf("seed layer: %v", err)
+	}
+}
+
 // TestGatedCommandUsesApprovalTimeoutSetting: a gated command expires
 // after the fleet layer's spec.hub.approval_timeout, not the default.
 func TestGatedCommandUsesApprovalTimeoutSetting(t *testing.T) {
@@ -160,6 +178,66 @@ func TestGatedCommandRefusesOverflowingTimeout(t *testing.T) {
 	}
 	if len(listed.Msg.GetApprovals()) != 0 {
 		t.Fatalf("list = %d approvals, want 0: nothing is raised when the timeout overflows",
+			len(listed.Msg.GetApprovals()))
+	}
+}
+
+// TestGatedCommandRefusesBoundaryNanosOverflow: 9223372036 seconds with
+// nanos past 854775807 already exceeds the int64 range, so it must fail
+// closed even though the bare-seconds guard lets that second through.
+func TestGatedCommandRefusesBoundaryNanosOverflow(t *testing.T) {
+	t.Parallel()
+	e := newFleetEnv(t, localUser("alice"), trusted(false))
+	seedLayer(t, e, &hubv1.SettingsSpec{
+		Scope: fleetScope(),
+		Hub: &hubv1.HubSettings{ApprovalTimeout: &durationpb.Duration{
+			Seconds: 9223372036, Nanos: 900000000,
+		}},
+	})
+	enrollMachine(t, e, "m1")
+	sess := createSession(t, e, "m1", "work")
+	if _, err := e.client.RunHarnessCommand(context.Background(), connect.NewRequest(destructiveReq(sess))); err == nil {
+		t.Fatal("gating over a boundary-overflowing timeout succeeded")
+	} else if code, _, _ := detail(t, err); code != connect.CodeInternal {
+		t.Fatalf("gating: %v, want CodeInternal", code)
+	}
+	listed, err := e.client.ListApprovals(context.Background(), connect.NewRequest(&hubv1.ListApprovalsRequest{}))
+	if err != nil {
+		t.Fatalf("ListApprovals: %v", err)
+	}
+	if len(listed.Msg.GetApprovals()) != 0 {
+		t.Fatalf("list = %d approvals, want 0: nothing is raised on boundary overflow",
+			len(listed.Msg.GetApprovals()))
+	}
+}
+
+// TestGatedCommandHonorsBoundarySecond: the exact ceiling
+// (9223372036s + 854775807ns) still fits time.Duration, so a hand-set
+// layer there must raise a live approval, not fail or fall back.
+func TestGatedCommandHonorsBoundarySecond(t *testing.T) {
+	t.Parallel()
+	e := newFleetEnv(t, localUser("alice"), trusted(false))
+	seedLayer(t, e, &hubv1.SettingsSpec{
+		Scope: fleetScope(),
+		Hub: &hubv1.HubSettings{ApprovalTimeout: &durationpb.Duration{
+			Seconds: 9223372036, Nanos: 854775807,
+		}},
+	})
+	enrollMachine(t, e, "m1")
+	sess := createSession(t, e, "m1", "work")
+	gated, err := e.client.RunHarnessCommand(context.Background(), connect.NewRequest(destructiveReq(sess)))
+	if err != nil {
+		t.Fatalf("RunHarnessCommand at the ceiling: %v", err)
+	}
+	if gated.Msg.GetApproval().GetValue() == "" {
+		t.Fatal("no approval raised at the representable ceiling")
+	}
+	listed, err := e.client.ListApprovals(context.Background(), connect.NewRequest(&hubv1.ListApprovalsRequest{}))
+	if err != nil {
+		t.Fatalf("ListApprovals: %v", err)
+	}
+	if len(listed.Msg.GetApprovals()) != 1 {
+		t.Fatalf("list = %d approvals, want 1: the ceiling wait is honored, not refused",
 			len(listed.Msg.GetApprovals()))
 	}
 }

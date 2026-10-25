@@ -13,6 +13,14 @@ import (
 	"github.com/linuxdynasty/fleet-board/internal/hub/statedb"
 )
 
+// maxTimeoutSecs and maxTimeoutNanos bound the largest wait
+// time.Duration can stamp: 9223372036s plus 854775807ns. Anything past
+// that instant wraps AsDuration and must fail closed.
+const (
+	maxTimeoutSecs  = int64(math.MaxInt64) / int64(time.Second)
+	maxTimeoutNanos = int32(int64(math.MaxInt64) % int64(time.Second))
+)
+
 // approvalTimeoutTx resolves how long a new approval waits before its
 // DENY fallback applies: the fleet layer's spec.hub.approval_timeout,
 // or the documented default (defaults.md) when the owner never set one
@@ -46,8 +54,11 @@ func approvalTimeoutTx(ctx context.Context, tx *sql.Tx) (time.Duration, error) {
 	// cannot be stamped, and AsDuration would wrap it negative so the
 	// branch below would silently substitute the default. Fail the
 	// gating call instead of honoring a wait the store cannot keep.
-	if d.GetSeconds() > int64(math.MaxInt64)/int64(time.Second) {
-		return 0, fmt.Errorf("approvals: approval timeout %ds overflows time.Duration", d.GetSeconds())
+	// The band inside the boundary second counts too: 9223372036s with
+	// nanos past 854775807ns already exceeds the int64 range.
+	if s := d.GetSeconds(); s > maxTimeoutSecs ||
+		(s == maxTimeoutSecs && d.GetNanos() > maxTimeoutNanos) {
+		return 0, fmt.Errorf("approvals: approval timeout %ds+%dns overflows time.Duration", d.GetSeconds(), d.GetNanos())
 	}
 	// The store requires expire_time after now, so a non-positive wait
 	// is unstorable: fall back to the documented default instead of
