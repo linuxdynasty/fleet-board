@@ -33,7 +33,7 @@ func TestApproveWritesADecisionFile(t *testing.T) {
 	if !strings.Contains(out, "01kcliapprove1 approved") {
 		t.Fatalf("approve printed %q, want the id and the verb", out)
 	}
-	raw, err := os.ReadFile(filepath.Join(dir, "approvals", "01kcliapprove1"))
+	raw, err := os.ReadFile(filepath.Join(dir, "approvals", "01kcliapprove1")) //nolint:gosec // G304: the decision file the CLI just wrote in the test's temp dir
 	if err != nil {
 		t.Fatalf("approve wrote no decision file: %v", err)
 	}
@@ -51,7 +51,7 @@ func TestDenyWritesADecisionFile(t *testing.T) {
 	if !strings.Contains(out, "01kclideny0001 denied") {
 		t.Fatalf("deny printed %q, want the id and the verb", out)
 	}
-	raw, err := os.ReadFile(filepath.Join(dir, "approvals", "01kclideny0001"))
+	raw, err := os.ReadFile(filepath.Join(dir, "approvals", "01kclideny0001")) //nolint:gosec // G304: the decision file the CLI just wrote in the test's temp dir
 	if err != nil {
 		t.Fatalf("deny wrote no decision file: %v", err)
 	}
