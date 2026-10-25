@@ -15,10 +15,15 @@ import (
 
 // maxTimeoutSecs and maxTimeoutNanos bound the largest wait
 // time.Duration can stamp: 9223372036s plus 854775807ns. Anything past
-// that instant wraps AsDuration and must fail closed.
+// that instant wraps AsDuration and must fail closed. minTimeoutSecs
+// and minTimeoutNanos mirror the floor: past -9223372036s minus
+// 854775808ns AsDuration wraps positive and the wait would be honored,
+// contradicting the non-positive fallback promise.
 const (
 	maxTimeoutSecs  = int64(math.MaxInt64) / int64(time.Second)
 	maxTimeoutNanos = int32(int64(math.MaxInt64) % int64(time.Second))
+	minTimeoutSecs  = int64(math.MinInt64) / int64(time.Second)
+	minTimeoutNanos = int32(int64(math.MinInt64) % int64(time.Second))
 )
 
 // approvalTimeoutTx resolves how long a new approval waits before its
@@ -50,14 +55,17 @@ func approvalTimeoutTx(ctx context.Context, tx *sql.Tx) (time.Duration, error) {
 	if err := d.CheckValid(); err != nil {
 		return 0, fmt.Errorf("approvals: read approval timeout: %w", err)
 	}
-	// time.Duration tops out near 292 years; a larger configured wait
-	// cannot be stamped, and AsDuration would wrap it negative so the
-	// branch below would silently substitute the default. Fail the
-	// gating call instead of honoring a wait the store cannot keep.
-	// The band inside the boundary second counts too: 9223372036s with
-	// nanos past 854775807ns already exceeds the int64 range.
+	// time.Duration spans about +/-292 years; a larger configured wait
+	// cannot be stamped. Past the ceiling AsDuration wraps negative so
+	// the branch below would silently substitute the default; past the
+	// floor it wraps positive and the wait would be honored outright,
+	// contradicting the non-positive fallback promise. The bands inside
+	// both boundary seconds count too. Fail the gating call instead of
+	// honoring or replacing a wait the store cannot keep.
 	if s := d.GetSeconds(); s > maxTimeoutSecs ||
-		(s == maxTimeoutSecs && d.GetNanos() > maxTimeoutNanos) {
+		(s == maxTimeoutSecs && d.GetNanos() > maxTimeoutNanos) ||
+		s < minTimeoutSecs ||
+		(s == minTimeoutSecs && d.GetNanos() < minTimeoutNanos) {
 		return 0, fmt.Errorf("approvals: approval timeout %ds+%dns overflows time.Duration", d.GetSeconds(), d.GetNanos())
 	}
 	// The store requires expire_time after now, so a non-positive wait

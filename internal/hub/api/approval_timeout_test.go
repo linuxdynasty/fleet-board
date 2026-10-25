@@ -242,6 +242,70 @@ func TestGatedCommandHonorsBoundarySecond(t *testing.T) {
 	}
 }
 
+// TestGatedCommandRefusesNegativeOverflowingTimeout: a hugely negative
+// timeout wraps AsDuration positive and would be honored as a ~284-year
+// wait, contradicting the non-positive fallback promise. It must fail
+// the gating call instead. Seeded straight to the store: the wrapped
+// positive also slips past the validated settings path, which only
+// rejects negative serializations.
+func TestGatedCommandRefusesNegativeOverflowingTimeout(t *testing.T) {
+	t.Parallel()
+	e := newFleetEnv(t, localUser("alice"), trusted(false))
+	seedLayer(t, e, &hubv1.SettingsSpec{
+		Scope: fleetScope(),
+		Hub: &hubv1.HubSettings{ApprovalTimeout: &durationpb.Duration{
+			Seconds: int64(-300) * 365 * 24 * 3600, // ~-300 years
+		}},
+	})
+	enrollMachine(t, e, "m1")
+	sess := createSession(t, e, "m1", "work")
+	if _, err := e.client.RunHarnessCommand(context.Background(), connect.NewRequest(destructiveReq(sess))); err == nil {
+		t.Fatal("gating over a negative-overflowing timeout succeeded")
+	} else if code, _, _ := detail(t, err); code != connect.CodeInternal {
+		t.Fatalf("gating: %v, want CodeInternal", code)
+	}
+	listed, err := e.client.ListApprovals(context.Background(), connect.NewRequest(&hubv1.ListApprovalsRequest{}))
+	if err != nil {
+		t.Fatalf("ListApprovals: %v", err)
+	}
+	if len(listed.Msg.GetApprovals()) != 0 {
+		t.Fatalf("list = %d approvals, want 0: nothing is raised on negative overflow",
+			len(listed.Msg.GetApprovals()))
+	}
+}
+
+// TestGatedCommandHonorsNegativeFloor: the exact floor
+// (-9223372036s - 854775808ns) still fits time.Duration, so it reaches
+// the non-positive branch and falls back to the default: an approval
+// is raised, not refused.
+func TestGatedCommandHonorsNegativeFloor(t *testing.T) {
+	t.Parallel()
+	e := newFleetEnv(t, localUser("alice"), trusted(false))
+	seedLayer(t, e, &hubv1.SettingsSpec{
+		Scope: fleetScope(),
+		Hub: &hubv1.HubSettings{ApprovalTimeout: &durationpb.Duration{
+			Seconds: -9223372036, Nanos: -854775808,
+		}},
+	})
+	enrollMachine(t, e, "m1")
+	sess := createSession(t, e, "m1", "work")
+	gated, err := e.client.RunHarnessCommand(context.Background(), connect.NewRequest(destructiveReq(sess)))
+	if err != nil {
+		t.Fatalf("RunHarnessCommand at the negative floor: %v", err)
+	}
+	if gated.Msg.GetApproval().GetValue() == "" {
+		t.Fatal("no approval raised at the representable negative floor")
+	}
+	listed, err := e.client.ListApprovals(context.Background(), connect.NewRequest(&hubv1.ListApprovalsRequest{}))
+	if err != nil {
+		t.Fatalf("ListApprovals: %v", err)
+	}
+	if len(listed.Msg.GetApprovals()) != 1 {
+		t.Fatalf("list = %d approvals, want 1: the floor wait falls back, not refused",
+			len(listed.Msg.GetApprovals()))
+	}
+}
+
 // TestConfirmDeniedAtConfiguredTimeout: past the configured
 // approval_timeout the DENY fallback has applied, so deciding fails
 // closed and nothing was ever sent.
