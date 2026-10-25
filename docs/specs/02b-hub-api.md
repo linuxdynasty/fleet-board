@@ -239,7 +239,10 @@ An action that makes an agent do something returns an `Operation` at once
 approval first (`RunHarnessCommand` with a DESTRUCTIVE command, `StartGoal`
 with a `CONFIRM` check): it returns the `Approval` and no operation, and
 the operation comes back from `DecideApproval` once approved (02m "Actions
-that need an approval"). `Operation.id` is the agent
+that need an approval"). `Approval.expire_time` is the raise time plus
+`spec.hub.approval_timeout` (default 30 minutes, [defaults](defaults.md));
+a non-positive wait falls back to the default because the store requires
+`expire_time` after now. `Operation.id` is the agent
 command's `CommandId`, so the UI, the audit log and the agent's local log
 name the same thing. The operation follows the outbox: `PENDING` →
 `DELIVERED` (`CommandAck`) → `RUNNING` (progress, local confirmation) →
