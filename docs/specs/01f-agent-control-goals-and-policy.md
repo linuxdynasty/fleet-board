@@ -147,7 +147,14 @@ All pass local policy, carry a `command_id`, and are idempotent except F3.
   where `command` must be in the machine's catalog (C4) and its class must be
   allowed for the requester. Only typed at an idle prompt (ready pattern
   matched), never into a running turn. Replaces free-typed slash commands
-  through F3.
+  through F3. Landed (`internal/agent/control`, issue #67): the catalog is
+  the adapters' own classification tables with the agent's hash over the
+  sorted names, the gate is F3's (developer input, known harness, styled
+  ready-plus-empty-line read under the shared pane lock), `DENY` is never
+  typed, `OBSERVE` is RepeatSafe and every other class ends
+  `UNKNOWN_OUTCOME` on resume; Cursor stays `PANE_BUSY` (row 30). The
+  snapshot catalog reporting that hands the dashboard its hash (C4) is a
+  later slice: until it lands, the agent refuses an empty or foreign hash.
 
 ## G. Goals
 

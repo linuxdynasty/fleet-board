@@ -2,6 +2,7 @@ package claude
 
 import (
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -187,5 +188,34 @@ func TestClassifyCoversCatalog(t *testing.T) {
 	}
 	if len(missing) > 0 {
 		t.Fatalf("catalog commands with no Classify expectation: %q", missing)
+	}
+}
+
+// TestCommandNamesReviewed pins the F8 catalog list to the reviewed
+// expectations: sorted, every name sendable, and every sendable expectation
+// named. A table edit without a reviewed expectation fails here.
+func TestCommandNamesReviewed(t *testing.T) {
+	t.Parallel()
+	names := CommandNames()
+	if !slices.IsSorted(names) {
+		t.Fatalf("CommandNames = %q, want sorted", names)
+	}
+	seen := map[string]bool{}
+	for _, n := range names {
+		if seen[n] {
+			t.Fatalf("CommandNames repeats %q", n)
+		}
+		seen[n] = true
+		if got := Classify(n); got == typev1.CommandClass_COMMAND_CLASS_DENY {
+			t.Fatalf("CommandNames lists %q, which classifies DENY", n)
+		}
+	}
+	for _, tc := range commandCases {
+		if tc.want == typev1.CommandClass_COMMAND_CLASS_DENY {
+			continue
+		}
+		if !seen[tc.command] {
+			t.Fatalf("sendable %q from the reviewed expectations is missing from CommandNames", tc.command)
+		}
 	}
 }
