@@ -83,6 +83,39 @@ func checkValidDuration(v *violations, field string, d *durationpb.Duration) {
 	}
 }
 
+// checkRepresentableDuration refuses a duration time.Duration cannot
+// stamp (past about +/-292 years). Gating fails closed on such a wait,
+// so the write path must refuse it too: otherwise a validated write
+// could brick every later gated command. Ordinary negatives stay
+// accepted here; they fall back to the default at gating time per 02b.
+func checkRepresentableDuration(v *violations, field string, d *durationpb.Duration) {
+	if d == nil {
+		return
+	}
+	if !timeoutRepresentable(d.GetSeconds(), d.GetNanos()) {
+		v.add(field, typev1.ReasonCode_REASON_CODE_INVALID_ARGUMENT,
+			"the duration must fit inside what time.Duration can stamp (about +/-292 years)")
+	}
+}
+
+// checkApprovalTimeout applies the spec.hub.approval_timeout rules: the
+// value must be valid proto and representable (inside about +/-292
+// years), but an ordinary negative stays accepted. Gating falls back to
+// the 30-minute default for it per 02b; refusing it here would push
+// owners toward hand-editing the layer, while accepting an
+// unrepresentable one would brick every later gated command.
+func checkApprovalTimeout(v *violations, d *durationpb.Duration) {
+	if d == nil {
+		return
+	}
+	if d.CheckValid() != nil {
+		v.add("spec.hub.approval_timeout", typev1.ReasonCode_REASON_CODE_INVALID_ARGUMENT,
+			"approval_timeout must be a valid duration")
+		return
+	}
+	checkRepresentableDuration(v, "spec.hub.approval_timeout", d)
+}
+
 // checkMergedHub applies the HubSettings rules: durations valid, session
 // timeouts and log caps inside their bounds, the idle limit within the
 // max age, consent naming known acts. Sign-in switches need ADMIN over
@@ -94,7 +127,7 @@ func checkMergedHub(hub *hubv1.HubSettings) error {
 	}
 	var v violations
 	checkValidDuration(&v, "spec.hub.triage_expiry", hub.GetTriageExpiry())
-	checkValidDuration(&v, "spec.hub.approval_timeout", hub.GetApprovalTimeout())
+	checkApprovalTimeout(&v, hub.GetApprovalTimeout())
 	checkValidDuration(&v, "spec.hub.session_idle_timeout", hub.GetSessionIdleTimeout())
 	checkValidDuration(&v, "spec.hub.session_max_age", hub.GetSessionMaxAge())
 	checkValidDuration(&v, "spec.hub.log_retention", hub.GetLogRetention())

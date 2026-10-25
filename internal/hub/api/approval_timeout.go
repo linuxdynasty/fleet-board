@@ -26,6 +26,24 @@ const (
 	minTimeoutNanos = int32(int64(math.MinInt64) % int64(time.Second))
 )
 
+// timeoutRepresentable reports whether a (seconds, nanos) wait is one
+// time.Duration can stamp: inside +/-292 years, inclusive of both
+// boundary seconds. Anything outside wraps AsDuration, so it must fail
+// closed at gating time and be refused at write time. Ordinary
+// negatives are representable: they fall back to the default at gating
+// time per 02b.
+func timeoutRepresentable(seconds int64, nanos int32) bool {
+	switch {
+	case seconds > maxTimeoutSecs || seconds < minTimeoutSecs:
+		return false
+	case seconds == maxTimeoutSecs && nanos > maxTimeoutNanos:
+		return false
+	case seconds == minTimeoutSecs && nanos < minTimeoutNanos:
+		return false
+	}
+	return true
+}
+
 // approvalTimeoutTx resolves how long a new approval waits before its
 // DENY fallback applies: the fleet layer's spec.hub.approval_timeout,
 // or the documented default (defaults.md) when the owner never set one
@@ -62,10 +80,7 @@ func approvalTimeoutTx(ctx context.Context, tx *sql.Tx) (time.Duration, error) {
 	// contradicting the non-positive fallback promise. The bands inside
 	// both boundary seconds count too. Fail the gating call instead of
 	// honoring or replacing a wait the store cannot keep.
-	if s := d.GetSeconds(); s > maxTimeoutSecs ||
-		(s == maxTimeoutSecs && d.GetNanos() > maxTimeoutNanos) ||
-		s < minTimeoutSecs ||
-		(s == minTimeoutSecs && d.GetNanos() < minTimeoutNanos) {
+	if !timeoutRepresentable(d.GetSeconds(), d.GetNanos()) {
 		return 0, fmt.Errorf("approvals: approval timeout %ds+%dns overflows time.Duration", d.GetSeconds(), d.GetNanos())
 	}
 	// The store requires expire_time after now, so a non-positive wait

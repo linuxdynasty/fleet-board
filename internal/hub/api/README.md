@@ -55,7 +55,7 @@ Export success counters and logs run only after read quota admission.
 `ListApprovals` checks its page cursor without loading approval rows, then
 charges one read before expiring due approvals and loading the result page
 in the same writer job. A bad cursor wins over an exhausted read allowance;
-an exhausted allowance leaves due approvals for the next expiry pass. New approvals stamp `expire_time` from the fleet layer's `spec.hub.approval_timeout` (`defaults.md`), falling back to 30 minutes when unset or non-positive; an unreadable settings layer fails the gating call closed instead of guessing an expiry; a wait time.Duration cannot represent in either direction (past ~292 years positive or negative) fails the call the same way instead of silently falling back or being honored.
+an exhausted allowance leaves due approvals for the next expiry pass. New approvals stamp `expire_time` from the fleet layer's `spec.hub.approval_timeout` (`defaults.md`), falling back to 30 minutes when unset or non-positive; an unreadable settings layer fails the gating call closed instead of guessing an expiry; a wait time.Duration cannot represent in either direction (past ~292 years positive or negative) fails the call the same way instead of silently falling back or being honored. The validated settings path refuses such a wait at write time, so only layers written outside validation can still carry one (and they still fail closed).
 Bulk list reads validate their filter, ordering and page token, then reserve
 read quota before loading or sorting stored rows. A spent allowance cannot
 force another full list scan. A rate-limited `CreateEnrollmentToken` call

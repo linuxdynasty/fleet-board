@@ -261,9 +261,10 @@ func TestGatedCommandHonorsBoundarySecond(t *testing.T) {
 // TestGatedCommandRefusesNegativeOverflowingTimeout: a hugely negative
 // timeout wraps AsDuration positive and would be honored as a ~284-year
 // wait, contradicting the non-positive fallback promise. It must fail
-// the gating call instead. Seeded straight to the store: the wrapped
-// positive also slips past the validated settings path, which only
-// rejects negative serializations.
+// the gating call instead. Seeded straight to the store, since the
+// validated settings path refuses it (see
+// TestUpdateSettingsRejectsUnrepresentableApprovalTimeout): this pins
+// the fail-closed half for layers written outside validation.
 func TestGatedCommandRefusesNegativeOverflowingTimeout(t *testing.T) {
 	t.Parallel()
 	e := newFleetEnv(t, localUser("alice"), trusted(false))
