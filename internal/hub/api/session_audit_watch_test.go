@@ -208,7 +208,8 @@ func TestKillWindowSendReplayRefusals(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
+			// Not parallel: the outbox assertion after the loop must run
+			// only after every refusal RPC has returned.
 			_, err := e.client.KillWindow(ctx, connect.NewRequest(tc.req))
 			if err == nil {
 				t.Fatal("call succeeded, want refusal")
