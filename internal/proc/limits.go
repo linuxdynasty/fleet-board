@@ -65,6 +65,11 @@ func (c Caller) Limits() Limits { return c.limits }
 //     restart stays in the same range, and a wedged manager hits the time
 //     cap instead of hanging the upgrade. Row 16 added it. Linux is not
 //     measured yet; its caps mirror macOS until they are.
+//   - hooks: the goal-hook verify runs (`python3 fleet-goal-hook.py
+//     <harness> --input-file <payload>`), 5 runs on macOS 27 (arm64), a
+//     loaded host: about 20 ms and under a kilobyte of output. Row 20
+//     added it. Capped at 5 s and 16 KiB, like `tmux`: headroom for a
+//     slow machine and a cold python3. Linux is not measured yet.
 var callers = map[string]Limits{
 	"tmux":     {Time: 5 * time.Second, Output: 16 << 10},
 	"loginctl": {Time: 5 * time.Second, Output: 4 << 10},
@@ -72,6 +77,7 @@ var callers = map[string]Limits{
 	"git":      {Time: 90 * time.Second, Output: 64 << 10},
 	"gh":       {Time: 30 * time.Second, Output: 8 << 10},
 	"service":  {Time: 5 * time.Second, Output: 4 << 10},
+	"hooks":    {Time: 5 * time.Second, Output: 16 << 10},
 }
 
 // For returns the caller with that name, or [ErrUnknownCaller] when the

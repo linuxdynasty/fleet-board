@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "hooks": {
+    "beforeSubmitPrompt": [
+      {
+        "command": "command -v python3 >/dev/null 2>&1 || exit 0; exec python3 \"/data/hooks/cursor/fleet-goal-hook.py\" cursor",
+        "timeout": 10
+      }
+    ],
+    "stop": [
+      {
+        "command": "command -v python3 >/dev/null 2>&1 || exit 0; exec python3 \"/data/hooks/cursor/fleet-goal-hook.py\" cursor",
+        "timeout": 10,
+        "loop_limit": 5
+      }
+    ]
+  }
+}

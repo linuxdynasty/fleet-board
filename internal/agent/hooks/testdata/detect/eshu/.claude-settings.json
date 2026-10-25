@@ -1,0 +1,11 @@
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {"matcher": "", "hooks": [{"type": "command", "command": "exec \"$r/.claude/hooks/goal-refresh.sh\""}]},
+      {"matcher": "claude-dispatch", "hooks": [{"type": "command", "command": "python3 \"$r/scripts/goal-role-router.py\" claude-dispatch"}]}
+    ],
+    "Stop": [
+      {"matcher": "", "hooks": [{"type": "command", "command": "exec \"$r/.claude/hooks/goal-continue.sh\""}]}
+    ]
+  }
+}

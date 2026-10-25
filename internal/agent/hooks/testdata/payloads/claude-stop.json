@@ -1,0 +1,9 @@
+{
+  "hook_event_name": "Stop",
+  "session_id": "@SESSION@",
+  "cwd": "@WORK@",
+  "stop_hook_active": false,
+  "last_assistant_message": "Done. The leak is fixed.",
+  "model": "opus",
+  "permission_mode": "acceptEdits"
+}
