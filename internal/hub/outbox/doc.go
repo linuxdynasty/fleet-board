@@ -38,5 +38,7 @@
 // Reads: [Lookup] serves one row to the API's GetOperation on the read
 // pool — never the writer — with the stored command (whose RequestedBy
 // is the full requesting principal) and the first result, when one
-// arrived.
+// arrived. [RecentCommands] lists one kind's rows for a machine since a
+// time inside the caller's job, for reconciles that must not re-send
+// what is in flight.
 package outbox

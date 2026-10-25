@@ -21,6 +21,9 @@
 // them, and the connection loop sends them on the stream. `run` also merges
 // saved hub settings under local policy, and executes only default-server F4
 // Interrupt commands through the durable command executor and observer.
+// `run` also binds the goal registry (internal/agent/goalregistry:
+// RegisterGoal and ReleaseGoal, capability goal.registry v1) and carries
+// it in the snapshot for the hub's reconcile.
 // `upgrade [--version TAG]`
 // fetches the release, checks its checksum, swaps the binary and restarts
 // the service (internal/release); a mismatch or an older release installs

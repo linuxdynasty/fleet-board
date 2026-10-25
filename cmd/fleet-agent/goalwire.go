@@ -10,6 +10,9 @@ import (
 
 	agentv1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/agent/v1"
 	"github.com/linuxdynasty/fleet-board/internal/agent/events"
+	"github.com/linuxdynasty/fleet-board/internal/agent/exec"
+	"github.com/linuxdynasty/fleet-board/internal/agent/goalfile"
+	"github.com/linuxdynasty/fleet-board/internal/agent/goalregistry"
 	"github.com/linuxdynasty/fleet-board/internal/agent/goals"
 	"github.com/linuxdynasty/fleet-board/internal/agent/repos"
 	"github.com/linuxdynasty/fleet-board/internal/agent/ring"
@@ -29,8 +32,23 @@ type goalsRun struct {
 	mu        sync.Mutex
 	refresher *repos.Refresher
 	tracker   *goals.Tracker
-	roots     func() []string
-	log       *telemetry.Telemetry
+	// reg is the fleet-goal registry (row 20 lane 3): RegisterGoal and
+	// ReleaseGoal bind it, hooks match against it, and the snapshot
+	// carries it. Its file and pane-checkout seams land with lane 1
+	// (board) and row 21 (StartGoal); until then those steps refuse
+	// instead of guessing.
+	reg   *goalregistry.Services
+	roots func() []string
+	log   *telemetry.Telemetry
+}
+
+// goalHandlers returns the registry command handlers, or nil without
+// tmux (no panes to bind).
+func (g *goalsRun) goalHandlers() []exec.Handler {
+	if g == nil || g.reg == nil {
+		return nil
+	}
+	return g.reg.Handlers()
 }
 
 // startGoals builds the refresher and the tracker. Roots come from the
@@ -56,13 +74,15 @@ func startGoals(tel *telemetry.Telemetry, machineID string, db *ring.DB, em *eve
 	refresher := repos.NewRefresher(repos.Config{
 		Roots: roots(), Git: repos.NewGit(runner, gitCaller), Forge: repos.NewForge(runner, ghCaller),
 	})
+	reg := goalregistry.NewServices(em.Emit, time.Now, goalfile.Writer{}, nil)
 	return &goalsRun{
 		refresher: refresher,
 		tracker: goals.NewTracker(goals.Config{
 			MachineID: machineID, Panes: &observerPanes{obs: tmx.obs}, Checkouts: refresher,
 			Procs: goals.GopsutilProcs{}, Files: goals.OSFiles{}, DB: db, Emit: em,
-			Captures: &observerCaptures{obs: tmx.obs},
+			Captures: &observerCaptures{obs: tmx.obs}, Bound: reg.IsBound,
 		}),
+		reg:   reg,
 		roots: roots,
 		log:   tel,
 	}, nil
@@ -146,6 +166,7 @@ func (g *goalsRun) snapshot(ctx context.Context, s *agentv1.Snapshot) error {
 		}
 	}
 	g.tracker.Fill(s)
+	g.reg.FillSnapshot(s)
 	if !g.tracker.ConditionsPrimed() {
 		if err := g.tracker.ScanConditions(ctx); err != nil {
 			return err

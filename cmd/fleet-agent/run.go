@@ -219,6 +219,10 @@ func runAgentWithDeps(ctx context.Context, dir, cfgDir, version, boot string, te
 	if h != nil {
 		handlers = append(handlers, h)
 	}
+	// The goal registry (row 20 lane 3): RegisterGoal and ReleaseGoal
+	// bind it; nil without tmux. Its file and pane-checkout seams land
+	// with lane 1 and row 21.
+	handlers = append(handlers, observed.goalHandlers()...)
 	ex, err = exec.New(exec.Options{
 		DB: db, Sender: loop, Clock: loop.HubClock(), Policy: sm,
 		Audit: pol.audit, Handlers: handlers, Telemetry: tel,
