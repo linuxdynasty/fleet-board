@@ -305,6 +305,44 @@ was live to wait out, provoking one would burn quota, and the wait itself is
 multi-day. `limit_resume_verified` stays false everywhere until a limit is
 caught on its own and the resume past the reset is seen.
 
+**Probe record 2026-10-25 (issue #59, plan item 0.14).** Re-arm verified on
+Codex 0.163.0 and on Muse 1.4.12 (in-TUI header showed 1.4.13; both noted).
+Resume after a usage limit still unprobed on all three: no limit was live to
+wait out (closest: Claude weekly all-models 94%, Codex weekly 2% left).
+
+Setup: `fleet-live-probe` skill, throwaway tmux servers (`-L probe59-*`,
+all killed at the end), one empty scratch folder per harness (all deleted),
+macOS tmux 3.8. Four one-line prompts spent in total (two per re-arm case);
+the usage reads sent no model prompt. Baselines: Codex `config.toml`, Muse
+`trust.json` and `settings.json`, a copy of `~/.claude.json`, the Cursor
+trust-dir listing. `auth.json` files, the keychain and `gh` auth were never
+opened.
+
+| Step | Observed |
+|---|---|
+| Codex 0.163.0 start in a fresh git repo | starts clean (the 0.162.1 `account/read` failure is gone); trust box read, trusted on purpose (throwaway folder only); passive "Update available 0.163.0 -> 0.164.0" banner, no blocking prompt and no daemon-settings prompt this start |
+| Codex `/status` | weekly limit 2% left, resets 1:42 PM Oct 30; model GPT-6.1-Sol low |
+| Codex "/goal Reply with exactly the words probe done and then stop" | "Goal active", model replied "probe done", footer "Goal achieved (6s)" |
+| "Approaching rate limits / Switch to gpt-6-luna?" picker | read, answered "Keep current model" (no persistent change; the "never show again" option avoided) |
+| Codex second `/goal` in the same session after DONE | "Goal active", "probe two", footer "Goal achieved (5s)": re-arm works |
+| Muse 1.4.12 trust box in a fresh git repo | read, trusted on purpose (throwaway folder only); passive "updated 1.4.11 -> 1.4.13" line, no action |
+| Muse first `/goal` | "Goal set", "probe done", "Completed goal 100%", footer "Goal (6s) 100%" |
+| Muse second `/goal` after DONE | "Goal set", "probe two", "Completed goal 100%", footer "Goal (3s) 100%": re-arm works on the new version |
+| Muse `/usage` | Current 3% (resets 3:40 AM), Weekly 77% (resets Oct 25 8:00 PM): no limit live |
+| Claude Code 2.1.303 start in an empty plain folder | trust box ("No, exit" default) read, trusted on purpose (throwaway folder only); ready with Sonnet 5.5, auto mode; passive "Update installed - Restart to update" line, no action |
+| Claude `/usage` | session 13% (resets 2:49 AM ET), weekly all-models 94% (resets Oct 26 9:59 PM ET), weekly Fable 32%, usage credits off, session totals $0.00: no limit live |
+
+**Cleanup:** all three servers killed; all scratch folders deleted;
+`cursor-agent` never started and its trust-dir listing is unchanged; Muse
+`trust.json` and `settings.json` match their baseline sha256; the Codex
+trust stanza was removed from `config.toml` (no `probe59` refs left; the
+sha still differs by Codex's own per-start counter write, as in the
+2026-10-10 probe); the Claude probe project entry was removed from
+`~/.claude.json` (valid JSON, no `probe59` refs; ambient self-writes from
+the run remain, as any start produces). No pane captures or logs kept;
+what stays in the owner's history is the four probe prompts plus the three
+usage reads.
+
 ## Scheduler explanations
 
 The scheduler records why it did not use something, at the narrowest scope, in
