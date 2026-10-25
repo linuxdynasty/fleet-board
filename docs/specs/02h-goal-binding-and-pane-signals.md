@@ -428,8 +428,8 @@ before anything is sent; if the version changed since, the agent's answer is
 the same reason and the hub falls back (Interrupt) and records it.
 
 Limit wait: resuming after a usage limit is still unprobed for any harness
-(2026-10-12 check: no limit live on Muse, Codex unusable, none provoked; see
-[03h](03h-goal-phases-in-depth.md#re-arm-after-done));
+(2026-10-25 check: no limit live anywhere (Codex weekly 2% left, Muse 77%,
+Claude all-models 94%; none provoked); see [03h](03h-goal-phases-in-depth.md#re-arm-after-done));
 `limit_resume_verified` is false everywhere until it is, and the hub marks
 the resume result unverified. When `HarnessCondition.resets_time` cannot be
 resolved, the hub re-checks the condition every 10 minutes and on each probe

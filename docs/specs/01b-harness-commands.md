@@ -477,12 +477,12 @@ Probed 2026-10-01 by typing `/goal` and `/goal ` without Enter, then bare
   how pause and resume are done, and the agent reports it as
   `HarnessInfo.goal_control` ([02h](02h-goal-binding-and-pane-signals.md#goal-control-support));
   the hub sends only what is listed and keeps no per-harness table. Resume
-  after a usage limit is still unprobed on any harness ([03h check 2026-10-12](03h-goal-phases-in-depth.md#re-arm-after-done)),
+  after a usage limit is still unprobed on any harness ([03h checks 2026-10-12 and 2026-10-25](03h-goal-phases-in-depth.md#re-arm-after-done)),
   so `limit_resume_verified` stays false until it is.
 - **Re-arm after completion** ([probe record](03h-goal-phases-in-depth.md#re-arm-after-done)):
   the hub re-arms a goal the owner says is not done with `/goal <text>` in the
-  same pane. Verified on Muse 1.4.6 (2026-10-12); Codex 0.162.1 would not
-  start that day, so a re-arm there is still marked unverified.
+  same pane. Verified on Muse 1.4.6 (2026-10-12) and 1.4.12 (2026-10-25),
+  and on Codex 0.163.0 (2026-10-25).
 - Hooks see `/goal` differently per harness (Claude fires `UserPromptSubmit`
   for it, Codex does not). Claude's hooks do not see an interrupt at all and
   Codex's `Interrupt` hook is notify-only; see
