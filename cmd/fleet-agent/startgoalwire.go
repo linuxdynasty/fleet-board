@@ -61,7 +61,7 @@ func (g *goalsRun) startgoalHandler() exec.Handler {
 	}
 	h, err := startgoal.NewHandler(deps)
 	if err != nil {
-		g.log.Logger.ErrorContext(context.Background(), "startgoal.unwired", "err_kind", "io")
+		g.log.Logger.ErrorContext(context.Background(), "startgoal.handler_failed", "err_kind", "io")
 		return nil
 	}
 	return h

@@ -340,7 +340,7 @@ func (g *goalsRun) runSpool(ctx context.Context) {
 		Files: goalfile.Writer{EnsureBoard: ensureBoard},
 	})
 	if err != nil {
-		g.log.Logger.ErrorContext(ctx, "spool.unwired", "err_kind", "io")
+		g.log.Logger.ErrorContext(ctx, "spool.tail_failed", "err_kind", "io")
 		return
 	}
 	_ = tail.Run(ctx)
