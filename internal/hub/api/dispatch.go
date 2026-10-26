@@ -231,6 +231,8 @@ func (f *Fleet) StartGoal(ctx context.Context, req *connect.Request[hubv1.StartG
 			apprAfter, apprSeq = approval, seq
 			resp = &hubv1.StartGoalResponse{Approval: approval.GetId()}
 			return nil
+		default:
+			// StartOK (and any future go-ahead outcome) proceeds to dispatch below.
 		}
 		goalID, err := ulid.New(now, f.random)
 		if err != nil {

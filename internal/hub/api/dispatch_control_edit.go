@@ -28,6 +28,7 @@ func (f *Fleet) applyEdit(ctx context.Context, mk *controlCommandKit, m *hubv1.C
 			typev1.ReasonCode_REASON_CODE_INVALID_ARGUMENT, "text is required for EDIT", nil,
 			[]*typev1.FieldViolation{{Field: "text", Description: "the new objective is required"}})
 	}
+	//nolint:gosec // G115: versions count up from 0, never negative.
 	if want := m.GetExpectedVersion(); want != 0 && want != uint64(ctl.row.Version) {
 		return statedb.GoalRow{}, nil, nil, apiError(connect.CodeFailedPrecondition,
 			typev1.ReasonCode_REASON_CODE_VERSION_MISMATCH,

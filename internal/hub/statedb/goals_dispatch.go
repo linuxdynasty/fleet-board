@@ -461,7 +461,7 @@ func LatestAttemptTx(ctx context.Context, tx *sql.Tx, workItem string) (uint32, 
 	if attempt < 0 {
 		return 0, "", fmt.Errorf("statedb: negative attempt for %q", workItem)
 	}
-	return uint32(attempt), id, nil //nolint:gosec // G115: attempts count up from 1
+	return uint32(attempt), id, nil
 }
 
 // ReadWorkItemRowTx reads one mirror row in the caller's transaction

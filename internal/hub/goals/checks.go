@@ -84,12 +84,6 @@ type Input struct {
 	RoutineNeedsSpareQuota   bool
 }
 
-// check names one failed finding before its severity is fixed.
-type check struct {
-	reason   typev1.ReasonCode
-	metadata map[string]string
-}
-
 // Evaluate runs the hub's own dispatch checks and returns one
 // PreflightCheck per failed finding, in table order (03h "Dispatch checks
 // and their severity"). The agent's failed_checks are all BLOCK and arrive
@@ -137,6 +131,8 @@ func Evaluate(in Input) []*hubv1.PreflightCheck {
 		emit(typev1.ReasonCode_REASON_CODE_ACCOUNT_NOT_DISPATCHABLE, block, map[string]string{"cause": in.AccountCause})
 	case AccountBlockedSpend:
 		emit(typev1.ReasonCode_REASON_CODE_ACCOUNT_NOT_DISPATCHABLE, confirm, map[string]string{"cause": in.AccountCause})
+	default:
+		// AccountOK emits no finding.
 	}
 	if in.HarnessUnsupported && in.HarnessParsingUnverified {
 		emit(typev1.ReasonCode_REASON_CODE_HARNESS_VERSION_UNSUPPORTED, confirm, map[string]string{"parsing": "unverified"})
@@ -220,6 +216,8 @@ func DecideStart(checks []*hubv1.PreflightCheck, acknowledged []typev1.ReasonCod
 			if !acked[c.GetCheck().GetReason()] {
 				d.Unacked = append(d.Unacked, c)
 			}
+		default:
+			// Unspecified and INFO severities decide nothing.
 		}
 	}
 	switch {

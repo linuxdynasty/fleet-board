@@ -67,12 +67,16 @@ func Allowed(action hubv1.GoalAction, phase hubv1.GoalPhase) bool {
 			hubv1.GoalPhase_GOAL_PHASE_WAITING,
 			hubv1.GoalPhase_GOAL_PHASE_LIMIT_WAIT:
 			return true
+		default:
+			return false
 		}
 	case hubv1.GoalAction_GOAL_ACTION_RESUME:
 		switch phase {
 		case hubv1.GoalPhase_GOAL_PHASE_PAUSED,
 			hubv1.GoalPhase_GOAL_PHASE_LIMIT_WAIT:
 			return true
+		default:
+			return false
 		}
 	case hubv1.GoalAction_GOAL_ACTION_EDIT:
 		// RUNNING where /goal edit exists; VERIFYING and DISAGREE as a
@@ -82,6 +86,8 @@ func Allowed(action hubv1.GoalAction, phase hubv1.GoalPhase) bool {
 			hubv1.GoalPhase_GOAL_PHASE_VERIFYING,
 			hubv1.GoalPhase_GOAL_PHASE_DISAGREE:
 			return true
+		default:
+			return false
 		}
 	case hubv1.GoalAction_GOAL_ACTION_CLEAR:
 		// Every live phase but STARTING.
@@ -94,9 +100,14 @@ func Allowed(action hubv1.GoalAction, phase hubv1.GoalPhase) bool {
 		case hubv1.GoalPhase_GOAL_PHASE_VERIFYING,
 			hubv1.GoalPhase_GOAL_PHASE_DISAGREE:
 			return true
+		default:
+			return false
 		}
 	case hubv1.GoalAction_GOAL_ACTION_MARK_NOT_STARTED:
 		return phase == hubv1.GoalPhase_GOAL_PHASE_START_UNKNOWN
+	default:
+		// Unspecified (and any future) actions are refused.
+		return false
 	}
 	return false
 }

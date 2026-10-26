@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -48,7 +49,7 @@ func (f *Fleet) dispatchConsent(ctx context.Context, tx *sql.Tx, in *hubv1.GoalS
 	}
 	stored, err := statedb.ReadAccountTx(ctx, tx, accountID)
 	if err != nil {
-		if err == statedb.ErrAccountUnknown {
+		if errors.Is(err, statedb.ErrAccountUnknown) {
 			return nil, nil, apiError(connect.CodeInvalidArgument,
 				typev1.ReasonCode_REASON_CODE_INVALID_ARGUMENT, "unknown account", nil,
 				[]*typev1.FieldViolation{{Field: "input.placement.account", Description: "unknown account"}})
@@ -140,7 +141,7 @@ func (f *Fleet) dispatchMachine(ctx context.Context, tx *sql.Tx, in *hubv1.GoalS
 	}
 	m, err := statedb.ReadMachineDispatchTx(ctx, tx, machineID)
 	if err != nil {
-		if err == statedb.ErrMachineUnknown {
+		if errors.Is(err, statedb.ErrMachineUnknown) {
 			return apiError(connect.CodeInvalidArgument,
 				typev1.ReasonCode_REASON_CODE_INVALID_ARGUMENT, "unknown machine", nil,
 				[]*typev1.FieldViolation{{Field: "input.placement.machine", Description: "unknown machine"}})
@@ -173,11 +174,14 @@ func (f *Fleet) dispatchMachine(ctx context.Context, tx *sql.Tx, in *hubv1.GoalS
 		var lspec hubv1.SettingsSpec
 		if err := protojson.Unmarshal([]byte(raw), &lspec); err == nil {
 			if vs := lspec.GetValues(); vs != nil {
-				if vs.MaxActive != nil {
-					maxActive = int64(*vs.MaxActive)
+				// Zero means unset and falls back to the defaults above:
+				// zero slots would run nothing, and draining the machine
+				// is the supported off switch.
+				if vs.GetMaxActive() != 0 {
+					maxActive = int64(vs.GetMaxActive())
 				}
-				if vs.MaxTotal != nil {
-					maxTotal = int64(*vs.MaxTotal)
+				if vs.GetMaxTotal() != 0 {
+					maxTotal = int64(vs.GetMaxTotal())
 				}
 			}
 		}
@@ -213,19 +217,21 @@ func (f *Fleet) dispatchIntegration(ctx context.Context, tx *sql.Tx, in *hubv1.G
 	id := in.GetWorkItem().GetIntegration().GetValue()
 	raw, err := statedb.ReadIntegrationStatusTx(ctx, tx, id)
 	if err != nil {
+		// Freshness cannot be proven without the row (missing or a
+		// read failure alike), so the pass warns instead of failing.
 		input.IntegrationLag = true
-		return nil
-	}
-	var st hubv1.IntegrationStatus
-	if err := protojson.Unmarshal([]byte(raw), &st); err != nil {
-		return fmt.Errorf("dispatch: read integration status: %w", err)
-	}
-	if st.GetHealth() == hubv1.IntegrationHealth_INTEGRATION_HEALTH_DEGRADED {
-		input.IntegrationDegraded = true
-	}
-	maxLag := f.maxSyncLag()
-	if lag := st.GetSyncLag().AsDuration(); lag > maxLag {
-		input.IntegrationLag = true
+	} else {
+		var st hubv1.IntegrationStatus
+		if err := protojson.Unmarshal([]byte(raw), &st); err != nil {
+			return fmt.Errorf("dispatch: read integration status: %w", err)
+		}
+		if st.GetHealth() == hubv1.IntegrationHealth_INTEGRATION_HEALTH_DEGRADED {
+			input.IntegrationDegraded = true
+		}
+		maxLag := f.maxSyncLag()
+		if lag := st.GetSyncLag().AsDuration(); lag > maxLag {
+			input.IntegrationLag = true
+		}
 	}
 	return nil
 }
@@ -255,6 +261,8 @@ func (f *Fleet) dispatchAccount(ctx context.Context, tx *sql.Tx, in *hubv1.GoalS
 			input.AccountBlocked = goals.AccountBlockedSpend
 			input.AccountCause = "dollar_cap"
 		}
+	default:
+		// Unspecified mode blocks nothing; usage checks below still apply.
 	}
 	readMs, parse, found, err := statedb.LatestUsageTx(ctx, tx, accountID)
 	if err != nil {

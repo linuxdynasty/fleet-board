@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -123,7 +124,7 @@ func (f *Fleet) gatherDispatchFacts(ctx context.Context, tx *sql.Tx, who *typev1
 	fx := &dispatchFacts{itemKey: workItemKeyOf(in)}
 	item, err := statedb.GetWorkItemStateTx(ctx, tx, fx.itemKey)
 	if err != nil {
-		if err == statedb.ErrWorkItemUnknown {
+		if errors.Is(err, statedb.ErrWorkItemUnknown) {
 			return nil, apiError(connect.CodeNotFound, typev1.ReasonCode_REASON_CODE_RESOURCE_NOT_FOUND,
 				"unknown work item", nil, nil)
 		}
@@ -150,7 +151,7 @@ func (f *Fleet) gatherDispatchFacts(ctx context.Context, tx *sql.Tx, who *typev1
 		input.WorkItemBusy = true
 	}
 	repo, err := statedb.ReadRepoTx(ctx, tx, in.GetRepo().GetHost(), in.GetRepo().GetPath())
-	if err != nil && err != statedb.ErrRepoUnknown {
+	if err != nil && !errors.Is(err, statedb.ErrRepoUnknown) {
 		return nil, fmt.Errorf("dispatch: read repo: %w", err)
 	}
 	var spec hubv1.RepoSpec
