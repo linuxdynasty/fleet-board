@@ -45,7 +45,7 @@ func TestModelEffortClear(t *testing.T) {
 	for _, c := range typer.calls {
 		got = append(got, c.command)
 	}
-	want := []string{"/model", "/effort", "/clear", "/goal migrate the parser (consent: push)"}
+	want := []string{"/model", "/effort", "/clear", "/goal"}
 	if len(got) != len(want) {
 		t.Fatalf("typed = %v; want %v", got, want)
 	}

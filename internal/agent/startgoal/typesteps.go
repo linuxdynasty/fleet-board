@@ -126,8 +126,11 @@ func (r *Runner) typeGoal(ctx context.Context, st *state) *agentv1.CommandResult
 		return failed(typev1.ReasonCode_REASON_CODE_GOAL_SUBCOMMAND_UNSUPPORTED, false, nil,
 			"startgoal: the harness has no goal subcommand")
 	}
-	if res := r.d.Typer.Type(ctx, st.pane, line,
-		typev1.CommandClass_COMMAND_CLASS_GOAL, ""); res != nil {
+	// The catalog matches the bare command name; the objective rides as
+	// args, which RunHarnessCommand appends after a space.
+	args := strings.TrimSpace(strings.TrimPrefix(line, "/goal"))
+	if res := r.d.Typer.Type(ctx, st.pane, "/goal",
+		typev1.CommandClass_COMMAND_CLASS_GOAL, args); res != nil {
 		return res
 	}
 	st.typedLine = line

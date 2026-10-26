@@ -92,7 +92,8 @@ func TestReuseHappyPath(t *testing.T) {
 			t.Fatalf("steps = %v; want %v", got, wantSteps)
 		}
 	}
-	if len(typer.calls) != 1 || typer.calls[0].command != "/goal migrate the parser (consent: push)" {
+	if len(typer.calls) != 1 || typer.calls[0].command != "/goal" ||
+		typer.calls[0].args != "migrate the parser (consent: push)" {
 		t.Fatalf("typed = %+v", typer.calls)
 	}
 	if len(cap.started) != 1 || cap.started[0] != "goal1" {

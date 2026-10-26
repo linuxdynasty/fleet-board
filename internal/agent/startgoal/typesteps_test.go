@@ -1,8 +1,10 @@
 package startgoal
 
 import (
+	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -28,5 +30,38 @@ func TestSameDirResolvesSymlinks(t *testing.T) {
 	}
 	if sameDir("", "") || sameDir("", target) || sameDir(target, "") {
 		t.Fatalf("sameDir with an empty side = true; want false")
+	}
+}
+
+func TestTypeGoalSplitsCatalogNameAndArgs(t *testing.T) {
+	t.Parallel()
+	panes := reusePanes("")
+	d, typer, _, _, _, tmp := testDeps(t, panes)
+	checkout := tmp + "/checkout"
+	d = withWindows(d, testPane())
+	r, err := New(d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	st, res := r.open(quickCmd(testSpec(checkout), nil))
+	if res != nil {
+		t.Fatalf("open = %v; want nil", res)
+	}
+	st.pane = testPane()
+	if res := r.typeGoal(context.Background(), st); res != nil {
+		t.Fatalf("typeGoal = %v; want nil", res)
+	}
+	if len(typer.calls) != 1 {
+		t.Fatalf("typed calls = %d; want 1", len(typer.calls))
+	}
+	c := typer.calls[0]
+	if c.command != "/goal" {
+		t.Fatalf("typed command = %q; want %q (the catalog name, not the whole line)", c.command, "/goal")
+	}
+	if !strings.Contains(c.args, "migrate the parser") {
+		t.Fatalf("typed args = %q; want the objective", c.args)
+	}
+	if !strings.HasPrefix(st.typedLine, "/goal ") {
+		t.Fatalf("typedLine = %q; want the full goal line for evidence", st.typedLine)
 	}
 }

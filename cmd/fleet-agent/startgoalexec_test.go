@@ -168,3 +168,21 @@ func TestEnsureScratchDir(t *testing.T) {
 		t.Fatalf("scratch failure = %+v; want passthrough", res)
 	}
 }
+
+func TestOkResultMapsSuccessToNil(t *testing.T) {
+	t.Parallel()
+	if got := okResult(&agentv1.CommandResult{Status: typev1.Status_STATUS_OK}); got != nil {
+		t.Fatalf("okResult(OK) = %+v; want nil (nil is the Typer's success)", got)
+	}
+	failed := &agentv1.CommandResult{Status: typev1.Status_STATUS_FAILED}
+	if got := okResult(failed); got != failed {
+		t.Fatalf("okResult(FAILED) = %+v; want passthrough", got)
+	}
+	unknown := &agentv1.CommandResult{Status: typev1.Status_STATUS_UNKNOWN_OUTCOME}
+	if got := okResult(unknown); got != unknown {
+		t.Fatalf("okResult(UNKNOWN_OUTCOME) = %+v; want passthrough (the runner must not replay it)", got)
+	}
+	if got := okResult(nil); got != nil {
+		t.Fatalf("okResult(nil) = %+v; want nil", got)
+	}
+}

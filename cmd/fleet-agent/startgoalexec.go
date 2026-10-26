@@ -238,10 +238,20 @@ func (t *goalTyper) Type(ctx context.Context, pane *typev1.PaneKey, command stri
 			Message: "startgoal: no goal bound to that pane",
 		}
 	}
-	return e.RunHarnessCommand(ctx, &agentv1.RunHarnessCommand{
+	return okResult(e.RunHarnessCommand(ctx, &agentv1.RunHarnessCommand{
 		Pane: pane, Command: command, ExpectedClass: class, Args: args,
 		CatalogHash: control.CatalogHash(entry.GetHarness().GetName()),
-	})
+	}))
+}
+
+// okResult honors the Typer contract: a STATUS_OK RunHarnessCommand
+// result is success, so it maps to nil; anything else (a refusal, an
+// UNKNOWN_OUTCOME the runner must not replay) passes through unchanged.
+func okResult(res *agentv1.CommandResult) *agentv1.CommandResult {
+	if res.GetStatus() == typev1.Status_STATUS_OK {
+		return nil
+	}
+	return res
 }
 
 // styledScreens reads styled pane screens for wait_ready: escapes kept,
