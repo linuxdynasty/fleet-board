@@ -141,6 +141,14 @@ match rule), keeps the backup, and deletes the scripts. Upgrades of the agent
 re-run step 3; a hash change is shown in the Machines view, never applied
 silently to a running goal.
 
+## Agent-side seam (row 20)
+
+The agent renders every harness file from one shared definition
+(EnsureGoalHooks) and verifies the scripts with synthetic payloads. The
+hook reads its entry from the registry file (FLEET_GOAL_REGISTRY, else the
+data-directory default) and spools mapping and turn-end events beside it;
+GoalHooksState reports hook_version, hook_hash and verified.
+
 ## Who writes the goal file
 
 Probe result: Codex does not fire `UserPromptSubmit` for `/goal …` lines, so a

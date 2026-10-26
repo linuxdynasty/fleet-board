@@ -9,6 +9,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	agentv1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/agent/v1"
+	typev1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/type/v1"
 	"github.com/linuxdynasty/fleet-board/internal/hub/ingest"
 )
 
@@ -53,6 +54,38 @@ func TestEventInKeepsNeverDropReplaysAndUnknownClasses(t *testing.T) {
 	if err := proto.Unmarshal(in.Body, &back); err != nil || in.Kind != "unknown" ||
 		!strings.Contains(string(back.ProtoReflect().GetUnknown()), "future") {
 		t.Errorf("unknown arm: kind %s, body %x (%v), want the arm's bytes kept", in.Kind, in.Body, err)
+	}
+}
+
+// The hook event fields (E8, E9, G5) are cut to their caps: harness
+// session ids and raw event names are untrusted hook text, and the
+// registry carries a machine path and a free harness name.
+func TestCleanEventCutsHookText(t *testing.T) {
+	t.Parallel()
+	hook := &agentv1.Event{Body: &agentv1.Event_HarnessHook{HarnessHook: &agentv1.HarnessHookEvent{
+		HarnessSessionId: "sess\x00" + strings.Repeat("s", 1<<20),
+		RawEventName:     "stop\x1b" + strings.Repeat("r", 1<<20),
+	}}}
+	c := ingest.CleanEvent(hook)
+	got := hook.GetHarnessHook()
+	if len(got.GetHarnessSessionId()) > 256 || strings.Contains(got.GetHarnessSessionId(), "\x00") {
+		t.Errorf("session %d bytes, cleaned %+v", len(got.GetHarnessSessionId()), c)
+	}
+	if len(got.GetRawEventName()) > 128 || strings.Contains(got.GetRawEventName(), "\x1b") {
+		t.Errorf("raw name %d bytes, cleaned %+v", len(got.GetRawEventName()), c)
+	}
+	reg := &agentv1.Event{Body: &agentv1.Event_GoalRegistry{GoalRegistry: &agentv1.GoalRegistryChanged{
+		Registration: &agentv1.GoalRegistration{
+			Harness:          &typev1.Harness{Name: "codex\x00" + strings.Repeat("c", 1<<20)},
+			WorktreePath:     "/wt\x00" + strings.Repeat("w", 1<<20),
+			HarnessSessionId: "sess\x00" + strings.Repeat("s", 1<<20),
+		},
+	}}}
+	ingest.CleanEvent(reg)
+	entry := reg.GetGoalRegistry().GetRegistration()
+	if len(entry.GetHarness().GetName()) > 256 || len(entry.GetWorktreePath()) > 1024 ||
+		len(entry.GetHarnessSessionId()) > 256 || strings.Contains(entry.GetWorktreePath(), "\x00") {
+		t.Errorf("registry entry not cut: %+v", entry)
 	}
 }
 

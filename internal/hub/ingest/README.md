@@ -78,10 +78,12 @@ p, err := ingest.SubmitEvent(ctx, st, in, ev, eventAppliers) // never waits for 
 err = <-p.Result()                                // in submission order; then p.Out()
 ```
 
-- **`CleanEvent`** cuts the two free-text Event fields the agent writes
+- **`CleanEvent`** cuts the free-text Event fields the agent writes
   (`UsageReading.parse_message`, 1 KiB; `ProbeHealth.message`, 256 bytes;
-  row 5 ruling fork 9) to their cap, then scrubs them. Other strings are
-  the applying row's to clean, as for `Clean`.
+  row 5 ruling fork 9; row 20: the hook session ids and raw event names,
+  and the registry's harness name, machine path and session id) to their
+  cap, then scrubs them. Other strings are the applying row's to clean,
+  as for `Clean`.
 - **`EventIn`** encodes the cleaned Event as protobuf wire bytes (an arm
   this hub has no name for is kept whole; `EventKind` names it `unknown`)
   and decides the history row: every NEVER_DROP event, every replayed one

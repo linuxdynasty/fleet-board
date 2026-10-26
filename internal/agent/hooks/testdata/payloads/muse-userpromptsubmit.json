@@ -1,0 +1,10 @@
+{
+  "hook_event_name": "UserPromptSubmit",
+  "session_id": "@SESSION@",
+  "turn_id": "turn-1",
+  "cwd": "@WORK@",
+  "prompt": "/goal Work acme/repo#12 on branch fleet/12: fix the leak.",
+  "model": "muse-spark-1.3",
+  "permission_mode": "default",
+  "transcript_path": null
+}

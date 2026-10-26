@@ -1,0 +1,11 @@
+{
+  "hook_event_name": "Stop",
+  "session_id": "@SESSION@",
+  "turn_id": "turn-2",
+  "cwd": "@WORK@",
+  "stop_hook_active": false,
+  "last_assistant_message": "Done.",
+  "model": "muse-spark-1.3",
+  "permission_mode": "default",
+  "transcript_path": null
+}

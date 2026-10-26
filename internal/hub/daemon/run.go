@@ -17,6 +17,7 @@ import (
 	"github.com/linuxdynasty/fleet-board/internal/hub/config"
 	"github.com/linuxdynasty/fleet-board/internal/hub/discovery"
 	"github.com/linuxdynasty/fleet-board/internal/hub/gateway"
+	"github.com/linuxdynasty/fleet-board/internal/hub/hookreconcile"
 	"github.com/linuxdynasty/fleet-board/internal/hub/housekeeping"
 	"github.com/linuxdynasty/fleet-board/internal/hub/ingest"
 	"github.com/linuxdynasty/fleet-board/internal/hub/lock"
@@ -418,15 +419,14 @@ func stopAll(ls []listener) error {
 // bind opens the agent, API and (when set) metrics listeners, in that
 // order, and returns the agent listener's server too.
 func bind(ctx context.Context, cfg *config.Config, opts Options, d hubDeps, sysLoop *system.Loop, s *session) ([]listener, *gateway.Server, *api.Fleet, error) {
-	// Row 9 stores the observed goals (03k): the snapshot and event
-	// appliers run in the stream's writer jobs.
+	// Row 9 stores the observed goals (03k); row 20 reconciles goal hooks (03h) the same way.
 	now := time.Now
 	if opts.Now != nil {
 		now = opts.Now
 	}
 	agent, err := gateway.NewServer(gateway.ServerOptions{
 		Certs: d.certs, Store: d.st, Identity: d.id, Revoked: d.revoked, Telemetry: s.tel, Now: opts.Now,
-		Appliers:      []ingest.Applier{observed.Applier{Now: now}},
+		Appliers:      []ingest.Applier{observed.Applier{Now: now}, hookreconcile.Applier{Now: now, Expected: hookreconcile.ExpectedVersions()}},
 		EventAppliers: []ingest.EventApplier{observed.Applier{Now: now}},
 	})
 	if err != nil {

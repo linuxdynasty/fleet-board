@@ -179,7 +179,7 @@ func runAgentWithDeps(ctx context.Context, dir, cfgDir, version, boot string, te
 	// attributes the goal files: its GoalState events travel on the
 	// stream, its repos and goals in every Snapshot.
 	roots := func() []string { return pol.mgr.Policy().AllowedRepoRoots }
-	observed, err := startGoals(tel, id.MachineID, db, em, tmx, roots)
+	observed, err := startGoals(tel, id.MachineID, db, em, tmx, roots, dir)
 	if err != nil {
 		return failed("goals", err)
 	}
@@ -217,6 +217,16 @@ func runAgentWithDeps(ctx context.Context, dir, cfgDir, version, boot string, te
 	}
 	var handlers []exec.Handler
 	if h != nil {
+		handlers = append(handlers, h)
+	}
+	// The goal registry (row 20 lane 3): RegisterGoal and ReleaseGoal
+	// bind it; nil without tmux. Its pane-checkout seam lands with
+	// row 21.
+	handlers = append(handlers, observed.goalHandlers()...)
+	// The worktree/scratch manager (row 20 lane 1: H2/F7) and the
+	// hook installer (row 20 lane 2: G1) bind here; nil without tmux.
+	handlers = append(handlers, observed.worktreeHandlers()...)
+	if h := observed.goalHooksHandler(); h != nil {
 		handlers = append(handlers, h)
 	}
 	ex, err = exec.New(exec.Options{

@@ -2,19 +2,27 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	agentv1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/agent/v1"
+	typev1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/type/v1"
 	"github.com/linuxdynasty/fleet-board/internal/agent/events"
+	"github.com/linuxdynasty/fleet-board/internal/agent/exec"
+	"github.com/linuxdynasty/fleet-board/internal/agent/goalfile"
+	"github.com/linuxdynasty/fleet-board/internal/agent/goalregistry"
 	"github.com/linuxdynasty/fleet-board/internal/agent/goals"
+	"github.com/linuxdynasty/fleet-board/internal/agent/hooks"
 	"github.com/linuxdynasty/fleet-board/internal/agent/repos"
 	"github.com/linuxdynasty/fleet-board/internal/agent/ring"
 	"github.com/linuxdynasty/fleet-board/internal/agent/tmux"
 	"github.com/linuxdynasty/fleet-board/internal/agent/tmux/inventory"
+	"github.com/linuxdynasty/fleet-board/internal/agent/worktree"
 	"github.com/linuxdynasty/fleet-board/internal/proc"
 	"github.com/linuxdynasty/fleet-board/internal/telemetry"
 )
@@ -29,14 +37,34 @@ type goalsRun struct {
 	mu        sync.Mutex
 	refresher *repos.Refresher
 	tracker   *goals.Tracker
-	roots     func() []string
-	log       *telemetry.Telemetry
+	// reg is the fleet-goal registry (row 20 lane 3): RegisterGoal and
+	// ReleaseGoal bind it, hooks match against it, and the snapshot
+	// carries it. Its pane-checkout seam (live-pane InUse) lands with
+	// row 21 (StartGoal); until then that step refuses instead of
+	// guessing.
+	reg *goalregistry.Services
+	// boardMgr runs the H2/F7 filesystem commands (row 20 lane 1) and
+	// hookHandler the G1 hook installs (row 20 lane 2); both resolve
+	// repo short names through the checkout table under the run mutex.
+	boardMgr    *worktree.Manager
+	hookHandler exec.Handler
+	roots       func() []string
+	log         *telemetry.Telemetry
+}
+
+// goalHandlers returns the registry command handlers, or nil without
+// tmux (no panes to bind).
+func (g *goalsRun) goalHandlers() []exec.Handler {
+	if g == nil || g.reg == nil {
+		return nil
+	}
+	return g.reg.Handlers()
 }
 
 // startGoals builds the refresher and the tracker. Roots come from the
 // policy on every tick; nil without tmux.
 func startGoals(tel *telemetry.Telemetry, machineID string, db *ring.DB, em *events.Emitter,
-	tmx tmuxRun, roots func() []string,
+	tmx tmuxRun, roots func() []string, stateDir string,
 ) (*goalsRun, error) {
 	if tmx.obs == nil {
 		return nil, nil
@@ -56,16 +84,79 @@ func startGoals(tel *telemetry.Telemetry, machineID string, db *ring.DB, em *eve
 	refresher := repos.NewRefresher(repos.Config{
 		Roots: roots(), Git: repos.NewGit(runner, gitCaller), Forge: repos.NewForge(runner, ghCaller),
 	})
-	return &goalsRun{
+	reg := goalregistry.NewServices(em.Emit, time.Now, goalfile.Writer{EnsureBoard: ensureBoard}, nil)
+	g := &goalsRun{
 		refresher: refresher,
 		tracker: goals.NewTracker(goals.Config{
 			MachineID: machineID, Panes: &observerPanes{obs: tmx.obs}, Checkouts: refresher,
 			Procs: goals.GopsutilProcs{}, Files: goals.OSFiles{}, DB: db, Emit: em,
-			Captures: &observerCaptures{obs: tmx.obs},
+			Captures: &observerCaptures{obs: tmx.obs}, Bound: reg.IsBound,
 		}),
+		reg:   reg,
 		roots: roots,
 		log:   tel,
-	}, nil
+	}
+	// Repo short names resolve through the checkout table under the run
+	// mutex: the table is rebuilt on the tick goroutine while commands
+	// resolve on the exec goroutines.
+	lookup := func(repo *typev1.RepoRef) (string, error) {
+		g.mu.Lock()
+		defer g.mu.Unlock()
+		if top, ok := refresher.LookupRepo(repo.GetHost(), repo.GetPath()); ok {
+			return top, nil
+		}
+		return "", fmt.Errorf("worktree: no local checkout of %s/%s", repo.GetHost(), repo.GetPath())
+	}
+	mgr, err := worktree.New(worktree.Config{
+		Runner: runner, Caller: gitCaller, Roots: roots,
+		LookupRepo: lookup,
+		StateDir:   func() string { return stateDir },
+	})
+	if err != nil {
+		return nil, err
+	}
+	g.boardMgr = mgr
+	home, _ := os.UserHomeDir() // empty when unresolvable; the G1 handler refuses without a home
+	g.hookHandler = hooks.NewHandler(hooks.Config{
+		Home: home, DataDir: stateDir, Lookup: lookup,
+	})
+	return g, nil
+}
+
+// worktreeHandlers returns the H2/F7 filesystem handlers, or nil without
+// tmux (there are no checkouts to make or prune).
+func (g *goalsRun) worktreeHandlers() []exec.Handler {
+	if g == nil || g.boardMgr == nil {
+		return nil
+	}
+	return g.boardMgr.Handlers()
+}
+
+// goalHooksHandler returns the G1 hook-install handler, or nil without
+// tmux.
+func (g *goalsRun) goalHooksHandler() exec.Handler {
+	if g == nil {
+		return nil
+	}
+	return g.hookHandler
+}
+
+// ensureBoard wires the lane-1 bootstrap into the goal-file writer,
+// translating its refusals to the goalfile errors the handlers map to
+// the 01d2 metadata (Why): a foreign board stays foreign and a non-plain
+// board stays non-plain, whatever the package that detected it.
+func ensureBoard(workdir string) (string, bool, error) {
+	board, created, err := worktree.EnsureBoardDir(workdir)
+	switch {
+	case err == nil:
+		return board, created, nil
+	case errors.Is(err, worktree.ErrDirNotPlain):
+		return "", false, fmt.Errorf("goalfile: board refused: %w", goalfile.ErrDirNotPlain)
+	case errors.Is(err, worktree.ErrDirForeign):
+		return "", false, fmt.Errorf("goalfile: board refused: %w", goalfile.ErrDirForeign)
+	default:
+		return "", false, err
+	}
 }
 
 // observerCaptures reads goal panes' screens for the condition observer
@@ -146,6 +237,7 @@ func (g *goalsRun) snapshot(ctx context.Context, s *agentv1.Snapshot) error {
 		}
 	}
 	g.tracker.Fill(s)
+	g.reg.FillSnapshot(s)
 	if !g.tracker.ConditionsPrimed() {
 		if err := g.tracker.ScanConditions(ctx); err != nil {
 			return err

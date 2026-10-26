@@ -1,0 +1,6 @@
+{
+  "hook_event_name": "Stop",
+  "session_id": "@SESSION@",
+  "cwd": "@WORK@",
+  "last_assistant_message": "Goal achieved."
+}

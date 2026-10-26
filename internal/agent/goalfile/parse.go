@@ -91,6 +91,11 @@ func Parse(data []byte) File {
 // is cut to maxLineBytes on a rune boundary.
 func clean(s string) string { return cut(s, maxLineBytes) }
 
+// Clean caps any untrusted hook or file text the same way, to limit
+// bytes: the registry's harness session ids are cleaned at this
+// boundary, never logged raw.
+func Clean(s string, limit int) string { return cut(s, limit) }
+
 // cut drops control characters like clean and cuts to limit bytes on a
 // rune boundary.
 func cut(s string, limit int) string {

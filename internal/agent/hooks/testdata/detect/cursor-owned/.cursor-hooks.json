@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "hooks": {
+    "beforeSubmitPrompt": [
+      {"command": "python3 \"${CURSOR_PROJECT_DIR:-.}/scripts/cursor-hook.py\" beforeSubmitPrompt .claude/hooks/goal-refresh.sh"}
+    ],
+    "stop": [
+      {"command": "python3 \"${CURSOR_PROJECT_DIR:-.}/scripts/cursor-hook.py\" stop .claude/hooks/goal-continue.sh"}
+    ]
+  }
+}

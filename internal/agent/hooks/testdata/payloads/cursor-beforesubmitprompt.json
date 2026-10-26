@@ -1,0 +1,10 @@
+{
+  "hook_event_name": "beforeSubmitPrompt",
+  "session_id": "@SESSION@",
+  "conversation_id": "@SESSION@",
+  "generation_id": "gen-1",
+  "workspace_roots": ["@WORK@"],
+  "prompt": "/goal Work acme/repo#12 on branch fleet/12: fix the leak.",
+  "model": "cursor",
+  "transcript_path": null
+}
