@@ -48,11 +48,11 @@ func (a Applier) window() time.Duration {
 // goal rows (it writes commands, not goals). A SQL failure rolls the
 // snapshot back like any applier error; an unparsable stored row is the
 // owning row's corruption and equally loud.
-func (a Applier) Apply(ctx context.Context, tx *sql.Tx, machineID string, snap *agentv1.Snapshot) ([]statedb.GoalRow, error) {
+func (a Applier) Apply(ctx context.Context, tx *sql.Tx, machineID string, snap *agentv1.Snapshot) ([]statedb.GoalRow, []statedb.WorkItemRow, error) {
 	now := a.now()
 	stored, err := statedb.ListHookRepos(ctx, tx)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	repos := make([]Repo, 0, len(stored))
 	for _, r := range stored {
@@ -60,12 +60,12 @@ func (a Applier) Apply(ctx context.Context, tx *sql.Tx, machineID string, snap *
 	}
 	live, err := statedb.LiveGoalHarnesses(ctx, tx, machineID)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	window := a.window()
 	recent, err := outbox.RecentCommands(ctx, tx, machineID, "ensure_goal_hooks", now.Add(-window))
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	in := SnapshotInput(snap, repos, a.Expected, sentKeys(recent, a.Expected), now, window)
 	// The hub's own live goals guard too: a stale registry entry is not
@@ -76,10 +76,10 @@ func (a Applier) Apply(ctx context.Context, tx *sql.Tx, machineID string, snap *
 	for _, w := range Decide(in) {
 		cmd := CommandFor(w, a.Expected[w.Key.Harness])
 		if _, err := outbox.Enqueue(ctx, tx, outbox.In{MachineID: machineID, Command: cmd, Now: now}); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
-	return nil, nil
+	return nil, nil, nil
 }
 
 // sentKeys folds recent sends into the throttle map: only in-flight

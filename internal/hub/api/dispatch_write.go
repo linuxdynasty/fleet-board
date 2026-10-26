@@ -104,7 +104,10 @@ func (f *Fleet) insertDispatchTx(ctx context.Context, tx *sql.Tx, who *typev1.Pr
 	if err := statedb.SetWorkItemGoalStage(ctx, tx, fx.itemKey, int32(stage), int32(reason), st.HubSeq); err != nil {
 		return statedb.GoalRow{}, nil, outbox.Op{}, fmt.Errorf("dispatch: stage work item: %w", err)
 	}
-	if err := logRequest(ctx, tx, who.GetId().GetValue(), requestID, op.CommandID, dispatchHash(in), now); err != nil {
+	// The replay check hashes the whole request, so the log must too: a
+	// GoalSpecInput hashes differently, and every identical retry would
+	// read back as a conflict.
+	if err := logRequest(ctx, tx, who.GetId().GetValue(), requestID, op.CommandID, dispatchHash(m), now); err != nil {
 		return statedb.GoalRow{}, nil, outbox.Op{}, err
 	}
 	if _, err := statedb.AppendAudit(ctx, tx, statedb.AuditEntry{
@@ -230,7 +233,7 @@ func (f *Fleet) raiseDispatchConfirm(ctx context.Context, tx *sql.Tx, who *typev
 	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO request_log(principal_id, request_id, command_id, approval_id, request_hash, create_time)
 		VALUES (?, ?, '', ?, ?, ?)`, who.GetId().GetValue(), requestID,
-		created.GetId().GetValue(), dispatchHash(in), now.UnixMilli()); err != nil {
+		created.GetId().GetValue(), dispatchHash(m), now.UnixMilli()); err != nil {
 		return nil, 0, fmt.Errorf("dispatch: log confirm: %w", err)
 	}
 	// No audit row on raise: like every command gate, the audit lands

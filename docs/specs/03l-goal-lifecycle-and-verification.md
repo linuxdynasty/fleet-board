@@ -74,6 +74,7 @@ stateDiagram-v2
   LIMIT_WAIT --> RUNNING: resumed at limit_wait_until_time (03h)
   LIMIT_WAIT --> PAUSED: operator pause (cancels the automatic resume)
   PAUSED --> LIMIT_WAIT: pause ended, limit still showing
+  STARTING --> RUNNING: agent WORKING (registry pass, row 22)
   RUNNING --> VERIFYING: DONE
   VERIFYING --> MERGED: change request merged or work item closed as done
   VERIFYING --> DISAGREE: open after verify_grace (triage)
@@ -94,6 +95,14 @@ stateDiagram-v2
 Where the diagram draws `RUNNING` as the source of pause, clear or a provider
 change, the exact source phases are the control table below and, for a human
 merge or a close, [03h](03h-goal-phases-in-depth.md#provider-side-changes-under-a-live-goal).
+
+The `STARTING --> RUNNING` and `RUNNING --> VERIFYING` edges are driven
+by the registry pass (row 22): the agent's `REGISTRY` goal states in a
+Snapshot or `goal_state` event move the goal inside the ingest
+transaction, and the `DONE` edge runs the verifier there too, so the
+claim settles against the code-host mirror in the same commit. Every
+move audits `goal.state_change` and stages the work item beside it; a
+repeated sighting writes nothing.
 
 ### Phase classes
 

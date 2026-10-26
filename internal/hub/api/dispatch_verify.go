@@ -96,7 +96,18 @@ func (f *Fleet) applyHubControl(ctx context.Context, tx *sql.Tx, who *typev1.Pri
 func (f *Fleet) moveControlGoal(ctx context.Context, tx *sql.Tx, ctl *controlGoal,
 	tr statedb.GoalTransition, actor statedb.Actor, auditAction string, nowMs int64,
 ) (statedb.GoalRow, error) {
+	// The caller's status wins when it carries one: pause, resume, clear,
+	// edit and not-done write their metadata (who paused, review baseline,
+	// new objective) into tr.Status before the move. Hub-only moves pass
+	// none and keep the stored status with the phase applied.
 	status := cloneGoalStatus(ctl.status)
+	if tr.Status != "" {
+		var supplied hubv1.GoalStatus
+		if err := protojson.Unmarshal([]byte(tr.Status), &supplied); err != nil {
+			return statedb.GoalRow{}, fmt.Errorf("dispatch: decode control status: %w", err)
+		}
+		status = &supplied
+	}
 	applyStatusMove(status, tr)
 	raw, err := protojson.Marshal(status)
 	if err != nil {

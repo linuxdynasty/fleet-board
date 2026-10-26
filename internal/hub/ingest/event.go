@@ -26,8 +26,9 @@ import (
 type EventApplier interface {
 	// ApplyEvent runs the row's part of an Event job and returns the
 	// stamped goal after-images it wrote, as [Applier.Apply] does for a
-	// Snapshot job.
-	ApplyEvent(ctx context.Context, tx *sql.Tx, machineID string, out statedb.EventOut, ev *agentv1.Event) ([]statedb.GoalRow, error)
+	// Snapshot job, plus the stamped work-item after-images it wrote
+	// beside a goal move for the same Watch publish.
+	ApplyEvent(ctx context.Context, tx *sql.Tx, machineID string, out statedb.EventOut, ev *agentv1.Event) ([]statedb.GoalRow, []statedb.WorkItemRow, error)
 }
 
 // EventKind is the bounded name of ev's body arm: the oneof field name, or
@@ -82,7 +83,7 @@ func EventIn(s Stream, ev *agentv1.Event, prev uint64, now time.Time) (statedb.E
 // on the writer in commit order with what the job stamped, and a nil
 // onCommit submits a plain job.
 func SubmitEvent(ctx context.Context, st *store.Store, in statedb.EventIn, ev *agentv1.Event,
-	appliers []EventApplier, onCommit func(out statedb.EventOut, goals []statedb.GoalRow),
+	appliers []EventApplier, onCommit func(out statedb.EventOut, goals []statedb.GoalRow, items []statedb.WorkItemRow),
 ) (*EventPending, error) {
 	jctx := context.WithoutCancel(ctx)
 	p := &EventPending{}
@@ -97,10 +98,12 @@ func SubmitEvent(ctx context.Context, st *store.Store, in statedb.EventIn, ev *a
 		}
 		for i, a := range appliers {
 			var goals []statedb.GoalRow
-			if goals, err = applyEvent(jctx, tx, a, in.MachineID, p.out, ev); err != nil {
+			var items []statedb.WorkItemRow
+			if goals, items, err = applyEvent(jctx, tx, a, in.MachineID, p.out, ev); err != nil {
 				return fmt.Errorf("%w: event applier %d: %w", ErrApplier, i, err)
 			}
 			p.goals = append(p.goals, goals...)
+			p.items = append(p.items, items...)
 		}
 		return nil
 	}
@@ -108,7 +111,7 @@ func SubmitEvent(ctx context.Context, st *store.Store, in statedb.EventIn, ev *a
 		p.done, err = st.Submit(ctx, apply)
 	} else {
 		p.done, err = st.SubmitHook(ctx, statedb.WithAuditCapture(jctx, apply, &p.audits), func() {
-			onCommit(p.out, p.goals)
+			onCommit(p.out, p.goals, p.items)
 			// The job's own audits publish here, after its resources, in
 			// batch order: a resume never skips them (#403).
 			statedb.PublishAudits(st, p.audits)
@@ -125,6 +128,7 @@ type EventPending struct {
 	done   <-chan error
 	out    statedb.EventOut  // written by the job; read after its result
 	goals  []statedb.GoalRow // the appliers' stamped after-images; read after the result
+	items  []statedb.WorkItemRow
 	audits []statedb.AuditStored
 }
 
@@ -141,14 +145,18 @@ func (p *EventPending) Out() statedb.EventOut { return p.out }
 // writer stamped in this job's transaction.
 func (p *EventPending) Goals() []statedb.GoalRow { return p.goals }
 
+// Items are the stamped work-item after-images the job's appliers wrote
+// beside a goal move, as [Pending.Items] does for a Snapshot job.
+func (p *EventPending) Items() []statedb.WorkItemRow { return p.items }
+
 // applyEvent runs one event applier, turning a panic into an error as
 // [apply] does for a Snapshot applier.
 func applyEvent(ctx context.Context, tx *sql.Tx, a EventApplier, machineID string, out statedb.EventOut,
 	ev *agentv1.Event,
-) (goals []statedb.GoalRow, err error) {
+) (goals []statedb.GoalRow, items []statedb.WorkItemRow, err error) {
 	defer func() {
 		if r := recover(); r != nil {
-			goals, err = nil, fmt.Errorf("%w: %v", errApplierPanic, r)
+			goals, items, err = nil, nil, fmt.Errorf("%w: %v", errApplierPanic, r)
 		}
 	}()
 	return a.ApplyEvent(ctx, tx, machineID, out, ev)

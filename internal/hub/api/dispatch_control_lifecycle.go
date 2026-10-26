@@ -31,7 +31,7 @@ func (f *Fleet) applyPause(ctx context.Context, mk *controlCommandKit, m *hubv1.
 	default:
 		return statedb.GoalRow{}, nil, nil, subcommandUnsupported(ctl.spec.GetHarness().GetName(), "pause")
 	}
-	op, err := f.enqueueControlCmd(ctx, mk, cmd, controlAuditAction, "goals/"+ctl.row.ID)
+	op, err := f.enqueueControlCmd(ctx, mk, cmd, controlAuditAction, "goals/"+ctl.row.ID, ctl.row.ID)
 	if err != nil {
 		return statedb.GoalRow{}, nil, nil, err
 	}
@@ -100,7 +100,7 @@ func (f *Fleet) applyResume(ctx context.Context, mk *controlCommandKit, m *hubv1
 func (f *Fleet) sendResumeCmd(ctx context.Context, mk *controlCommandKit, m *hubv1.ControlGoalRequest,
 	ctl *controlGoal, cmd *agentv1.Command,
 ) (statedb.GoalRow, []outbox.Op, *hubv1.Operation, error) {
-	op, err := f.enqueueControlCmd(ctx, mk, cmd, controlAuditAction, "goals/"+ctl.row.ID)
+	op, err := f.enqueueControlCmd(ctx, mk, cmd, controlAuditAction, "goals/"+ctl.row.ID, ctl.row.ID)
 	if err != nil {
 		return statedb.GoalRow{}, nil, nil, err
 	}
@@ -149,13 +149,13 @@ func (f *Fleet) applyClear(ctx context.Context, mk *controlCommandKit, m *hubv1.
 			return statedb.GoalRow{}, nil, nil, subcommandUnsupported(ctl.spec.GetHarness().GetName(), "/goal clear")
 		}
 		if ctl.status.GetPromptPending() || ctl.status.GetLineState() == typev1.GoalLineState_GOAL_LINE_STATE_WORKING {
-			first, err := f.enqueueControlCmd(ctx, mk, interruptCommand(mk), controlAuditAction, "goals/"+ctl.row.ID)
+			first, err := f.enqueueControlCmd(ctx, mk, interruptCommand(mk), controlAuditAction, "goals/"+ctl.row.ID, ctl.row.ID)
 			if err != nil {
 				return statedb.GoalRow{}, nil, nil, err
 			}
 			ops = append(ops, first)
 		}
-		op, err := f.enqueueControlCmd(ctx, mk, goalCommand(mk, "clear"), controlAuditAction, "goals/"+ctl.row.ID)
+		op, err := f.enqueueControlCmd(ctx, mk, goalCommand(mk, "clear"), controlAuditAction, "goals/"+ctl.row.ID, ctl.row.ID)
 		if err != nil {
 			return statedb.GoalRow{}, nil, nil, err
 		}

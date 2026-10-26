@@ -75,11 +75,11 @@ func TestNoEventAckCoversAnEventTheStoreDidNotCommit(t *testing.T) {
 	for _, bad := range []uint64{11, 12} {
 		t.Run(fmt.Sprintf("seq %d fails", bad), func(t *testing.T) {
 			t.Parallel()
-			failing := eventApplierFunc(func(_ context.Context, _ *sql.Tx, _ string, _ statedb.EventOut, ev *agentv1.Event) ([]statedb.GoalRow, error) {
+			failing := eventApplierFunc(func(_ context.Context, _ *sql.Tx, _ string, _ statedb.EventOut, ev *agentv1.Event) ([]statedb.GoalRow, []statedb.WorkItemRow, error) {
 				if ev.GetSeq() == bad {
-					return nil, errors.New("the store fails")
+					return nil, nil, errors.New("the store fails")
 				}
-				return nil, nil
+				return nil, nil, nil
 			})
 			h := startHub(t, func(o *gateway.ServerOptions) { o.EventAppliers = []ingest.EventApplier{failing} })
 			m, s := h.snapshotted(t, 10)

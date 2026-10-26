@@ -90,7 +90,14 @@ func (f *Fleet) startDecidedDispatch(ctx context.Context, tx *sql.Tx, who *typev
 		in.Placement = &hubv1.GoalPlacement{}
 	}
 	in.GetPlacement().Machine = &typev1.MachineId{Value: confirm.MachineID}
-	facts, err := f.gatherDispatchFacts(ctx, tx, who, in, stored.GetAcknowledgedWarnings(), now)
+	// Mint before facts: the branch carries the goal id, and the checks
+	// below guard the branch that is actually sent.
+	decidedGoalID, err := ulid.New(now, f.random)
+	if err != nil {
+		return outbox.Op{}, statedb.GoalRow{}, statedb.WorkItemRow{},
+			fmt.Errorf("dispatch: mint decided goal id: %w", err)
+	}
+	facts, err := f.gatherDispatchFacts(ctx, tx, who, in, stored.GetAcknowledgedWarnings(), decidedGoalID, now)
 	if err != nil {
 		return outbox.Op{}, statedb.GoalRow{}, statedb.WorkItemRow{}, err
 	}
@@ -100,11 +107,7 @@ func (f *Fleet) startDecidedDispatch(ctx context.Context, tx *sql.Tx, who *typev
 	if fresh := freshChecks(facts.decision, confirm.ConfirmReasons, confirm.WarnReasons); len(fresh) > 0 {
 		return outbox.Op{}, statedb.GoalRow{}, statedb.WorkItemRow{}, changedChecksError(fresh)
 	}
-	goalID, err := ulid.New(now, f.random)
-	if err != nil {
-		return outbox.Op{}, statedb.GoalRow{}, statedb.WorkItemRow{},
-			fmt.Errorf("dispatch: mint decided goal id: %w", err)
-	}
+	goalID := decidedGoalID
 	req := &hubv1.StartGoalRequest{
 		RequestId: decideRequestID, Input: in,
 		AcknowledgedWarnings: stored.GetAcknowledgedWarnings(), SkipPreflight: stored.GetSkipPreflight(),

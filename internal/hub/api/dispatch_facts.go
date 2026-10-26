@@ -119,7 +119,7 @@ func workItemKeyOf(in *hubv1.GoalSpecInput) string {
 // evaluates them; usage staleness warns here), and overage billing (the
 // probe verdicts own it).
 func (f *Fleet) gatherDispatchFacts(ctx context.Context, tx *sql.Tx, who *typev1.Principal,
-	in *hubv1.GoalSpecInput, acked []typev1.ReasonCode, now time.Time,
+	in *hubv1.GoalSpecInput, acked []typev1.ReasonCode, goalID string, now time.Time,
 ) (*dispatchFacts, error) {
 	fx := &dispatchFacts{itemKey: workItemKeyOf(in)}
 	item, err := statedb.GetWorkItemStateTx(ctx, tx, fx.itemKey)
@@ -168,7 +168,10 @@ func (f *Fleet) gatherDispatchFacts(ctx context.Context, tx *sql.Tx, who *typev1
 		pattern = defaultBranchPattern
 	}
 	fx.display = workItemDisplay(in)
-	fx.branch = renderBranch(pattern, fx.display, "")
+	// The branch carries the goal id, so the check below guards the branch
+	// that is actually sent. Callers mint the id before facts: a preflight
+	// has no goal yet and passes "".
+	fx.branch = renderBranch(pattern, fx.display, goalID)
 	if _, busy, err := statedb.LiveGoalForBranchTx(ctx, tx,
 		in.GetRepo().GetHost()+"/"+in.GetRepo().GetPath(), fx.branch); err != nil || busy {
 		if err != nil {

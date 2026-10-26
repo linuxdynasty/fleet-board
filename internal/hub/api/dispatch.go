@@ -84,7 +84,7 @@ func (f *Fleet) PreflightGoal(ctx context.Context, req *connect.Request[hubv1.Pr
 	var out *hubv1.Operation
 	var dispAudits []statedb.AuditStored
 	doneCh, submitErr := f.store.SubmitHook(ctx, statedb.WithAuditCapture(ctx, func(tx *sql.Tx) error {
-		fx, err := f.gatherDispatchFacts(ctx, tx, who, in, nil, now)
+		fx, err := f.gatherDispatchFacts(ctx, tx, who, in, nil, "", now)
 		if err != nil {
 			return err
 		}
@@ -213,7 +213,11 @@ func (f *Fleet) StartGoal(ctx context.Context, req *connect.Request[hubv1.StartG
 			resp = &hubv1.StartGoalResponse{Goal: &typev1.GoalId{Value: goalID}, Operation: stored}
 			return nil
 		}
-		facts, err := f.gatherDispatchFacts(ctx, tx, who, in, m.GetAcknowledgedWarnings(), now)
+		goalID, err := ulid.New(now, f.random)
+		if err != nil {
+			return fmt.Errorf("dispatch: mint goal id: %w", err)
+		}
+		facts, err := f.gatherDispatchFacts(ctx, tx, who, in, m.GetAcknowledgedWarnings(), goalID, now)
 		if err != nil {
 			return err
 		}
@@ -233,10 +237,6 @@ func (f *Fleet) StartGoal(ctx context.Context, req *connect.Request[hubv1.StartG
 			return nil
 		default:
 			// StartOK (and any future go-ahead outcome) proceeds to dispatch below.
-		}
-		goalID, err := ulid.New(now, f.random)
-		if err != nil {
-			return fmt.Errorf("dispatch: mint goal id: %w", err)
 		}
 		after, goalOp, op, err := f.insertDispatchTx(ctx, tx, who, m, facts, goalID, now)
 		if err != nil {

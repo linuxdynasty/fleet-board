@@ -144,10 +144,10 @@ func (a *acks) got() ([]uint64, []time.Time) {
 }
 
 // eventApplierFunc is an ingest.EventApplier from a function.
-type eventApplierFunc func(ctx context.Context, tx *sql.Tx, machineID string, out statedb.EventOut, ev *agentv1.Event) ([]statedb.GoalRow, error)
+type eventApplierFunc func(ctx context.Context, tx *sql.Tx, machineID string, out statedb.EventOut, ev *agentv1.Event) ([]statedb.GoalRow, []statedb.WorkItemRow, error)
 
 func (f eventApplierFunc) ApplyEvent(ctx context.Context, tx *sql.Tx, machineID string, out statedb.EventOut,
 	ev *agentv1.Event,
-) ([]statedb.GoalRow, error) {
+) ([]statedb.GoalRow, []statedb.WorkItemRow, error) {
 	return f(ctx, tx, machineID, out, ev)
 }

@@ -3,6 +3,7 @@ package api_test
 import (
 	"context"
 	"database/sql"
+	"strconv"
 	"testing"
 
 	"connectrpc.com/connect"
@@ -38,6 +39,21 @@ func seedDispatchAccount(t *testing.T, e *fleetEnv, id, harness string) {
 		_, err := tx.ExecContext(context.Background(), `INSERT INTO accounts(id, harness, provider, display_name,
 			origin, spec_json, version, create_ms, update_ms) VALUES (?, ?, 'anthropic', ?, 'OWNER_CREATED', ?, 1, 1, 1)`,
 			id, harness, id, dispatchAccountJSON)
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+// seedDispatchRepoPattern inserts an enabled watched repo with a custom
+// branch pattern (protojson into the repos row, like the consent above).
+func seedDispatchRepoPattern(t *testing.T, e *fleetEnv, host, path, pattern string) {
+	t.Helper()
+	err := e.st.Write(context.Background(), func(tx *sql.Tx) error {
+		_, err := tx.ExecContext(context.Background(), `INSERT INTO repos(host, path, code_host, spec_json, version,
+			create_ms, update_ms, enabled) VALUES (?, ?, 'github', ?, 1, 1, 1, 1)`,
+			host, path, `{"enabled":true,"consent":{"acts":["CONSENT_ACT_PUSH","CONSENT_ACT_PR_OPEN","CONSENT_ACT_MERGE"]},"branchPattern":`+strconv.Quote(pattern)+`}`)
 		return err
 	})
 	if err != nil {
@@ -129,5 +145,102 @@ func setMachineState(t *testing.T, e *fleetEnv, id, state string) {
 	})
 	if err != nil {
 		t.Fatal(err)
+	}
+}
+
+// goalBranchOf reads one goal's stored branch in the test's read pool.
+func goalBranchOf(t *testing.T, e *fleetEnv, goalID string) string {
+	t.Helper()
+	var branch string
+	err := e.st.Read(context.Background(), func(tx *sql.Tx) error {
+		row, err := statedb.ReadGoalTx(context.Background(), tx, goalID)
+		if err != nil {
+			return err
+		}
+		branch = row.Branch
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return branch
+}
+
+// startDispatchedGoal runs the standard StartGoal seed and returns the goal id.
+func startDispatchedGoal(t *testing.T, e *fleetEnv) string {
+	t.Helper()
+	enrollMachine(t, e, "m1")
+	setMachineState(t, e, "m1", "ONLINE")
+	seedDispatchRepo(t, e, "github.com", "acme/web")
+	seedDispatchAccount(t, e, "a1", "claude")
+	seedDispatchItem(t, e)
+
+	res, err := e.client.StartGoal(context.Background(), connect.NewRequest(startGoalReq("m1", "claude", "a1")))
+	if err != nil {
+		t.Fatalf("StartGoal: %v", err)
+	}
+	return res.Msg.GetGoal().GetValue()
+}
+
+// TestStartGoalReplaySameRequestReturnsStoredGoal proves a retried identical
+// StartGoal reads back the stored goal instead of dispatching twice: the
+// replay hash covers the whole request, so the second call returns the
+// same goal id and the outbox holds one command.
+func TestStartGoalReplaySameRequestReturnsStoredGoal(t *testing.T) {
+	t.Parallel()
+	e := newFleetEnv(t, localUser("alice"))
+	first := startDispatchedGoal(t, e)
+
+	res, err := e.client.StartGoal(context.Background(), connect.NewRequest(startGoalReq("m1", "claude", "a1")))
+	if err != nil {
+		t.Fatalf("StartGoal replay: %v", err)
+	}
+	if got := res.Msg.GetGoal().GetValue(); got != first {
+		t.Fatalf("replay goal = %q, want %q", got, first)
+	}
+	if got := pendingCommands(t, e, "m1"); got != 1 {
+		t.Fatalf("outbox holds %d commands for m1, want 1: a replay sends nothing", got)
+	}
+	if got := goalBranchOf(t, e, first); got != "fleet/acme/web-7398" {
+		t.Fatalf("goal branch = %q, want the default fleet/{work} rendering", got)
+	}
+}
+
+// TestStartGoalBranchRendersGoalID proves a custom branch pattern carrying
+// {goal} renders the minted id: before the fix the facts rendered with an
+// empty id, so the branch (and the busy check on it) never named the goal.
+func TestStartGoalBranchRendersGoalID(t *testing.T) {
+	t.Parallel()
+	e := newFleetEnv(t, localUser("alice"))
+	enrollMachine(t, e, "m1")
+	setMachineState(t, e, "m1", "ONLINE")
+	seedDispatchRepoPattern(t, e, "github.com", "acme/web", "fleet/{goal}")
+	seedDispatchAccount(t, e, "a1", "claude")
+	seedDispatchItem(t, e)
+
+	res, err := e.client.StartGoal(context.Background(), connect.NewRequest(startGoalReq("m1", "claude", "a1")))
+	if err != nil {
+		t.Fatalf("StartGoal: %v", err)
+	}
+	id := res.Msg.GetGoal().GetValue()
+	if got := goalBranchOf(t, e, id); got != "fleet/"+id {
+		t.Fatalf("goal branch = %q, want fleet/<goal id>", got)
+	}
+}
+
+// TestStartGoalReplayDifferentBodyConflicts proves the replay guard: the
+// same request_id with a different body fails instead of dispatching.
+func TestStartGoalReplayDifferentBodyConflicts(t *testing.T) {
+	t.Parallel()
+	e := newFleetEnv(t, localUser("alice"))
+	startDispatchedGoal(t, e)
+
+	other := startGoalReq("m1", "claude", "a1")
+	other.GetInput().GoalText = "a different objective"
+	_, err := e.client.StartGoal(context.Background(), connect.NewRequest(other))
+	if err == nil {
+		t.Fatal("StartGoal with a different body succeeded, want REQUEST_ID_CONFLICT")
+	} else if connect.CodeOf(err) != connect.CodeAlreadyExists {
+		t.Fatalf("StartGoal code = %v, want ALREADY_EXISTS", connect.CodeOf(err))
 	}
 }

@@ -39,7 +39,12 @@
 // one writer transaction with a config.import audit row; other sections
 // are not built yet; hub ids travel as portable refs, resolved against
 // the target hub before diffing), the hub-state triage writes SnoozeTriageItem and
-// DismissTriageItem (each with its triage.* audit row), the
+// DismissTriageItem (each with its triage.* audit row), the dispatch
+// calls [Fleet.PreflightGoal], [Fleet.StartGoal] and [Fleet.ControlGoal]
+// (each with its dispatch.* audit row) and [Fleet.DecideApproval] (which
+// starts an approved dispatch and attaches its operation and goal),
+// the registry pass ([RegistryApplier], appended to the ingest jobs by
+// the daemon) driving dispatched goals from the agent's own sightings, the
 // session-control and approvals calls (their fresh Operation deadlines
 // come from the queued commands; new session commands wake the outbox only
 // after a definitive commit, even when the request was cancelled), [Fleet.GetServerInfo],
@@ -47,9 +52,10 @@
 // [Fleet.GetOperation], [Fleet.ListSessions], [Fleet.GetSession],
 // [Fleet.ListGoals], [Fleet.GetGoal] (observed goals with the stored spec
 // and status, reconciled with the row so a goal a snapshot drop ended
-// reads CLOSED with its end_time), [Fleet.ListGoalRuns] (the single run 1
-// off the row), [Fleet.ListGoalTransitions] (empty until the dispatch rows
-// record transitions), [Fleet.ListTriageItems],
+// reads CLOSED with its end_time; dispatched goals with theirs, row 22),
+// [Fleet.ListGoalRuns] (the runs off the row; one per attempt for a
+// dispatched goal), [Fleet.ListGoalTransitions] (the recorded transitions,
+// 03l state machine), [Fleet.ListTriageItems],
 // [Fleet.GetTriageItem] (hub-state items with the stored kind, severity
 // and refs), [Fleet.ListUsageReadings] (the stored reading history,
 // newest first), [Fleet.ListIntegrations] (the configured integrations

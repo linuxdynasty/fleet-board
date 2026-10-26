@@ -127,19 +127,22 @@ func snapshotArm(ctx context.Context, a *agentService, s *stream, m *agentv1.Con
 	p, err := ingest.SubmitSnapshot(wctx, a.store, ingest.Stream{
 		MachineID: s.machineID, Epoch: s.epoch, LastEventSeq: s.hello.lastEventSeq, Counters: s.hello.counters,
 		InstallID: s.hello.installID,
-	}, snap, a.appliers, at, func(out statedb.SnapshotOut, goals []statedb.GoalRow, _ []outbox.Closed) {
+	}, snap, a.appliers, at, func(out statedb.SnapshotOut, goals []statedb.GoalRow, items []statedb.WorkItemRow, _ []outbox.Closed) {
 		// The commit moved the observed goals and the machine row: publish
 		// them with their new stamps for the Watch ingest slice, goals
 		// first. This runs on the writer in commit order (#393), so no
 		// interleaving of commits can invert the bus. The before images
 		// above predate the submit and the goals are exactly this job's
 		// stamped after-images, so the diff sees only this job's writes.
+		// Applier-staged work items publish the same way, from the
+		// after-images the appliers captured in the job's transaction.
 		if out.Change != nil {
 			a.publishMachineState(pctx, out.Change.Row, out.Change.From)
 		}
 		if goalsOK {
 			a.publishGoalsCommitted(pctx, s.machineID, beforeGoals, goals)
 		}
+		a.publishWorkItemsCommitted(pctx, items)
 		a.publishMachineCommitted(pctx, out.Row, beforeMachine)
 	})
 	var out statedb.SnapshotOut

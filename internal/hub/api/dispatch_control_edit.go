@@ -53,7 +53,7 @@ func (f *Fleet) applyEdit(ctx context.Context, mk *controlCommandKit, m *hubv1.C
 			ReadyTimeout:    readyTimeout(f),
 			GoalFileTimeout: goalFileTimeout(f),
 		}},
-	}, rearmAuditAction, "goals/"+ctl.row.ID)
+	}, rearmAuditAction, "goals/"+ctl.row.ID, ctl.row.ID)
 	if err != nil {
 		return statedb.GoalRow{}, nil, nil, err
 	}
@@ -108,7 +108,7 @@ func (f *Fleet) applyNotDone(ctx context.Context, mk *controlCommandKit, m *hubv
 			ReadyTimeout:    readyTimeout(f),
 			GoalFileTimeout: goalFileTimeout(f),
 		}},
-	}, rearmAuditAction, "goals/"+ctl.row.ID)
+	}, rearmAuditAction, "goals/"+ctl.row.ID, ctl.row.ID)
 	if err != nil {
 		return statedb.GoalRow{}, nil, nil, err
 	}

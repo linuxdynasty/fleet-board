@@ -307,14 +307,15 @@ type controlCommandKit struct {
 }
 
 // enqueue sends one agent command for a control, with its own command_id
-// and the audit row the action names.
+// and the audit row the action names. The goal id rides along so the
+// replay check can read back the response the first call stored.
 func (f *Fleet) enqueueControlCmd(ctx context.Context, mk *controlCommandKit, cmd *agentv1.Command,
-	auditAction, target string,
+	auditAction, target, goalID string,
 ) (outbox.Op, error) {
 	cmd.RequestedBy = mk.who
 	cmd.IssuedTime = timestamppb.New(mk.now)
 	op, err := outbox.Enqueue(ctx, mk.tx, outbox.In{
-		MachineID: mk.machineID, Command: cmd, Now: mk.now,
+		MachineID: mk.machineID, Command: cmd, Now: mk.now, GoalID: goalID,
 		Checkpoint: func() error { return quotaCheckpoint(ctx, quotaWrite) },
 	})
 	if err != nil {

@@ -18,12 +18,12 @@ import (
 // applier records its writes.
 type auditApplier struct{ now time.Time }
 
-func (a auditApplier) Apply(ctx context.Context, tx *sql.Tx, machineID string, snap *agentv1.Snapshot) ([]statedb.GoalRow, error) {
+func (a auditApplier) Apply(ctx context.Context, tx *sql.Tx, machineID string, snap *agentv1.Snapshot) ([]statedb.GoalRow, []statedb.WorkItemRow, error) {
 	_, err := statedb.AppendAudit(ctx, tx, statedb.AuditEntry{
 		Actor:  statedb.Actor{ID: "local:alice", Kind: "LOCAL_USER", Name: "alice"},
 		Action: "test.applier", Target: "test/applier", Now: a.now,
 	})
-	return nil, err
+	return nil, nil, err
 }
 
 // A Snapshot job stamps audits (appliers, rollback) in its own tx: the
@@ -73,7 +73,7 @@ func TestSubmitSnapshotHookPublishesAudits(t *testing.T) {
 	p, err := ingest.SubmitSnapshot(ctx, st,
 		ingest.Stream{MachineID: machineID, Epoch: 1, InstallID: "install-1"},
 		&agentv1.Snapshot{Seq: 11}, []ingest.Applier{auditApplier{now: now}}, now,
-		func(statedb.SnapshotOut, []statedb.GoalRow, []outbox.Closed) {})
+		func(statedb.SnapshotOut, []statedb.GoalRow, []statedb.WorkItemRow, []outbox.Closed) {})
 	if err != nil {
 		t.Fatal(err)
 	}

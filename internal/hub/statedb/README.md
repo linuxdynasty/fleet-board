@@ -377,7 +377,7 @@ uses it.
   row: identity, state, facts, times, version and counters), `SessionRow`
   (migration 21: name, server and owner), `GoalRow` (spec, status, phase,
   reason and times), `WorkItemRow` (provider item, verdicts, version, times).
-  `CountWorkItemsByStage` counts mirrors by integration and stage. Row 20 adds `ListHookRepos` (watched repos with parsed hooks modes) and `LiveGoalHarnesses` (harnesses holding an unended goal), both inside the caller's job.
+  `CountWorkItemsByStage` counts mirrors by integration and stage. Row 20 adds `ListHookRepos` (watched repos with parsed hooks modes) and `LiveGoalHarnesses` (harnesses holding an unended goal), both inside the caller's job. Row 22 adds the dispatched-goal writes, each inside the caller's job: `InsertDispatchedGoal` (goal plus run 1, branch-busy guarded), `ApplyGoalTransition` (idempotent phase move with fingerprint; the caller stamps and audits), `SetWorkItemGoalStage` (the stage and manual reason the phase maps to) and `ReplaceMachineHarness` (the snapshot's harness inventory, replacing the machine's rows).
 - **Watch ingest stamps** (migrations 23, 24, plan row 12): `hub_sessions`
   gains `hub_seq` (the create write's Watch position, read as
   `SessionRow.HubSeq`; 0 on older rows, which never publish as live) and

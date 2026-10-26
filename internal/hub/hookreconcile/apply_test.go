@@ -63,7 +63,7 @@ func (r *hookRig) apply(snap *agentv1.Snapshot) {
 	if err != nil {
 		r.t.Fatal(err)
 	}
-	if _, err := a.Apply(context.Background(), tx, "m1", snap); err != nil {
+	if _, _, err := a.Apply(context.Background(), tx, "m1", snap); err != nil {
 		_ = tx.Rollback()
 		r.t.Fatalf("Apply: %v", err)
 	}

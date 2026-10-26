@@ -285,13 +285,13 @@ type blockApplier struct {
 	unblock chan struct{}
 }
 
-func (b *blockApplier) Apply(_ context.Context, _ *sql.Tx, _ string, _ *agentv1.Snapshot) ([]statedb.GoalRow, error) {
+func (b *blockApplier) Apply(_ context.Context, _ *sql.Tx, _ string, _ *agentv1.Snapshot) ([]statedb.GoalRow, []statedb.WorkItemRow, error) {
 	close(b.started)
 	select {
 	case <-b.unblock:
-		return nil, nil
+		return nil, nil, nil
 	case <-time.After(20 * time.Second):
-		return nil, errors.New("gateway_test: blockApplier stuck")
+		return nil, nil, errors.New("gateway_test: blockApplier stuck")
 	}
 }
 

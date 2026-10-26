@@ -90,8 +90,8 @@ func (a *applied) got() []string {
 }
 
 // applierFunc is an ingest.Applier from a function.
-type applierFunc func(ctx context.Context, tx *sql.Tx, machineID string, s *agentv1.Snapshot) ([]statedb.GoalRow, error)
+type applierFunc func(ctx context.Context, tx *sql.Tx, machineID string, s *agentv1.Snapshot) ([]statedb.GoalRow, []statedb.WorkItemRow, error)
 
-func (f applierFunc) Apply(ctx context.Context, tx *sql.Tx, machineID string, s *agentv1.Snapshot) ([]statedb.GoalRow, error) {
+func (f applierFunc) Apply(ctx context.Context, tx *sql.Tx, machineID string, s *agentv1.Snapshot) ([]statedb.GoalRow, []statedb.WorkItemRow, error) {
 	return f(ctx, tx, machineID, s)
 }
