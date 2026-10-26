@@ -84,10 +84,15 @@ func TestInterruptPaneTravelsFromHubToRealTmux(t *testing.T) {
 					t.Fatal(seen.err)
 				}
 				caps := seen.hello.GetCapabilities()
-				want := map[string]bool{interruptCapability: false, "goal.registry": false}
+				want := map[string]bool{
+					interruptCapability: false, "goal.registry": false,
+					"worktree": false, "scratch": false,
+					"goal.hooks.claude": false, "goal.hooks.codex": false,
+					"goal.hooks.muse": false, "goal.hooks.cursor": false,
+				}
 				for _, c := range caps {
 					if _, ok := want[c.GetName()]; !ok || c.GetVersion() != 1 {
-						t.Fatalf("production Hello capabilities = %v, want interrupt and goal.registry v1", caps)
+						t.Fatalf("production Hello capabilities = %v, want interrupt, goal.registry, worktree, scratch, goal.hooks.* v1", caps)
 					}
 					want[c.GetName()] = true
 				}

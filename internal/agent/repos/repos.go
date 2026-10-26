@@ -161,6 +161,23 @@ func (r *Refresher) Detail(top string) (Detail, bool) {
 	return d, ok && d.Top != ""
 }
 
+// LookupRepo resolves a repo short name to its checkout top (row 20):
+// the first checkout whose policy remote names host and path. False when
+// no checkout names it, so the H2/F7/G1 commands refuse CHECKOUT_MISSING
+// instead of guessing.
+func (r *Refresher) LookupRepo(host, path string) (string, bool) {
+	for _, top := range r.tops {
+		d, ok := r.details[top]
+		if !ok {
+			continue
+		}
+		if ref := repoRefOf(d); ref != nil && ref.GetHost() == host && ref.GetPath() == path {
+			return top, true
+		}
+	}
+	return "", false
+}
+
 // Workdir fills the pane's workdir (02h "Reuse"): the pane path under an
 // allowed root, with the containing checkout's repo, branch and dirt.
 // Outside every root it is nil, so the path never leaves the machine;

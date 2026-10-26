@@ -37,9 +37,9 @@ type hookQueued struct {
 // expands to, through the hub's reconcile decision (never for a live
 // goal's harness, never for ESHU repos). An unset harness expands over
 // the known harnesses; an unset repo over every enabled watched repo.
-// The hub sends repo short names (never machine paths); expected hook
-// versions are lane 2's to gate, so the button installs and verifies
-// what the agent has. Each command replays by its derived request id,
+// The hub sends repo short names (never machine paths) with the expected
+// hook version; the agent installs and verifies, then reports what it has
+// (the "behind" gate compares the two). Each command replays by its derived request id,
 // so a retried call returns its operations without new rows.
 func (f *Fleet) EnsureMachineHooks(ctx context.Context, req *connect.Request[hubv1.EnsureMachineHooksRequest],
 ) (*connect.Response[hubv1.EnsureMachineHooksResponse], error) {
@@ -101,9 +101,10 @@ func (f *Fleet) EnsureMachineHooks(ctx context.Context, req *connect.Request[hub
 		wants := hookreconcile.Decide(hookreconcile.Input{
 			Harnesses: hookViews(harnesses), Repos: hookRepos(stored), Live: live, Force: force,
 		})
+		versions := hookreconcile.ExpectedVersions()
 		ops = ops[:0]
 		for i, w := range wants {
-			cmd := hookreconcile.CommandFor(w, "")
+			cmd := hookreconcile.CommandFor(w, versions[w.Key.Harness])
 			cmd.RequestedBy = who
 			q, err := f.enqueueHook(ctx, tx, who, actor, m.GetRequestId(), i, id, now, cmd)
 			if err != nil {

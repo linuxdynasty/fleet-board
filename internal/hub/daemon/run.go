@@ -426,7 +426,8 @@ func bind(ctx context.Context, cfg *config.Config, opts Options, d hubDeps, sysL
 	}
 	agent, err := gateway.NewServer(gateway.ServerOptions{
 		Certs: d.certs, Store: d.st, Identity: d.id, Revoked: d.revoked, Telemetry: s.tel, Now: opts.Now,
-		Appliers:      []ingest.Applier{observed.Applier{Now: now}, hookreconcile.Applier{Now: now}},
+		Appliers: []ingest.Applier{observed.Applier{Now: now},
+			hookreconcile.Applier{Now: now, Expected: hookreconcile.ExpectedVersions()}},
 		EventAppliers: []ingest.EventApplier{observed.Applier{Now: now}},
 	})
 	if err != nil {
