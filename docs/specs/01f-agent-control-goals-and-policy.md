@@ -211,10 +211,12 @@ All pass local policy, carry a `command_id`, and are idempotent except F3.
 
 ## I. Preflight
 
-- **I1 Preflight** returns ok or every failed check with a reason code from
-  the shared error enum (`harness_not_signed_in`, `push_access_missing`,
-  `disk_low`, `agent_goal_cap_reached`, …; and for a pane the hub means to reuse,
-  `session_workdir_mismatch`, `checkout_dirty`).
+- **I1 Preflight** returns ok or every failed check with a reason code
+  from the shared error enum (`harness_not_signed_in`, `push_access_missing`,
+  `disk_low`, `agent_goal_cap_reached`, …; for a pane the hub means to reuse,
+  `session_workdir_mismatch`, `checkout_dirty`). A check with no input yet is
+  skipped, never failed: with no harness screen read there is no sign-in source,
+  so unknown sign-in is skipped while the hub dispatch gate still applies.
 
 ## J. Terminal attach
 
