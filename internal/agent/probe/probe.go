@@ -27,6 +27,14 @@ var harnessBinaries = map[string]string{
 	"cursor": "cursor-agent",
 }
 
+// HarnessBinary returns the PATH program name for a probed harness.
+// OpenCode is absent on purpose: it takes no probe session, and
+// StartGoal refuses it before any launch.
+func HarnessBinary(harness string) (string, bool) {
+	bin, ok := harnessBinaries[harness]
+	return bin, ok
+}
+
 // shellCommands are pane commands that mean the harness is gone and a
 // shell is left: the pass reports PROBE_START_FAILED and the next pass
 // starts over. Anything else counts as the harness (or its child) alive.

@@ -4,8 +4,11 @@ The agent's pane-control commands (plan row 18, issue #67). This slice runs
 F1 `EnsureSession` and F2 `EnsureWindow` for login shells: create the named
 session on the bound server (or the named window in a session), or attach
 to the one already there with `reuse`. A harness to start, or resume of a
-harness conversation, is refused until the adapter start surface lands in a
-later slice. F3 `SendKeys` types operator free text (`OPERATOR_TEXT` only)
+harness conversation, is refused by F1/F2; row 21 (G3) starts goal windows
+through `StartGoalWindow` instead (a new session or a new window in the
+target session running the harness with `FLEET_GOAL_ID`, tagged with the
+goal id so a resumed run reattaches), plus `StartPipeCapture` for the K1
+raw capture. F3 `SendKeys` types operator free text (`OPERATOR_TEXT` only)
 into a harness pane at a proven-ready prompt; every other purpose waits for
 its slice. F4 `Interrupt` sends a fixed C-c to the pane: no screen gate (a
 turn is running, so a ready prompt must never be required), idempotent in

@@ -110,7 +110,10 @@ def spool(line):
         directory = os.path.dirname(path)
         if directory:
             os.makedirs(directory, exist_ok=True)
-        with open(path, "a", encoding="utf-8") as handle:
+        # Plain append, created 0600 like every file the agent makes
+        # (01d2): open() would follow the process umask instead.
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+        with os.fdopen(fd, "a", encoding="utf-8") as handle:
             handle.write(json.dumps(line) + "\n")
     except OSError:
         pass

@@ -220,14 +220,28 @@ func runAgentWithDeps(ctx context.Context, dir, cfgDir, version, boot string, te
 		handlers = append(handlers, h)
 	}
 	// The goal registry (row 20 lane 3): RegisterGoal and ReleaseGoal
-	// bind it; nil without tmux. Its pane-checkout seam lands with
-	// row 21.
+	// bind it; nil without tmux. The pane-checkout seam is wired in
+	// startGoals (row 21).
 	handlers = append(handlers, observed.goalHandlers()...)
 	// The worktree/scratch manager (row 20 lane 1: H2/F7) and the
 	// hook installer (row 20 lane 2: G1) bind here; nil without tmux.
 	handlers = append(handlers, observed.worktreeHandlers()...)
 	if h := observed.goalHooksHandler(); h != nil {
 		handlers = append(handlers, h)
+	}
+	// StartGoal (row 21, G3) and the hook-spool tailer (E8); nil
+	// without tmux. The local goal cap follows the merged settings.
+	if observed != nil {
+		observed.setGoalCap(func() uint32 {
+			if sm == nil {
+				return 0
+			}
+			return sm.Effective().GetValues().GetMaxTotal()
+		})
+		if h := observed.startgoalHandler(); h != nil {
+			handlers = append(handlers, h)
+		}
+		wg.Go(func() { observed.runSpool(wctx) })
 	}
 	ex, err = exec.New(exec.Options{
 		DB: db, Sender: loop, Clock: loop.HubClock(), Policy: sm,

@@ -5,6 +5,8 @@ The agent's goal registry (02h): one entry per pane for every harness.
 - `registry.go`: `Register` / `Release` / `ReleaseByPane` / `LearnSession`,
   lookups by pane and harness session, `FillSnapshot` (the complete list
   the hub reconciles against). Every change emits `GoalRegistryChanged`.
+- `paths.go`: `ByGoal` (the spool tailer's goal bind) and `ReleaseByPath`
+  (PruneWorktree drops entries pointing into the worktree, row 21).
 - `match.go`: hook-to-goal matching (`Resolve`): session id, then pane
   (Claude Code, Codex, Cursor), then Muse `cwd` while unlearned with one
   pane per checkout (`REPO_DRIVER` never by `cwd`). `SessionStart` is
