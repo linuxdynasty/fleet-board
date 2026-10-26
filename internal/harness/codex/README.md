@@ -25,6 +25,12 @@ file; it parses text it is given.
   catalog test pins every name in
   `testdata/0.160.0/slash-menu-catalog.tsv`, so a new command in a
   later catalog needs a reviewed verdict here.
+- `goalcontrol.go`: `GoalControl` reports the G4 table (02h): subcommands
+  SET, PAUSE, RESUME, EDIT and CLEAR (the `/goal` syntax line), pause and
+  resume through the subcommand, and `limit_resume_verified` false
+  (resume after a limit is unprobed on every harness). Re-arm after DONE
+  is a fresh `/goal <text>`, verified on 0.163.0 (03h). The golden test
+  pins the table and checks it against the catalog and pause fixtures.
 - `condition.go`: `ParseCondition` reads the pause line (01 E12): a
   line holding "Goal paused" reads as `GOAL_INTERRUPTED`; any other
   screen fails cleanly, since provider-error and limit screens are a

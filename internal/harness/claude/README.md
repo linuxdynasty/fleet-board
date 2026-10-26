@@ -42,6 +42,12 @@ file; it parses text it is given.
   catalog test pins every name in
   `testdata/2.1.296/help-commands-catalog.tsv`, so a new command in a
   later catalog needs a reviewed verdict here.
+- `goalcontrol.go`: `GoalControl` reports the G4 table (02h): subcommands
+  SET and CLEAR (the `/goal [<condition> | clear]` syntax), pause by
+  interrupt, resume by typing `continue`, and `limit_resume_verified`
+  false (resume after a limit is unprobed on every harness). The golden
+  test pins the table and checks it against the catalog and interrupt
+  fixtures.
 - `claude_test.go`: the adapter's declaration for the shared
   conformance test (`harness.Conform`). Version `2.1.296` is
   `UNVERIFIED_PARSING` with `USAGE`, the trust half of `READY`

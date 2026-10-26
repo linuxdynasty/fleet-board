@@ -32,6 +32,13 @@ file; it parses text it is given.
   `testdata/1.4.7/help-commands-catalog.tsv` (rows carry argument
   hints, so only the name before the first space is checked), so a new
   command in a later catalog needs a reviewed verdict here.
+- `goalcontrol.go`: `GoalControl` reports the G4 table (02h): subcommands
+  SET, PAUSE, RESUME, EDIT and CLEAR (the `/goal` syntax line), pause and
+  resume through the subcommand, and `limit_resume_verified` false
+  (resume after a limit is unprobed on every harness). Re-arm after DONE
+  is a fresh `/goal <text>`, verified on 1.4.6 and 1.4.12 (03h). The
+  golden test pins the table and checks it against the catalog and pause
+  fixtures.
 - `condition.go`: `ParseCondition` reads the pause, provider-error and
   rate-limit lines (01 E12): a line holding "goal paused by interrupt" reads
   as `GOAL_INTERRUPTED`; a line holding an HTTP 5xx status with the retry

@@ -23,6 +23,13 @@ parses text it is given.
   (C4): `/usage` observe, `/model` session, `/goal` goal, `/quit`
   destructive, everything else deny. A discovered command whose effect
   is unprobed stays deny; it moves only with a probe record.
+- `goalcontrol.go`: `GoalControl` reports the G4 table (02h): subcommand
+  SET only (`/goal <objective>`, 01b2), pause and resume NONE (a stall
+  pauses by itself; any plain message resumes as a normal turn), and
+  `limit_resume_verified` false (resume after a limit is unprobed on
+  every harness). Re-arm after DONE is a fresh `/goal <text>` (01b2).
+  The golden test pins the table and checks it against the stall
+  fixture.
 - `condition.go`: `ParseCondition` reads the stall line (01 E12): a
   line holding "Goal paused (Ns)" reads as `GOAL_PAUSED`; any other
   screen fails cleanly, since provider-error and limit screens are a
