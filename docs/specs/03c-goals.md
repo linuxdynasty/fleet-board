@@ -330,7 +330,11 @@ window, elsewhere, triage; which count toward `START_EXHAUSTED`) is the table in
   span per step; the link is `Command.trace` and `CommandResult.trace` (02g).
 - Logs: `dispatch.planned{goal_id, work_item, repo, machine, account, harness,
   reuse_pane, consent}`, `dispatch.step{goal_id, step, status, reason}`,
-  `dispatch.skipped{reason, detail}` (one per pass, summarised).
+  `dispatch.skipped{reason, detail}` (one per pass, summarised),
+  `dispatch.preflight{actor, work_item, machine, checks}` (one per manual
+  preflight), `dispatch.control{actor, goal, action}`, `dispatch.issue_refused{reason}`
+  (caller errors, with actor when known), `dispatch.failed{step=store, err_kind, actor}`
+  (hub-side store failure, error).
 
 At 3 AM: "why is nothing starting?" → `Account.status.pacing.idle_causes` (or
 `fleet_hub_scheduler_skips_total{reason}` over the last hour); "why did this start
