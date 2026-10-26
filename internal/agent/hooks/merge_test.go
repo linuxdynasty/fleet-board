@@ -188,7 +188,7 @@ func TestMergeKeepsUserCommandsInMixedGroups(t *testing.T) {
 	if !changed {
 		t.Fatal("MergeUserConfig reported no change, want the stale fleet entry replaced")
 	}
-	after, err := os.ReadFile(path)
+	after, err := os.ReadFile(path) //nolint:gosec // G304: the staged copy this test wrote
 	if err != nil {
 		t.Fatalf("read merged: %v", err)
 	}
@@ -232,7 +232,7 @@ func TestRemoveKeepsUserCommandsInMixedGroups(t *testing.T) {
 	if !changed {
 		t.Fatal("RemoveUserConfig reported no change, want the fleet entry dropped")
 	}
-	after, err := os.ReadFile(path)
+	after, err := os.ReadFile(path) //nolint:gosec // G304: the staged copy this test wrote
 	if err != nil {
 		t.Fatalf("read uninstalled: %v", err)
 	}

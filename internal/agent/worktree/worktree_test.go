@@ -452,17 +452,13 @@ func TestEnsureWorktreeRefusesSymlinkAncestor(t *testing.T) {
 	needGit(t)
 	ctx := context.Background()
 	top := realTop(t)
-	// Outside the allowed roots: not under t.TempDir, which shares the
-	// test's root.
-	outside, err := os.MkdirTemp("", "fleet-outside-roots")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.RemoveAll(outside) })
+	// Outside the allowed roots: the roots hold only the repo top, so a
+	// sibling temp dir is outside even though it shares $TMPDIR.
+	outside := t.TempDir()
 	if err := os.Symlink(outside, filepath.Join(top, "link")); err != nil {
 		t.Fatal(err)
 	}
-	m, _ := testManager(t, []string{filepath.Dir(top)}, repoTable{"github.com/acme/repo": top})
+	m, _ := testManager(t, []string{top}, repoTable{"github.com/acme/repo": top})
 	res := m.EnsureWorktree(ctx, ensureCmd("goalsym", "fleet/sym", "", "link/new"))
 	if res.GetStatus() != typev1.Status_STATUS_REJECTED_BY_POLICY ||
 		res.GetReason() != typev1.ReasonCode_REASON_CODE_REPO_ROOT_NOT_ALLOWED {
