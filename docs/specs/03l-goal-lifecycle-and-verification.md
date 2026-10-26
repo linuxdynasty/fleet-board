@@ -107,7 +107,10 @@ so "active" means one thing.
 | **HELD** (keeps its worker, spends almost no quota) | `WAITING`, `BLOCKED_OWNER`, `STUCK`, `COOLDOWN`, `PAUSED`, `LIMIT_WAIT`, `VERIFYING`, `DISAGREE`, `PANE_LOST` | a total slot and the repo cap only |
 | **ENDED** | `MERGED` (until `CLOSED`), `CLOSED`, `START_FAILED`, `START_EXHAUSTED`, `EXPIRED`, `ABANDONED`, `CLEARED`, `CANCELLED` | nothing: `MERGED` frees the worker, so the pane is reusable at once |
 
-**Live** = ACTIVE ∪ HELD (an observed goal, 03k, holds nothing). The DB unique indexes are `(work_item) WHERE live`,
+**Live** = ACTIVE ∪ HELD (an observed goal, 03k, holds nothing). `UNSPECIFIED`
+and any phase the contract does not name read ENDED: the hub never
+schedules, holds or frees on them. Row 22 implements this table in
+`internal/hub/goals` (`ClassOf`, `Live`). The DB unique indexes are `(work_item) WHERE live`,
 `(repo, branch) WHERE live` (one agent per branch) and, for routines, `(routine)
 WHERE live`. A `LIMIT_WAIT` goal therefore holds a total slot and its branch for
 up to a week, by design; an operator can clear it. The heartbeat check compares
