@@ -127,7 +127,9 @@ func repoName(spec *agentv1.GoalSpec) string {
 	}
 }
 
-// clean strips control characters and caps one detail line.
+// clean strips control characters and caps one detail line. The cap
+// counts runes, never bytes, so a multibyte character is kept whole or
+// dropped whole.
 func clean(s string) string {
 	s = strings.Map(func(r rune) rune {
 		if r < 0x20 || r == 0x7f {
@@ -135,8 +137,8 @@ func clean(s string) string {
 		}
 		return r
 	}, s)
-	if len(s) > detailCap {
-		s = s[:detailCap]
+	if n := len([]rune(s)); n > detailCap {
+		s = string([]rune(s)[:detailCap])
 	}
 	return s
 }

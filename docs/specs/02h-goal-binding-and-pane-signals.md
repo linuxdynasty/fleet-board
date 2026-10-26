@@ -196,7 +196,7 @@ reported).
 | 2 | `pick_session` | reuse | the table above | read-only: run again | `SESSION_NOT_AVAILABLE`, `SESSION_WORKDIR_MISMATCH`, `CHECKOUT_DIRTY`, `PANE_BUSY` |
 | 3 | `prepare_branch` | reuse, `AGENT_ENSURES` | branch started in place | declarative: already on that branch is OK | `GIT_FAILED`, `CHECKOUT_DIRTY` |
 | 4 | `ensure_worktree` | new, `AGENT_ENSURES` | `EnsureWorktree`; the path is resolved to its real path (`EvalSymlinks`) before the window starts, and the registry stores that path (Codex refuses a symlinked writable root, 01d) | declarative | `WORKTREE_EXISTS`, `GIT_FAILED`, `CHECKOUT_MISSING`, `REPO_ROOT_NOT_ALLOWED` |
-| 5 | `ensure_window` | new | session and window, harness launched with `FLEET_*` | declarative: reuses a window carrying the same `FLEET_PANE_KEY` tag | `MAX_WINDOWS_REACHED`, `INVALID_NAME`, `HARNESS_PROFILE_MISSING` |
+| 5 | `ensure_window` | new | session and window, harness launched with `FLEET_*` | declarative: reuses a window carrying the same `FLEET_PANE_KEY` tag; a resume with no recorded worktree rebuilds the step-4 worktree by branch instead of running in the main checkout | `MAX_WINDOWS_REACHED`, `INVALID_NAME`, `HARNESS_PROFILE_MISSING` |
 | 6 | `register_goal` | both | registry entry, `GoalRegistryChanged` | declarative | `INTERNAL` |
 | 7 | `start_log_capture` | both | `pipe-pane` on the goal pane (K1) | declarative | `INTERNAL` |
 | 8 | `wait_ready` | both | ready pattern, or a startup screen | read-only | `READY_TIMEOUT`, `TRUST_PROMPT_SEEN`, `STARTUP_PROMPT_SEEN` |
@@ -204,24 +204,24 @@ reported).
 | 10 | `set_effort` | when `spec.effort` | the harness's `/effort` | verify, as above | `EFFORT_NOT_SUPPORTED`, `PANE_BUSY` |
 | 11 | `clear_context` | `fresh_context`, reuse | `/clear` (DESTRUCTIVE class), fleet-started session or a mark with `fresh_context_on_reuse` | **not idempotent**: started without done is `UNKNOWN_OUTCOME` | `FRESH_CONTEXT_NOT_ALLOWED` |
 | 12 | `write_goal_file` | both; skipped when the checkout's hooks are repo-owned (`repo_ships_own`, `REPO_DRIVER`) | creates `.fleet-board/`, its `.gitignore` and `goal-<goal_id>` in the pane's folder, no-follow ([01d2](01d2-goal-file-safe-writes.md#safe-writes)); for a repo-owned file it writes nothing and step 14 reads the repo's own | declarative: same content again is OK | `GOAL_FILE_WRITE_FAILED` (`goal_dir_not_plain`, `goal_dir_foreign`) |
-| 13 | `type_goal` | both | the adapter's `GoalCommand` plus Enter | **not idempotent**: `UNKNOWN_OUTCOME` unless step 14 proves it | `PANE_BUSY` |
+| 13 | `type_goal` | both | the adapter's `GoalCommand` plus Enter; step 13 records a `TYPED: yes` trailer in the goal file after typing | **not idempotent**: `UNKNOWN_OUTCOME` unless the trailer proves it | `PANE_BUSY` |
 | 14 | `confirm_goal_file` | both | goal file appears within `goal_file_timeout` | read-only | `GOAL_FILE_NOT_SEEN` |
 
 Each step is persisted as `started` before and `done` after, so a restart
 knows where it was. Steps 9 and 10 change nothing when the harness already
 shows the wanted value. Steps 11 and 13 are never typed twice: after a crash
-they end `UNKNOWN_OUTCOME` (and `type_goal` is turned into OK when the goal
-file already shows this goal's id). `StartGoalResult` carries the branch, the
-effective `model` and `effort` (the hub paces by that model's bucket; when
-`GoalSpec.model` was empty, until the result arrives the hub evaluates only
-`weekly_all` and the harness default's bucket), and the registration.
+they end `UNKNOWN_OUTCOME`; `type_goal` turns OK only on the `TYPED: yes`
+trailer step 13 wrote, never the step-12 file. `StartGoalResult` carries the
+branch, the effective `model` and `effort` (the hub paces by that model's
+bucket; when `GoalSpec.model` was empty, until the result arrives the hub
+evaluates only `weekly_all` and the harness default's bucket), and the registration.
 
 **Re-arm.** `StartGoal.rearm_reason` (non-empty) re-arms a goal whose harness
 already finished it ([03h](03h-goal-phases-in-depth.md#re-arm-after-done)): the
 same goal id, `reuse_pane` the pane its registry entry names (the agent checks
 that before step 1, even with `skip_preflight`; any other pane is
 `SESSION_NOT_AVAILABLE`, and the pane counts as free because the live goal is its
-own). Steps 2 to 7 and 9 to 11 are skipped (so `pick_session` does not run); 1,
+own; the step-1 cap likewise ignores its own entry). Steps 2 to 7 and 9 to 11 are skipped (so `pick_session` does not run); 1,
 8, 12 (the first line rewritten as the objective plus `reopened: <reason>`,
 truncated to the 4 KiB first-line cap), 13 and 14 run as above, with the same
 restart classes. The registry entry is kept, not replaced.

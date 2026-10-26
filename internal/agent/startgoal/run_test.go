@@ -13,10 +13,12 @@ type fakeWindows struct {
 	win   *Window
 	res   *agentv1.CommandResult
 	calls int
+	dirs  []string
 }
 
-func (f *fakeWindows) Start(_ context.Context, _ *agentv1.SessionTarget, _, _, _, _, _, _ string) (*Window, *agentv1.CommandResult) {
+func (f *fakeWindows) Start(_ context.Context, _ *agentv1.SessionTarget, _, _, dir, _, _, _ string) (*Window, *agentv1.CommandResult) {
 	f.calls++
+	f.dirs = append(f.dirs, dir)
 	return f.win, f.res
 }
 
@@ -247,5 +249,72 @@ func TestPickSessionRefusals(t *testing.T) {
 				t.Fatalf("typed %+v after a refusal", typer.calls)
 			}
 		})
+	}
+}
+
+func TestResumeGapRecoversWorktree(t *testing.T) {
+	t.Parallel()
+	panes := &fakePanes{
+		repos: map[string]string{},
+		push:  map[string]bool{},
+	}
+	d, _, screens, _, _, tmp := testDeps(t, panes)
+	checkout := tmp + "/checkout"
+	wt := tmp + "/wt-goal1"
+	panes.repos["github.com/acme/repo"] = checkout
+	panes.push["github.com/acme/repo"] = true
+	trees, ok := d.Trees.(*fakeTrees)
+	if !ok {
+		t.Fatal("Trees is not the fake")
+	}
+	trees.wtPath = wt
+	d = withWindows(d, testPane())
+	screens.screens = []string{readyScreen()}
+	r, err := New(d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Crash after step 4 made the worktree but before step 6 recorded
+	// it: no registry entry exists. The resume must rebuild the worktree
+	// by branch, never run the goal in the main checkout.
+	res := r.Resume(context.Background(), startCmd(testSpec(checkout), nil),
+		stepIndex("ensure_window"), nil)
+	if res.GetStatus() != typev1.Status_STATUS_OK {
+		t.Fatalf("Resume = %v %v %q; want OK", res.GetStatus(), res.GetReason(), res.GetMessage())
+	}
+	fw, ok := d.Windows.(*fakeWindows)
+	if !ok {
+		t.Fatal("Windows is not the fake")
+	}
+	if len(fw.dirs) != 1 || fw.dirs[0] != wt {
+		t.Fatalf("window dirs = %v; want [%s] (the recovered worktree, not %s)", fw.dirs, wt, checkout)
+	}
+}
+
+func TestPreflightRearmIgnoresOwnEntry(t *testing.T) {
+	t.Parallel()
+	panes := reusePanes("")
+	d, _, _, _, _, tmp := testDeps(t, panes)
+	checkout := tmp + "/checkout"
+	for k, ps := range panes.states {
+		ps.PaneDir, ps.CheckoutTop = checkout, checkout
+		panes.states[k] = ps
+	}
+	panes.repos["github.com/acme/repo"] = checkout
+	panes.push["github.com/acme/repo"] = true
+	seedRegistry(t, d, testPane(), "goal1", checkout, false)
+	d.MaxGoals = func() int { return 1 }
+	r, err := New(withWindows(d, testPane()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd := quickCmd(testSpec(checkout), testPane())
+	cmd.RearmReason = "still broken"
+	st, res := r.open(cmd)
+	if res != nil {
+		t.Fatalf("open = %v; want nil", res)
+	}
+	if res := r.preflight(context.Background(), st); res != nil {
+		t.Fatalf("preflight = %v %q; want nil (own entry does not count)", res.GetStatus(), res.GetMessage())
 	}
 }

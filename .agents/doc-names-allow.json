@@ -252,6 +252,7 @@
   {"token": "RecoverNativeEffects", "kind": "go", "reason": "ring native journal method, not a proto RPC (#266)", "files": ["docs/specs/02n-native-execution.md"]},
   {"token": "ReadNativeSession", "kind": "go", "reason": "ring native journal method, not a proto RPC (#266)", "files": ["docs/specs/02n-native-execution.md"]},
   {"token": "ReadNativeEffect", "kind": "go", "reason": "ring native journal method, not a proto RPC (#266)", "files": ["docs/specs/02n-native-execution.md"]},
-  {"token": "ListUnresolvedNativeEffects", "kind": "go", "reason": "ring native journal method, not a proto RPC (#266)", "files": ["docs/specs/02n-native-execution.md"]}
+  {"token": "ListUnresolvedNativeEffects", "kind": "go", "reason": "ring native journal method, not a proto RPC (#266)", "files": ["docs/specs/02n-native-execution.md"]},
+  {"token": "TYPED", "kind": "goal-file-marker", "reason": "goal file typed trailer written by StartGoal step 13 (01d2, 02h)", "files": ["docs/specs/01d2-goal-file-safe-writes.md", "docs/specs/02h-goal-binding-and-pane-signals.md"]}
  ]
 }

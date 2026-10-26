@@ -3,7 +3,9 @@ package preflight
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
+	"unicode/utf8"
 
 	agentv1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/agent/v1"
 	typev1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/type/v1"
@@ -266,5 +268,24 @@ func TestCheckNilSpec(t *testing.T) {
 	c := &Checker{Reader: stubReader{facts: goodFacts()}, Typer: &countTyper{}}
 	if _, err := c.Check(context.Background(), nil); err == nil {
 		t.Fatal("Check with nil spec = nil error, want an error")
+	}
+}
+
+func TestCleanKeepsRunesWhole(t *testing.T) {
+	t.Parallel()
+	long := strings.Repeat("é", detailCap+10)
+	got := clean(long)
+	if n := len([]rune(got)); n != detailCap {
+		t.Fatalf("clean runes = %d; want %d", n, detailCap)
+	}
+	if !utf8.ValidString(got) {
+		t.Fatalf("clean split a multibyte rune")
+	}
+}
+
+func TestCleanStripsControls(t *testing.T) {
+	t.Parallel()
+	if got := clean("a\x00b\x7fc"); got != "abc" {
+		t.Fatalf("clean = %q; want %q", got, "abc")
 	}
 }

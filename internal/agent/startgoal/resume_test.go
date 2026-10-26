@@ -69,6 +69,47 @@ func TestRearm(t *testing.T) {
 	}
 }
 
+func TestRearmOverDoneFile(t *testing.T) {
+	t.Parallel()
+	panes := reusePanes("")
+	d, typer, screens, _, _, tmp := testDeps(t, panes)
+	checkout := tmp + "/checkout"
+	for k, ps := range panes.states {
+		ps.PaneDir, ps.CheckoutTop = checkout, checkout
+		panes.states[k] = ps
+	}
+	panes.repos["github.com/acme/repo"] = checkout
+	panes.push["github.com/acme/repo"] = true
+	seedRegistry(t, d, testPane(), "goal1", checkout, false)
+	if _, err := d.Files.EnsureGoalFile(checkout, "goal1",
+		[]byte("DONE\nCONSENT: push\n"), false); err != nil {
+		t.Fatal(err)
+	}
+	d = withWindows(d, testPane())
+	screens.screens = []string{readyScreen()}
+	r, err := New(d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	spec := testSpec(checkout)
+	cmd := quickCmd(spec, testPane())
+	cmd.RearmReason = "still broken"
+	res := r.Run(context.Background(), cmd, nil)
+	if res.GetStatus() != typev1.Status_STATUS_OK {
+		t.Fatalf("Run = %v %v %q; want OK", res.GetStatus(), res.GetReason(), res.GetMessage())
+	}
+	if len(typer.calls) != 1 {
+		t.Fatalf("typed = %+v; want one goal retype", typer.calls)
+	}
+	raw, err := os.ReadFile(filepath.Join(checkout, ".fleet-board", "goal-goal1")) //nolint:gosec // G304: the goal file this run wrote in a temp dir
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), "reopened: still broken") {
+		t.Fatalf("goal file = %q; want reopened reason", raw)
+	}
+}
+
 func TestRearmWrongPane(t *testing.T) {
 	t.Parallel()
 	panes := reusePanes("")
@@ -125,7 +166,40 @@ func TestResume(t *testing.T) {
 			t.Fatalf("typed %+v on resume without proof", typer.calls)
 		}
 	})
-	t.Run("type goal with proof continues without retyping", func(t *testing.T) {
+	t.Run("type goal with a pre-typing file is unknown", func(t *testing.T) {
+		t.Parallel()
+		panes := reusePanes("")
+		d, typer, _, _, _, tmp := testDeps(t, panes)
+		checkout := tmp + "/checkout"
+		for k, ps := range panes.states {
+			ps.PaneDir, ps.CheckoutTop = checkout, checkout
+			panes.states[k] = ps
+		}
+		panes.repos["github.com/acme/repo"] = checkout
+		panes.push["github.com/acme/repo"] = true
+		seedRegistry(t, d, testPane(), "goal1", checkout, false)
+		// Step 12 wrote the file but step 13 never typed: the file alone
+		// must not pass for proof of typing (crash between write and type).
+		if _, err := d.Files.EnsureGoalFile(checkout, "goal1",
+			[]byte("migrate the parser\nCONSENT: push\n"), false); err != nil {
+			t.Fatal(err)
+		}
+		d = withWindows(d, testPane())
+		r, err := New(d)
+		if err != nil {
+			t.Fatal(err)
+		}
+		res := r.Resume(context.Background(), quickCmd(testSpec(checkout), testPane()),
+			stepIndex("type_goal"), nil)
+		if res.GetStatus() != typev1.Status_STATUS_UNKNOWN_OUTCOME {
+			t.Fatalf("Resume = %v %v %q; want UNKNOWN_OUTCOME",
+				res.GetStatus(), res.GetReason(), res.GetMessage())
+		}
+		if len(typer.calls) != 0 {
+			t.Fatalf("typed %+v on resume without typing proof", typer.calls)
+		}
+	})
+	t.Run("type goal with typed marker skips retyping", func(t *testing.T) {
 		t.Parallel()
 		panes := reusePanes("")
 		d, typer, _, _, reg, tmp := testDeps(t, panes)
@@ -137,8 +211,8 @@ func TestResume(t *testing.T) {
 		panes.repos["github.com/acme/repo"] = checkout
 		panes.push["github.com/acme/repo"] = true
 		seedRegistry(t, d, testPane(), "goal1", checkout, false)
-		if _, err := d.Files.EnsureGoalFile(checkout, "goal1",
-			[]byte("migrate the parser\nCONSENT: push\n"), false); err != nil {
+		if err := d.Files.RewriteGoalFile(checkout, "goal1",
+			[]byte("migrate the parser\nCONSENT: push\nTYPED: yes\n")); err != nil {
 			t.Fatal(err)
 		}
 		d = withWindows(d, testPane())

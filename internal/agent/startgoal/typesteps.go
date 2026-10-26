@@ -104,6 +104,17 @@ func (r *Runner) writeGoalFile(_ context.Context, st *state) *agentv1.CommandRes
 		return failed(typev1.ReasonCode_REASON_CODE_GOAL_FILE_WRITE_FAILED, false, nil,
 			"startgoal: no worktree holds the goal file")
 	}
+	if st.rearm {
+		// Re-arm reopens a completed goal: the file holds DONE, so the
+		// declarative create refuses and the 02h reopen path rewrites it
+		// (temp file plus rename, 01d2 rule 4).
+		if err := r.d.Files.RewriteGoalFile(st.worktree, st.goal, goalContent(st)); err != nil {
+			return failed(typev1.ReasonCode_REASON_CODE_GOAL_FILE_WRITE_FAILED, false,
+				map[string]string{"why": goalfile.Why(err)},
+				"startgoal: the goal file rewrite failed")
+		}
+		return nil
+	}
 	if _, err := r.d.Files.EnsureGoalFile(st.worktree, st.goal, goalContent(st), false); err != nil {
 		return failed(typev1.ReasonCode_REASON_CODE_GOAL_FILE_WRITE_FAILED, false,
 			map[string]string{"why": goalfile.Why(err)},
@@ -134,6 +145,24 @@ func (r *Runner) typeGoal(ctx context.Context, st *state) *agentv1.CommandResult
 		return res
 	}
 	st.typedLine = line
+	if !st.repoShipsOwn {
+		// Record the delivery in the goal file: on resume the TYPED
+		// trailer proves step 13 typed, while its absence (crash between
+		// the write and the type) refuses the skip and ends UNKNOWN.
+		// The trailer must fit the 4 KiB read cap, so a max-size goal
+		// file is trimmed to make room for it.
+		const typedTrailer = "TYPED: yes\n"
+		content := goalContent(st)
+		if len(content)+len(typedTrailer) > 4096 {
+			content = content[:4096-len(typedTrailer)]
+		}
+		marked := append(content, []byte(typedTrailer)...)
+		if err := r.d.Files.RewriteGoalFile(st.worktree, st.goal, marked); err != nil {
+			return failed(typev1.ReasonCode_REASON_CODE_GOAL_FILE_WRITE_FAILED, false,
+				map[string]string{"why": goalfile.Why(err)},
+				"startgoal: the typed marker write failed")
+		}
+	}
 	return nil
 }
 
@@ -179,6 +208,19 @@ func (r *Runner) locate(ctx context.Context, st *state) {
 		st.pane = entry.GetPane()
 		st.worktree = entry.GetWorktreePath()
 	}
+}
+
+// typeProven reports whether step 13 typed: the agent-written goal file
+// carries the TYPED trailer typeGoal writes after a successful type. A
+// file without it proves nothing either way (crash between the write
+// and the type). Repo-owned files keep the older proof (the agent never
+// writes them, so no trailer exists).
+func (r *Runner) typeProven(st *state) bool {
+	if st.repoShipsOwn {
+		return true
+	}
+	file, err := r.d.Files.ReadGoalFile(st.worktree, st.goal)
+	return err == nil && file.Typed
 }
 
 // proven reports whether the goal file shows this goal's id: the file

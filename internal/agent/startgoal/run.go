@@ -69,8 +69,10 @@ func (r *Runner) Run(ctx context.Context, cmd *agentv1.StartGoal, rep Report) *a
 // Resume continues a restarted run at the persisted step (exec.PerStep:
 // the index of the last started step, 0 when none started). Steps 11
 // and 13 are never retyped: after a crash they end UNKNOWN_OUTCOME,
-// unless step 14's proof already shows this goal's id, which turns
-// type_goal into OK and continues at confirm_goal_file.
+// unless the goal file carries the TYPED trailer step 13 wrote after
+// typing, which turns type_goal into OK and continues at
+// confirm_goal_file. A step-12 file without the trailer proves nothing
+// about step 13.
 func (r *Runner) Resume(ctx context.Context, cmd *agentv1.StartGoal, from int, rep Report) *agentv1.CommandResult {
 	st, res := r.open(cmd)
 	if res != nil {
@@ -88,7 +90,7 @@ func (r *Runner) Resume(ctx context.Context, cmd *agentv1.StartGoal, from int, r
 	// proof below fails closed.
 	r.locate(ctx, st)
 	if nonIdempotent(name) {
-		if name == "type_goal" && st.worktree != "" && r.proven(ctx, st) {
+		if name == "type_goal" && st.worktree != "" && r.proven(ctx, st) && r.typeProven(st) {
 			return r.from(ctx, st, stepIndex("confirm_goal_file"), rep)
 		}
 		failedStep := name

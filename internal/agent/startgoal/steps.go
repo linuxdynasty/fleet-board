@@ -53,7 +53,16 @@ func (r *Runner) step(ctx context.Context, st *state, name string) *agentv1.Comm
 // the standalone Preflight command or the skip_preflight fast path.
 // Every failure types nothing.
 func (r *Runner) preflight(ctx context.Context, st *state) *agentv1.CommandResult {
-	if n := len(r.d.Registry.Entries()); n >= r.d.MaxGoals() {
+	n := len(r.d.Registry.Entries())
+	if st.rearm {
+		// The re-armed goal keeps its entry, pane and worktree: it
+		// consumes no new slot, so its own binding does not count
+		// toward the cap (02h re-arm).
+		if _, ok := r.d.Registry.ByGoal(st.goal); ok {
+			n--
+		}
+	}
+	if n >= r.d.MaxGoals() {
 		return failed(typev1.ReasonCode_REASON_CODE_AGENT_GOAL_CAP_REACHED, true, nil,
 			"startgoal: the machine already runs its goal cap")
 	}
@@ -196,13 +205,25 @@ func (r *Runner) ensureWindow(ctx context.Context, st *state) *agentv1.CommandRe
 		st.worktree = scratch
 	}
 	if dir == "" {
-		top, err := r.d.Panes.LookupRepo(st.spec.GetRepo())
-		if err != nil || top == "" {
-			return failed(typev1.ReasonCode_REASON_CODE_CHECKOUT_MISSING, false, nil,
-				"startgoal: no local checkout of that repo")
+		if st.mode == agentv1.WorktreeMode_WORKTREE_MODE_AGENT_ENSURES && !st.reuse {
+			// Resume gap: step 4 made the worktree but step 6 never
+			// recorded it, so there is nothing to recover by name.
+			// Rebuild it by branch (idempotent: the manager reuses an
+			// existing worktree on the branch) instead of running the
+			// goal in the main checkout.
+			if res := r.ensureWorktree(ctx, st); res != nil {
+				return res
+			}
+			dir = st.worktree
+		} else {
+			top, err := r.d.Panes.LookupRepo(st.spec.GetRepo())
+			if err != nil || top == "" {
+				return failed(typev1.ReasonCode_REASON_CODE_CHECKOUT_MISSING, false, nil,
+					"startgoal: no local checkout of that repo")
+			}
+			dir = top
+			st.worktree = top
 		}
-		dir = top
-		st.worktree = top
 	}
 	name := st.cmd.GetWindowName()
 	if name == "" {
