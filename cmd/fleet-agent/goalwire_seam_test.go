@@ -16,7 +16,7 @@ func TestEnsureBoardTranslatesLane1Refusals(t *testing.T) {
 	dir := t.TempDir()
 
 	plain := filepath.Join(dir, "plain")
-	if err := os.Mkdir(plain, 0o755); err != nil {
+	if err := os.Mkdir(plain, 0o700); err != nil {
 		t.Fatal(err)
 	}
 	if _, _, err := ensureBoard(plain); err != nil {
@@ -24,7 +24,7 @@ func TestEnsureBoardTranslatesLane1Refusals(t *testing.T) {
 	}
 
 	link := filepath.Join(dir, "link")
-	if err := os.Mkdir(link, 0o755); err != nil {
+	if err := os.Mkdir(link, 0o700); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.Symlink(dir, filepath.Join(link, ".fleet-board")); err != nil {
@@ -36,7 +36,7 @@ func TestEnsureBoardTranslatesLane1Refusals(t *testing.T) {
 	}
 
 	foreign := filepath.Join(dir, "foreign")
-	if err := os.MkdirAll(filepath.Join(foreign, ".fleet-board"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(foreign, ".fleet-board"), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(foreign, ".fleet-board", ".gitignore"), []byte("mine\n"), 0o600); err != nil {
