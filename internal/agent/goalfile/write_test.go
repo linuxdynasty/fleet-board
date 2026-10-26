@@ -102,6 +102,34 @@ func TestEnsureGoalFileRepeat(t *testing.T) {
 	}
 }
 
+func TestRewriteGoalFileReplacesContent(t *testing.T) {
+	t.Parallel()
+	workdir := t.TempDir()
+	w := Writer{EnsureBoard: stubBoard(nil)}
+	done := []byte("DONE\nCONSENT: push\n")
+	if _, err := w.EnsureGoalFile(workdir, "g1", done, false); err != nil {
+		t.Fatalf("seed DONE: %v", err)
+	}
+	reopened := []byte("migrate the parser reopened: still broken\nCONSENT: push\n")
+	if err := w.RewriteGoalFile(workdir, "g1", reopened); err != nil {
+		t.Fatalf("RewriteGoalFile: %v", err)
+	}
+	got, err := os.ReadFile(filepath.Join(workdir, ".fleet-board", "goal-g1")) //nolint:gosec // G304: the test's own temp folder
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != string(reopened) {
+		t.Fatalf("goal file = %q, want %q", got, reopened)
+	}
+	if fi, _ := os.Stat(filepath.Join(workdir, ".fleet-board", "goal-g1")); fi.Mode().Perm() != 0o600 {
+		t.Fatalf("goal file mode = %o, want 600", fi.Mode().Perm())
+	}
+	// A rewrite is declarative too: the same bytes again are fine.
+	if err := w.RewriteGoalFile(workdir, "g1", reopened); err != nil {
+		t.Fatalf("same content again: %v", err)
+	}
+}
+
 func TestEnsureGoalFileRefusesSymlink(t *testing.T) {
 	t.Parallel()
 	workdir := t.TempDir()
@@ -121,5 +149,34 @@ func TestEnsureGoalFileRefusesSymlink(t *testing.T) {
 	}
 	if target, _ := os.Readlink(filepath.Join(board, "goal-g1")); target != "/tmp" {
 		t.Fatalf("refused write changed the symlink")
+	}
+}
+
+func TestRewriteGoalFileRefusesSymlink(t *testing.T) {
+	t.Parallel()
+	workdir := t.TempDir()
+	w := Writer{EnsureBoard: stubBoard(nil)}
+	if _, err := w.EnsureGoalFile(workdir, "g1", []byte("x\n"), false); err != nil {
+		t.Fatalf("first write: %v", err)
+	}
+	board := filepath.Join(workdir, ".fleet-board")
+	if err := os.Remove(filepath.Join(board, "goal-g1")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("/tmp", filepath.Join(board, "goal-g1")); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.RewriteGoalFile(workdir, "g1", []byte("y\n")); err == nil {
+		t.Fatalf("rewrite through a symlinked goal file succeeded")
+	}
+	if target, _ := os.Readlink(filepath.Join(board, "goal-g1")); target != "/tmp" {
+		t.Fatalf("refused rewrite changed the symlink")
+	}
+	left, err := filepath.Glob(filepath.Join(board, ".goal-g1.tmp-*"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(left) != 0 {
+		t.Fatalf("refused rewrite left temp files behind: %v", left)
 	}
 }

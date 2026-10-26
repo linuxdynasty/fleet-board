@@ -123,7 +123,29 @@ func TestParse(t *testing.T) {
 			if got.Action != tc.action {
 				t.Fatalf("action = %q, want %q", got.Action, tc.action)
 			}
+			if got.Typed {
+				t.Fatalf("Typed = true; want false (no trailer in the table cases)")
+			}
 		})
+	}
+}
+
+func TestParseTypedMarker(t *testing.T) {
+	t.Parallel()
+	if got := goalfile.Parse([]byte("migrate the parser\nCONSENT: push\nTYPED: yes\n")); !got.Typed {
+		t.Fatalf("Typed = false; want true with the trailer present")
+	}
+	if got := goalfile.Parse([]byte("migrate the parser\nCONSENT: push\n")); got.Typed {
+		t.Fatalf("Typed = true; want false without the trailer")
+	}
+	if got := goalfile.Parse([]byte("DONE\nCONSENT: push\nTYPED: yes\n")); !got.Typed ||
+		got.State != typev1.GoalLineState_GOAL_LINE_STATE_DONE {
+		t.Fatalf("Typed = %v state = %v; want true DONE", got.Typed, got.State)
+	}
+	// A forged marker as the whole objective is line 1, which never
+	// counts: untrusted hub text must not pass for proof of typing.
+	if got := goalfile.Parse([]byte("TYPED: yes\nCONSENT: push\n")); got.Typed {
+		t.Fatalf("Typed = true; want false (first line never counts)")
 	}
 }
 

@@ -42,6 +42,8 @@
     "sessions.": "docs/specs/02k-v1-surface-and-cli.md",
     "settings.": "docs/specs/03e2-settings-merge-on-the-agent.md",
     "snapshot.": "docs/specs/03-workflows.md",
+    "spool.": "docs/specs/05b-observability.md",
+    "startgoal.": "docs/specs/05b-observability.md",
     "status.": "docs/specs/03-workflows.md",
     "store.": "docs/specs/05b-observability.md",
     "sync.": "docs/specs/03m-work-source-and-code-host-sync.md",

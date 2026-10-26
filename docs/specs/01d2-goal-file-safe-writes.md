@@ -49,7 +49,8 @@ through one open directory handle, with no path walked twice.
    `openat(dir_fd, name, O_RDONLY|O_NOFOLLOW|O_CLOEXEC)`, then `fstat`: a
    regular file, link count 1, at most 4 KiB ([03k](03k-observed-goals.md)).
    Only the first line and the `CONSENT:` line are read, with control
-   characters stripped. The agent already reads its own status file this way
+   characters stripped; a `TYPED: yes` trailer line (StartGoal step 13,
+   proof the goal was typed) is ignored by every other reader. The agent already reads its own status file this way
    (`internal/agent/statusfile/read.go`): extend that pattern, do not write a
    second one. A confinement that follows links inside the root (Go's `os.Root`
    alone) is not enough.

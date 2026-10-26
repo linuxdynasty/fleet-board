@@ -89,10 +89,11 @@ func TestInterruptPaneTravelsFromHubToRealTmux(t *testing.T) {
 					"worktree": false, "scratch": false,
 					"goal.hooks.claude": false, "goal.hooks.codex": false,
 					"goal.hooks.muse": false, "goal.hooks.cursor": false,
+					"goal.start": false, "preflight": false,
 				}
 				for _, c := range caps {
 					if _, ok := want[c.GetName()]; !ok || c.GetVersion() != 1 {
-						t.Fatalf("production Hello capabilities = %v, want interrupt, goal.registry, worktree, scratch, goal.hooks.* v1", caps)
+						t.Fatalf("production Hello capabilities = %v, want interrupt, goal.registry, worktree, scratch, goal.hooks.*, goal.start, preflight v1", caps)
 					}
 					want[c.GetName()] = true
 				}

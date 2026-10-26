@@ -117,6 +117,53 @@ func (w Writer) EnsureGoalFile(workdir, goalID string, content []byte, repoShips
 	return false, nil
 }
 
+// RewriteGoalFile replaces goal-<goal_id> with content (the 02h re-arm
+// reopen path, 01d2 rule 4): a temporary file in the same folder
+// through the handle, renamed over the name. Mode 0600, no follow, so
+// a symlink in the name's place is never replaced. Unlike
+// EnsureGoalFile it never refuses different bytes: the caller owns the
+// decision (re-arm rewriting DONE, type_goal recording delivery).
+func (w Writer) RewriteGoalFile(workdir, goalID string, content []byte) error {
+	if !goalIDRule.MatchString(goalID) {
+		return fmt.Errorf("goalfile: rewrite %q: %w", goalID, ErrGoalID)
+	}
+	board, _, err := w.board(workdir)
+	if err != nil {
+		return err
+	}
+	dir, err := openBoard(board)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = unix.Close(dir) }()
+	name := "goal-" + goalID
+	// Refuse before replacing: like EnsureGoalFile, a symlink (or any
+	// non-regular file) in the name's place fails instead of being
+	// swapped out from under whoever put it there.
+	var st unix.Stat_t
+	if err := unix.Fstatat(dir, name, &st, unix.AT_SYMLINK_NOFOLLOW); err == nil {
+		if st.Mode&syscall.S_IFMT != syscall.S_IFREG || st.Nlink != 1 {
+			return fmt.Errorf("goalfile: %s is %w", name, ErrGoalFileUnsafe)
+		}
+	} else if !errors.Is(err, syscall.ENOENT) {
+		return fmt.Errorf("goalfile: stat %s: %w", name, err)
+	}
+	tmp := fmt.Sprintf(".%s.tmp-%d", name, unix.Getpid())
+	tfd, err := unix.Openat(dir, tmp, unix.O_WRONLY|unix.O_CREAT|unix.O_EXCL|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0o600)
+	if err != nil {
+		return fmt.Errorf("goalfile: create %s: %w", tmp, notPlain(err))
+	}
+	if werr := writeClose(tfd, content); werr != nil {
+		_ = unix.Unlinkat(dir, tmp, 0)
+		return fmt.Errorf("goalfile: write %s: %w", tmp, werr)
+	}
+	if err := unix.Renameat(dir, tmp, dir, name); err != nil {
+		_ = unix.Unlinkat(dir, tmp, 0)
+		return fmt.Errorf("goalfile: replace %s: %w", name, err)
+	}
+	return nil
+}
+
 // ReleaseGoalFile unlinks goal-<goal_id> through the board handle (no
 // follow) and then removes .fleet-board/ only when its .gitignore is
 // the single entry left; a folder holding anything else stays (01d2

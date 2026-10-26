@@ -27,6 +27,12 @@ type File struct {
 	WatchPID    uint32
 	Owner       string
 	Action      string
+	// Typed reports a TYPED: yes trailer line: the agent typed this goal
+	// into the harness after writing the file (StartGoal step 13). Only
+	// the agent writes it, and only after a successful type, so on resume
+	// it proves the typing happened; a file without it proves nothing
+	// about step 13 either way.
+	Typed bool
 }
 
 // Parse reads the first line and the first CONSENT: line of data. The
@@ -49,6 +55,16 @@ func Parse(data []byte) File {
 		}
 	}
 	f := File{FirstLine: clean(first), ConsentLine: clean(consent)}
+	// The trailer is the line step 13 appends after the CONSENT line. The
+	// first (objective) line never counts, even when it reads exactly the
+	// same: hub goal text is untrusted, so a forged "TYPED: yes" objective
+	// must not pass for proof of typing.
+	for _, line := range strings.Split(s, "\n")[1:] {
+		if line == "TYPED: yes" {
+			f.Typed = true
+			break
+		}
+	}
 	if f.FirstLine == "DONE" {
 		f.State = typev1.GoalLineState_GOAL_LINE_STATE_DONE
 		return f
