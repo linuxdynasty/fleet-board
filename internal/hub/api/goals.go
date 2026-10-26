@@ -204,6 +204,16 @@ func goalViewOf(row statedb.GoalRow) (goalView, error) {
 // create_time is the first sight and update_time the last observed change.
 // Run history and transitions need the dispatch rows, so restarts reads 0
 // from the stored status until their slice.
+// goalProtoOfRow assembles one freshly moved goal row for a dispatch or
+// control response: the same view the reads serve, without re-reading.
+func goalProtoOfRow(row statedb.GoalRow) (*hubv1.Goal, error) {
+	v, err := goalViewOf(row)
+	if err != nil {
+		return nil, err
+	}
+	return goalProto(v)
+}
+
 func goalProto(v goalView) (*hubv1.Goal, error) {
 	start := time.UnixMilli(v.row.StartMs)
 	observed := time.UnixMilli(v.row.ObservedMs)

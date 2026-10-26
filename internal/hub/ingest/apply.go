@@ -206,6 +206,10 @@ func snapshotIn(s Stream, snap *agentv1.Snapshot, now time.Time) (statedb.Snapsh
 		loaded = p.GetLoadedTime().AsTime()
 	}
 	d := snap.GetDrain()
+	harnesses, err := snapshotHarnesses(snap)
+	if err != nil {
+		return statedb.SnapshotIn{}, fmt.Errorf("ingest: encode harnesses: %w", err)
+	}
 	return statedb.SnapshotIn{
 		MachineID: s.MachineID, Epoch: s.Epoch, Seq: snap.GetSeq(), Facts: string(fj), Resources: resources,
 		Policy: statedb.Policy{
@@ -216,6 +220,25 @@ func snapshotIn(s Stream, snap *agentv1.Snapshot, now time.Time) (statedb.Snapsh
 			Draining: d.GetDraining(),
 			Local:    d.GetRequestedByPrincipal().GetKind() == typev1.PrincipalKind_PRINCIPAL_KIND_LOCAL_USER,
 		},
-		LastEventSeq: s.LastEventSeq, Counters: s.Counters, InstallID: s.InstallID, Now: now,
+		LastEventSeq: s.LastEventSeq, Counters: s.Counters, InstallID: s.InstallID, Harnesses: harnesses, Now: now,
 	}, nil
+}
+
+// snapshotHarnesses reads the snapshot's reported harness inventory (the
+// catalog hash RunHarnessCommand must match and the goal-control account
+// as protojson) for the machine_harness replace.
+func snapshotHarnesses(snap *agentv1.Snapshot) ([]statedb.HarnessInventory, error) {
+	var out []statedb.HarnessInventory
+	for _, h := range snap.GetHarnesses() {
+		gc, err := protojson.Marshal(h.GetGoalControl())
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, statedb.HarnessInventory{
+			Harness: h.GetHarness().GetName(), Profile: h.GetProfile(), Version: h.GetVersion(),
+			CatalogHash: h.GetCatalog().GetHash(), GoalControlJSON: string(gc),
+			LaunchAllowed: h.GetLaunchAllowed(),
+		})
+	}
+	return out, nil
 }

@@ -135,6 +135,37 @@ func Withdraw(ctx context.Context, tx *sql.Tx, id string, actor statedb.Actor, n
 	return Get(ctx, tx, id, now)
 }
 
+// AttachGoal records the goal a decided DISPATCH_CONFIRM started, beside
+// the operation AttachOperation records (02m "for a dispatch, the goal").
+// The caller inserts the goal first, then attaches in the same
+// transaction, so the decision and its goal commit together.
+func AttachGoal(ctx context.Context, tx *sql.Tx, id, goalID string, now time.Time) error {
+	if id == "" || goalID == "" {
+		return fmt.Errorf("%w: id and goal are required", ErrInvalid)
+	}
+	if now.IsZero() {
+		return fmt.Errorf("%w: now is required", ErrInvalid)
+	}
+	st, err := statedb.NextStamp(ctx, tx, now)
+	if err != nil {
+		return err
+	}
+	res, err := tx.ExecContext(ctx, `UPDATE approvals SET goal_id = ?, update_time = ?,
+		hub_seq = ?, observed_time = ? WHERE id = ? AND state = 'DECIDED'`,
+		goalID, now.UnixMilli(), st.HubSeq, st.ObservedTime.UnixMilli(), id)
+	if err != nil {
+		return fmt.Errorf("approvals: attach goal: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("approvals: attach goal: %w", err)
+	}
+	if n == 0 {
+		return fmt.Errorf("%w: approval is not decided", ErrInvalid)
+	}
+	return nil
+}
+
 // AttachOperation records the command a decided approval sent (outbox
 // command_id). The caller enqueues first with outbox.Enqueue, then attaches
 // in the same transaction, so the decision and its command commit together.

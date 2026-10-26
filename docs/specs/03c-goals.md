@@ -200,12 +200,13 @@ renders and joins the acts itself, so nothing the hub sends can add a `--`, a
 comma or a newline to the typed line; an act the agent does not know is
 `INVALID_ARGUMENT` and the goal is not typed.
 
-### Default goal text for repos without eshu's hooks (0.18 — DRAFT, needs owner approval)
+### Default goal text for repos without eshu's hooks (0.18 — approved)
 
-DRAFT for [#63](https://github.com/linuxdynasty/fleet-board/issues/63): the
-wording below is proposed, not decided. It becomes normative when the owner
-approves it (approval is merging this section, plus a comment on #63). Until
-then row 22 gates the first `StartGoal` in such a repo.
+Approved in [#63](https://github.com/linuxdynasty/fleet-board/issues/63)
+(closed 2026-10-26): the wording below is normative. The owner direction
+keeps it generic — learnings from eshu and this project rebuilt for any
+repo, no eshu-specific paths or assumptions. Row 22 no longer gates the
+first `StartGoal` in such a repo.
 
 When the checkout does not ship eshu's hooks, the hub builds
 `GoalSpec.goal_text` from this template (`<...>` is filled per goal; the

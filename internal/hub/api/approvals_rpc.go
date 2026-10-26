@@ -165,6 +165,9 @@ func (f *Fleet) DecideApproval(ctx context.Context, req *connect.Request[hubv1.D
 	var outcome approvals.Outcome
 	var sent *hubv1.Operation
 	var sentKind string
+	var decidedGoal statedb.GoalRow
+	var decidedItem statedb.WorkItemRow
+	var decidedDispatch bool
 	var decideAudits []statedb.AuditStored
 	if commitErr := f.store.WriteHook(ctx, statedb.WithAuditCapture(ctx, func(tx *sql.Tx) error {
 		var err error
@@ -201,7 +204,7 @@ func (f *Fleet) DecideApproval(ctx context.Context, req *connect.Request[hubv1.D
 		if !outcome.Sends {
 			return nil
 		}
-		sent, sentKind, err = f.sendDecided(ctx, tx, who, outcome, m.GetRequestId(), now)
+		sent, sentKind, decidedGoal, decidedItem, decidedDispatch, err = f.sendDecided(ctx, tx, who, outcome, m.GetRequestId(), now)
 		if err != nil {
 			return err
 		}
@@ -211,6 +214,10 @@ func (f *Fleet) DecideApproval(ctx context.Context, req *connect.Request[hubv1.D
 	}, &decideAudits), func() {
 		// Runs on the writer in commit order (#393).
 		f.publishApprovalWatch(outcome.HubSeq, outcome.Approval, hubv1.ChangeType_CHANGE_TYPE_UPDATED, outcome.Replay)
+		if decidedDispatch && !outcome.Replay {
+			f.PublishGoalsCommitted(ctx, decidedGoal.MachineID, nil, []statedb.GoalRow{decidedGoal})
+			f.publishDispatchWorkItem(ctx, decidedItem)
+		}
 		// The job's own audits publish here, after its resources, in
 		// batch order: a resume never skips them (#403).
 		f.publishAudits(decideAudits)
@@ -224,7 +231,9 @@ func (f *Fleet) DecideApproval(ctx context.Context, req *connect.Request[hubv1.D
 	}
 	f.approvals.Add(ctx, 1, metric.WithAttributes(
 		attribute.String("kind", kind), attribute.String("outcome", outcomeName)))
-	if sent != nil && !outcome.Replay {
+	// A decided dispatch counted its start_goal send inside the write
+	// transaction; replays send nothing.
+	if sent != nil && !outcome.Replay && !decidedDispatch {
 		f.countSession(ctx, sentKind, "sent")
 	}
 	f.tel.Logger.InfoContext(ctx, "approval.decided", "kind", kind,
@@ -297,20 +306,8 @@ func approvalKindAttr(k hubv1.ApprovalKind) string {
 	}
 }
 
-// sendDecided enqueues what an approved decision releases, in the Decide
-// transaction: the typed answer for a prompt (bound to its prompt_id), the
-// stored command for a confirm. Dispatch confirms create nothing here;
-// row 22's StartGoal reads the decided approval and starts the goal.
-func (f *Fleet) sendDecided(ctx context.Context, tx *sql.Tx, who *typev1.Principal,
-	outcome approvals.Outcome, requestID string, now time.Time,
-) (*hubv1.Operation, string, error) {
-	a := outcome.Approval
-	cmd, err := commandForDecision(ctx, tx, a, a.GetDecision(), outcome.PromptID)
-	if err != nil || cmd == nil {
-		return nil, "", err
-	}
-	return f.sendApprovedTx(ctx, tx, who, a, cmd, requestID, now)
-}
+// sendDecided lives in dispatch_decide.go: besides the prompt answer and
+// the stored command it starts the goal a DISPATCH_CONFIRM approval held.
 
 func commandForDecision(ctx context.Context, tx *sql.Tx, a *hubv1.Approval,
 	decision, promptID string,
