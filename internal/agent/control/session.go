@@ -75,6 +75,10 @@ type Options struct {
 	Rec *typing.Recorder
 	// Now is the clock for result timestamps. Nil means time.Now.
 	Now func() time.Time
+	// LookPath resolves a harness binary on PATH for StartGoalWindow.
+	// Nil means proc.LookPath: the agent launches what the owner
+	// installed where the owner installed it.
+	LookPath func(string) (string, error)
 }
 
 // Ensurer runs EnsureSession (F1), EnsureWindow (F2), SendKeys (F3,
@@ -103,6 +107,7 @@ type Ensurer struct {
 	marks      Marks
 	rec        *typing.Recorder
 	now        func() time.Time
+	lookPath   func(string) (string, error)
 	// mu serializes F2's list/find/cap/create sequence per server, so two
 	// racing commands cannot both land under the cap or the same name.
 	// Never nested: nothing under it calls back into the Ensurer.
@@ -198,6 +203,7 @@ func New(o Options) (*Ensurer, error) {
 		rec:        o.Rec,
 		now:        o.Now,
 		start:      o.StartServer,
+		lookPath:   o.LookPath,
 		panes:      map[string]*paneLock{},
 	}
 	if e.tmux == "" {

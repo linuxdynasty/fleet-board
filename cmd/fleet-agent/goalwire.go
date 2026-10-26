@@ -31,17 +31,16 @@ import (
 // H1, H3, H4), or nil without tmux: with no panes there is nothing to
 // attribute and the Snapshot carries no goals or repos. The refresher
 // rebuilds the checkout table (git) and forge state (gh); the tracker
-// attributes goal files and emits GoalState events. One mutex guards both
-// across the tick goroutine and the snapshot hook.
+// attributes goal files and emits GoalState events. One mutex guards the
+// table, the tracker and the registry across the tick goroutine, the
+// snapshot hook and the command handlers.
 type goalsRun struct {
 	mu        sync.Mutex
 	refresher *repos.Refresher
 	tracker   *goals.Tracker
 	// reg is the fleet-goal registry (row 20 lane 3): RegisterGoal and
 	// ReleaseGoal bind it, hooks match against it, and the snapshot
-	// carries it. Its pane-checkout seam (live-pane InUse) lands with
-	// row 21 (StartGoal); until then that step refuses instead of
-	// guessing.
+	// carries it. Its pane-checkout seam is the snapshot below (row 21).
 	reg *goalregistry.Services
 	// boardMgr runs the H2/F7 filesystem commands (row 20 lane 1) and
 	// hookHandler the G1 hook installs (row 20 lane 2); both resolve
@@ -50,6 +49,17 @@ type goalsRun struct {
 	hookHandler exec.Handler
 	roots       func() []string
 	log         *telemetry.Telemetry
+	// StartGoal production seams (row 21, G3): the runner and callers
+	// for pane git and tmux calls, the gh surface for push access, the
+	// observer run (windows, typing, screens), the state dir, and the
+	// local goal cap (setGoalCap, after settings open).
+	tmx        tmuxRun
+	runner     *proc.Runner
+	gitCaller  proc.Caller
+	tmuxCaller proc.Caller
+	forge      repos.Forge
+	stateDir   func() string
+	maxGoals   func() int
 }
 
 // goalHandlers returns the registry command handlers, or nil without
@@ -81,21 +91,34 @@ func startGoals(tel *telemetry.Telemetry, machineID string, db *ring.DB, em *eve
 	if err != nil {
 		return nil, err
 	}
+	tmuxCaller, err := proc.For("tmux")
+	if err != nil {
+		return nil, err
+	}
 	refresher := repos.NewRefresher(repos.Config{
 		Roots: roots(), Git: repos.NewGit(runner, gitCaller), Forge: repos.NewForge(runner, ghCaller),
 	})
-	reg := goalregistry.NewServices(em.Emit, time.Now, goalfile.Writer{EnsureBoard: ensureBoard}, nil)
 	g := &goalsRun{
-		refresher: refresher,
-		tracker: goals.NewTracker(goals.Config{
-			MachineID: machineID, Panes: &observerPanes{obs: tmx.obs}, Checkouts: refresher,
-			Procs: goals.GopsutilProcs{}, Files: goals.OSFiles{}, DB: db, Emit: em,
-			Captures: &observerCaptures{obs: tmx.obs}, Bound: reg.IsBound,
-		}),
-		reg:   reg,
-		roots: roots,
-		log:   tel,
+		refresher:  refresher,
+		roots:      roots,
+		log:        tel,
+		tmx:        tmx,
+		runner:     runner,
+		gitCaller:  gitCaller,
+		tmuxCaller: tmuxCaller,
+		forge:      repos.NewForge(runner, ghCaller),
+		stateDir:   func() string { return stateDir },
 	}
+	// The registry's pane-checkout seam (row 21): the snapshot derives
+	// the checkout and harness, and the tracker reads liveness through
+	// the same registry. Bound closes the loop for observed goals.
+	g.reg = goalregistry.NewServices(em.Emit, time.Now,
+		goalfile.Writer{EnsureBoard: ensureBoard}, goalregistry.PaneInfo(g.paneInfo))
+	g.tracker = goals.NewTracker(goals.Config{
+		MachineID: machineID, Panes: &observerPanes{obs: tmx.obs}, Checkouts: refresher,
+		Procs: goals.GopsutilProcs{}, Files: goals.OSFiles{}, DB: db, Emit: em,
+		Captures: &observerCaptures{obs: tmx.obs}, Bound: g.reg.IsBound,
+	})
 	// Repo short names resolve through the checkout table under the run
 	// mutex: the table is rebuilt on the tick goroutine while commands
 	// resolve on the exec goroutines.
@@ -107,10 +130,17 @@ func startGoals(tel *telemetry.Telemetry, machineID string, db *ring.DB, em *eve
 		}
 		return "", fmt.Errorf("worktree: no local checkout of %s/%s", repo.GetHost(), repo.GetPath())
 	}
+	// The production InUse/ReleaseByPath seams (row 21): a live pane
+	// working inside the path blocks the prune, and pruning drops the
+	// registry entries that point into it.
 	mgr, err := worktree.New(worktree.Config{
 		Runner: runner, Caller: gitCaller, Roots: roots,
 		LookupRepo: lookup,
-		StateDir:   func() string { return stateDir },
+		InUse:      g.inUse,
+		ReleaseByPath: func(path string) {
+			g.reg.Registry().ReleaseByPath(path)
+		},
+		StateDir: func() string { return stateDir },
 	})
 	if err != nil {
 		return nil, err
