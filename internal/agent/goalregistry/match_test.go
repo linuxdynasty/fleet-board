@@ -149,13 +149,17 @@ func TestResolveSessionCollisionAcrossHarnesses(t *testing.T) {
 	if _, err := r.LearnSession(pane("default", "s1", "%2"), "sess-both"); err != nil {
 		t.Fatal(err)
 	}
-	out := r.Resolve(Call{Harness: "muse", Kind: agentv1.HookEventKind_HOOK_EVENT_KIND_USER_PROMPT,
-		Pane: pane("other", "s9", "%9"), Session: "sess-both"})
+	out := r.Resolve(Call{
+		Harness: "muse", Kind: agentv1.HookEventKind_HOOK_EVENT_KIND_USER_PROMPT,
+		Pane: pane("other", "s9", "%9"), Session: "sess-both",
+	})
 	if out.Silent || out.Entry.GetGoal().GetValue() != "01bbb" {
 		t.Fatalf("muse resolve = %+v, want 01bbb", out)
 	}
-	out = r.Resolve(Call{Harness: "claude", Kind: agentv1.HookEventKind_HOOK_EVENT_KIND_USER_PROMPT,
-		Pane: pane("other", "s9", "%9"), Session: "sess-both"})
+	out = r.Resolve(Call{
+		Harness: "claude", Kind: agentv1.HookEventKind_HOOK_EVENT_KIND_USER_PROMPT,
+		Pane: pane("other", "s9", "%9"), Session: "sess-both",
+	})
 	if out.Silent || out.Entry.GetGoal().GetValue() != "01aaa" {
 		t.Fatalf("claude resolve = %+v, want 01aaa", out)
 	}
