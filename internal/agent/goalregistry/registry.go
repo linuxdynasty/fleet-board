@@ -192,13 +192,15 @@ func (r *Registry) ByPane(pane *typev1.PaneKey) (*agentv1.GoalRegistration, bool
 	return entry, ok
 }
 
-// BySession returns an entry whose learned harness session id matches,
-// if any.
-func (r *Registry) BySession(session string) (*agentv1.GoalRegistration, bool) {
+// BySession returns the entry of one harness whose learned session id
+// matches, if any. The harness must agree with the caller (hook.py only
+// binds when harness and session both match), so a session id reused
+// across harnesses never binds the wrong goal.
+func (r *Registry) BySession(session, harness string) (*agentv1.GoalRegistration, bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	for _, entry := range r.byPane {
-		if entry.GetHarnessSessionId() == session && session != "" {
+		if session != "" && entry.GetHarnessSessionId() == session && entry.GetHarness().GetName() == harness {
 			return entry, true
 		}
 	}

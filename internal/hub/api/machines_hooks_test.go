@@ -65,13 +65,13 @@ func TestEnsureMachineHooksFansOut(t *testing.T) {
 	if err != nil {
 		t.Fatalf("EnsureMachineHooks: %v", err)
 	}
-	if got := len(res.Msg.GetOperations()); got != 5 {
-		t.Fatalf("operations = %d, want 5 (known harnesses x one repo)", got)
+	if got := len(res.Msg.GetOperations()); got != 4 {
+		t.Fatalf("operations = %d, want 4 (hook-shaped harnesses x one repo; opencode takes no install)", got)
 	}
-	if got := pendingCommands(t, e, "m1"); got != 5 {
-		t.Fatalf("outbox holds %d commands, want 5", got)
+	if got := pendingCommands(t, e, "m1"); got != 4 {
+		t.Fatalf("outbox holds %d commands, want 4", got)
 	}
-	if got := auditActionsFor(t, e, "machines/m1"); len(got) != 5 {
+	if got := auditActionsFor(t, e, "machines/m1"); len(got) != 4 {
 		t.Fatalf("audit = %v, want one machine.ensure_hooks per command", got)
 	} else {
 		for _, a := range got {
@@ -87,10 +87,10 @@ func TestEnsureMachineHooksFansOut(t *testing.T) {
 	if err != nil {
 		t.Fatalf("replay: %v", err)
 	}
-	if len(res2.Msg.GetOperations()) != 5 {
-		t.Fatalf("replay operations = %d, want 5", len(res2.Msg.GetOperations()))
+	if len(res2.Msg.GetOperations()) != 4 {
+		t.Fatalf("replay operations = %d, want 4", len(res2.Msg.GetOperations()))
 	}
-	if got := pendingCommands(t, e, "m1"); got != 5 {
+	if got := pendingCommands(t, e, "m1"); got != 4 {
 		t.Fatalf("replay enqueued more: outbox holds %d", got)
 	}
 }

@@ -144,12 +144,13 @@ func (f *Fleet) EnsureMachineHooks(ctx context.Context, req *connect.Request[hub
 	return connect.NewResponse(&hubv1.EnsureMachineHooksResponse{Operations: ops}), nil
 }
 
-// hookHarnesses expands the request's harness: explicit, or every known
-// harness when unset. Unknown names are refused: the hub never invents
-// a harness the agent does not know.
+// hookHarnesses expands the request's harness: explicit, or every
+// hook-shaped harness when unset (opencode takes no hook install, so the
+// button never fans out to it). Unknown names are refused: the hub never
+// invents a harness the agent does not know.
 func hookHarnesses(name string) ([]string, error) {
 	if name == "" {
-		return hookreconcile.KnownHarnesses(), nil
+		return hookreconcile.HookHarnesses(), nil
 	}
 	for _, known := range hookreconcile.KnownHarnesses() {
 		if name == known {

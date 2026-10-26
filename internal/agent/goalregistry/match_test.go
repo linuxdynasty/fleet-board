@@ -136,3 +136,27 @@ func TestResolveMuseDriverAndLearned(t *testing.T) {
 		t.Fatalf("new session on a learned driver entry matched: %+v", out.Entry)
 	}
 }
+
+// TestResolveSessionCollisionAcrossHarnesses: one session id learned on
+// two harnesses binds each call to its own harness's goal, never the
+// other harness's (hook.py requires the same agreement).
+func TestResolveSessionCollisionAcrossHarnesses(t *testing.T) {
+	t.Parallel()
+	r := seed(t)
+	if _, err := r.LearnSession(pane("default", "s1", "%1"), "sess-both"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.LearnSession(pane("default", "s1", "%2"), "sess-both"); err != nil {
+		t.Fatal(err)
+	}
+	out := r.Resolve(Call{Harness: "muse", Kind: agentv1.HookEventKind_HOOK_EVENT_KIND_USER_PROMPT,
+		Pane: pane("other", "s9", "%9"), Session: "sess-both"})
+	if out.Silent || out.Entry.GetGoal().GetValue() != "01bbb" {
+		t.Fatalf("muse resolve = %+v, want 01bbb", out)
+	}
+	out = r.Resolve(Call{Harness: "claude", Kind: agentv1.HookEventKind_HOOK_EVENT_KIND_USER_PROMPT,
+		Pane: pane("other", "s9", "%9"), Session: "sess-both"})
+	if out.Silent || out.Entry.GetGoal().GetValue() != "01aaa" {
+		t.Fatalf("claude resolve = %+v, want 01aaa", out)
+	}
+}

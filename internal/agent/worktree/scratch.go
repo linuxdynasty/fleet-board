@@ -81,6 +81,12 @@ func (m *Manager) EnsureScratch(ctx context.Context, cmd *agentv1.EnsureScratch)
 		return refuse(typev1.Status_STATUS_FAILED, typev1.ReasonCode_REASON_CODE_INTERNAL,
 			"cannot create the scratch directory")
 	}
+	// MkdirAll follows a pre-planted symlink, so re-check after: writes
+	// below must stay inside the agent-private state dir (01d2 posture).
+	if fi, err := os.Lstat(dir); err != nil || !fi.Mode().IsDir() {
+		return refuse(typev1.Status_STATUS_FAILED, typev1.ReasonCode_REASON_CODE_INTERNAL,
+			"scratch directory is not a plain directory")
+	}
 	if _, _, err := EnsureBoardDir(dir); err != nil {
 		return boardResult(err)
 	}
@@ -123,6 +129,13 @@ func (m *Manager) CollectScratch(ctx context.Context, cmd *agentv1.CollectScratc
 	limit := cmd.GetMaxBytes()
 	if limit == 0 || limit > maxCollectBytes {
 		limit = maxCollectBytes
+	}
+	// A pre-planted symlink would carry the open below out of the state
+	// dir (O_NOFOLLOW guards only the final component), so the directory
+	// itself must be plain first; a link reads as missing (never followed).
+	if fi, err := os.Lstat(dir); err != nil || !fi.Mode().IsDir() {
+		return refuse(typev1.Status_STATUS_FAILED, typev1.ReasonCode_REASON_CODE_SCRATCH_MISSING,
+			"no such scratch file")
 	}
 	path := filepath.Join(dir, cmd.GetName())
 	f, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW, 0) //nolint:gosec // G304: the name passed the closed pattern above

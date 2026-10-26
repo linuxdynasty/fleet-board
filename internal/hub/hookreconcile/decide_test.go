@@ -32,6 +32,11 @@ func TestDecide(t *testing.T) {
 		want   []Want
 	}{
 		"healthy installs want nothing": {},
+		"shapeless harness wants nothing": {
+			mutate: func(in *Input) {
+				in.Harnesses = append(in.Harnesses, Harness{Name: "opencode", LaunchAllowed: true, State: HookState{}})
+			},
+		},
 		"missing checkout state wants install": {
 			mutate: func(in *Input) {
 				in.Harnesses[0].State = HookState{}

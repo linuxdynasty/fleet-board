@@ -108,9 +108,10 @@ type Want struct {
 // (harness, profile, repo host, repo path). ESHU repos only report;
 // AUTO follows the checkout's repo_ships_own (unknown installs once to
 // learn it); GENERIC installs regardless. A checkout whose repo is
-// unknown or disabled, a harness the machine may not launch, and a
-// harness with a live goal never want — even forced, because a forced
-// install would fight the repo's own Stop guard or interrupt a goal.
+// unknown or disabled, a harness the machine may not launch, a harness
+// with no hook shape (opencode), and a harness with a live goal never
+// want — even forced, because a forced install would fight the repo's
+// own Stop guard or interrupt a goal.
 func Decide(in Input) []Want {
 	repos := map[[2]string]Repo{}
 	for _, r := range in.Repos {
@@ -135,7 +136,7 @@ func Decide(in Input) []Want {
 			continue
 		}
 		for hp, h := range byHarness {
-			if !h.LaunchAllowed {
+			if !h.LaunchAllowed || !hookShaped(h.Name) {
 				continue
 			}
 			if in.Live[h.Name] {
@@ -166,7 +167,7 @@ func Decide(in Input) []Want {
 			continue
 		}
 		h, ok := byHarness[HP{Harness: f.Key.Harness, Profile: f.Key.Profile}]
-		if !ok || !h.LaunchAllowed {
+		if !ok || !h.LaunchAllowed || !hookShaped(h.Name) {
 			continue
 		}
 		if in.Live[h.Name] {

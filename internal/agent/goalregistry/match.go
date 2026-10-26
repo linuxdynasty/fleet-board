@@ -54,12 +54,12 @@ func (r *Registry) Resolve(call Call) Outcome {
 		return Outcome{Silent: true}
 	}
 	session := goalfile.Clean(call.Session, 256)
+	harness := goalfile.Clean(call.Harness, 32)
 	if session != "" {
-		if entry, ok := r.BySession(session); ok {
+		if entry, ok := r.BySession(session, harness); ok {
 			return Outcome{Entry: entry}
 		}
 	}
-	harness := goalfile.Clean(call.Harness, 32)
 	if harness != "muse" && call.Pane != nil {
 		if entry, ok := r.ByPane(call.Pane); ok {
 			return r.learn(entry, session)

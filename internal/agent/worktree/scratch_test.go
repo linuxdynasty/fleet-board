@@ -399,3 +399,45 @@ func TestCollectScratch(t *testing.T) {
 		})
 	}
 }
+
+func TestEnsureScratchRefusesSymlinkDir(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	state := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(state, "scratch"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	outside := t.TempDir()
+	if err := os.Symlink(outside, filepath.Join(state, "scratch", "01abc")); err != nil {
+		t.Fatal(err)
+	}
+	m := scratchManager(t, state)
+	res := m.EnsureScratch(ctx, &agentv1.EnsureScratch{Goal: &typev1.GoalId{Value: "01abc"}, Files: []*agentv1.ScratchFile{scratchFile("a.json", "{}")}})
+	if res.GetStatus() == typev1.Status_STATUS_OK {
+		t.Fatalf("EnsureScratch through a symlinked dir = OK, want refusal")
+	}
+	if entries, err := os.ReadDir(outside); err != nil || len(entries) != 0 {
+		t.Fatalf("outside dir holds %v, %v: the write escaped the state dir", entries, err)
+	}
+}
+
+func TestCollectScratchRefusesSymlinkDir(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	state := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(state, "scratch"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	outside := t.TempDir()
+	if err := os.WriteFile(filepath.Join(outside, "a.json"), []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(state, "scratch", "01abc")); err != nil {
+		t.Fatal(err)
+	}
+	m := scratchManager(t, state)
+	res := m.CollectScratch(ctx, &agentv1.CollectScratch{Goal: &typev1.GoalId{Value: "01abc"}, Name: "a.json"})
+	if res.GetStatus() != typev1.Status_STATUS_FAILED || res.GetReason() != typev1.ReasonCode_REASON_CODE_SCRATCH_MISSING {
+		t.Fatalf("CollectScratch through a symlinked dir = %v %v, want FAILED SCRATCH_MISSING", res.GetStatus(), res.GetReason())
+	}
+}

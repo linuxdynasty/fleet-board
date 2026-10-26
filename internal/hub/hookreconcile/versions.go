@@ -22,3 +22,25 @@ func ExpectedVersions() map[string]string {
 	}
 	return out
 }
+
+// HookHarnesses lists the harnesses with a defined hook shape, for fan-out
+// (an unset EnsureMachineHooks harness expands over these only). opencode
+// takes no hook install, so it is never fanned out: the agent would refuse
+// every such command with INVALID_ARGUMENT, and the want would never clear.
+func HookHarnesses() []string {
+	out := make([]string, len(hookHarnesses))
+	copy(out, hookHarnesses)
+	return out
+}
+
+// hookShaped reports whether the harness has a defined hook shape.
+// Decide skips the rest on every path (a reported or forced opencode
+// install could never succeed), so the want list never names them.
+func hookShaped(name string) bool {
+	for _, h := range hookHarnesses {
+		if h == name {
+			return true
+		}
+	}
+	return false
+}

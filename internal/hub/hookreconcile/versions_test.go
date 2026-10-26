@@ -20,3 +20,18 @@ func TestExpectedVersionsMatchAgent(t *testing.T) {
 		t.Fatalf("ExpectedVersions covers %d harnesses, want exactly the 4 hook shapes", len(versions))
 	}
 }
+
+// TestHookHarnessesExcludesOpencode: the button fan-out covers only the
+// hook-shaped harnesses. opencode takes no hook install, so expanding an
+// unset harness over it would enqueue a command the agent can never
+// satisfy.
+func TestHookHarnessesExcludesOpencode(t *testing.T) {
+	for _, h := range HookHarnesses() {
+		if h == "opencode" {
+			t.Fatalf("HookHarnesses = %v, want no opencode", HookHarnesses())
+		}
+	}
+	if len(HookHarnesses()) != 4 {
+		t.Fatalf("HookHarnesses = %v, want the 4 hook shapes", HookHarnesses())
+	}
+}

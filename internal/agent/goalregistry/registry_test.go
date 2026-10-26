@@ -126,7 +126,7 @@ func TestLearnSession(t *testing.T) {
 	if err != nil || same {
 		t.Fatalf("second LearnSession = %v, %v", same, err)
 	}
-	got, ok := r.BySession("sess-9")
+	got, ok := r.BySession("sess-9", "muse")
 	if !ok || got.GetGoal().GetValue() != "01abc" {
 		t.Fatalf("BySession = %+v, %v", got, ok)
 	}
@@ -152,5 +152,38 @@ func TestFillSnapshot(t *testing.T) {
 	}
 	if !got[0].GetRepoDriver() || got[1].GetRepoDriver() {
 		t.Fatalf("repo_driver lost: %+v", got)
+	}
+}
+
+// TestBySessionScopesHarness: a harness session id binds only the entry
+// whose harness agrees with the caller (02h). Two harnesses reusing one
+// session id must not resolve to each other's goal.
+func TestBySessionScopesHarness(t *testing.T) {
+	t.Parallel()
+	r := testRegistry(&emitter{})
+	p1 := pane("default", "s1", "%1")
+	p2 := pane("default", "s1", "%2")
+	if _, err := r.Register(p1, "01a", "claude", "/wt", false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.Register(p2, "01b", "codex", "/wt", false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.LearnSession(p1, "sess-x"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.LearnSession(p2, "sess-x"); err != nil {
+		t.Fatal(err)
+	}
+	got, ok := r.BySession("sess-x", "codex")
+	if !ok || got.GetGoal().GetValue() != "01b" {
+		t.Fatalf("BySession(sess-x, codex) = %+v, %v, want 01b", got, ok)
+	}
+	got, ok = r.BySession("sess-x", "claude")
+	if !ok || got.GetGoal().GetValue() != "01a" {
+		t.Fatalf("BySession(sess-x, claude) = %+v, %v, want 01a", got, ok)
+	}
+	if _, ok := r.BySession("sess-x", "muse"); ok {
+		t.Fatal("BySession(sess-x, muse) matched, want silent")
 	}
 }
