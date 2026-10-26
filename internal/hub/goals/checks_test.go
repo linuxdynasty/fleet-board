@@ -81,8 +81,10 @@ func TestEvaluateFailsFirst(t *testing.T) {
 	})
 	t.Run("warn rows", func(t *testing.T) {
 		t.Parallel()
-		in := Input{RepoWatched: true, AccountPacingBlocked: true, AccountUsageUnknown: true,
-			IntegrationLag: true, IntegrationDegraded: true, RepoAtCap: true}
+		in := Input{
+			RepoWatched: true, AccountPacingBlocked: true, AccountUsageUnknown: true,
+			IntegrationLag: true, IntegrationDegraded: true, RepoAtCap: true,
+		}
 		got := byReason(Evaluate(in))
 		for _, want := range []typev1.ReasonCode{
 			typev1.ReasonCode_REASON_CODE_ACCOUNT_PACING_BLOCKED,

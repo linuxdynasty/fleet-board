@@ -43,18 +43,24 @@ func TestMachineHarnessFailsFirst(t *testing.T) {
 		return inv, found
 	}
 	replace([]statedb.HarnessInventory{
-		{MachineID: "m1", Harness: "claude", Version: "2.1.286", CatalogHash: "abc",
-			GoalControlJSON: `{"pauseMode":"GOAL_PAUSE_MODE_INTERRUPT"}`, LaunchAllowed: true},
-		{MachineID: "m1", Harness: "codex", Version: "1.0", CatalogHash: "def",
-			GoalControlJSON: `{}`, LaunchAllowed: true},
+		{
+			MachineID: "m1", Harness: "claude", Version: "2.1.286", CatalogHash: "abc",
+			GoalControlJSON: `{"pauseMode":"GOAL_PAUSE_MODE_INTERRUPT"}`, LaunchAllowed: true,
+		},
+		{
+			MachineID: "m1", Harness: "codex", Version: "1.0", CatalogHash: "def",
+			GoalControlJSON: `{}`, LaunchAllowed: true,
+		},
 	})
 	got, found := read("claude")
 	if !found || got.CatalogHash != "abc" || !got.LaunchAllowed {
 		t.Fatalf("claude = %+v, found %v, want the snapshot's row", got, found)
 	}
 	replace([]statedb.HarnessInventory{
-		{MachineID: "m1", Harness: "claude", Version: "2.1.287", CatalogHash: "abc2",
-			GoalControlJSON: `{}`, LaunchAllowed: true},
+		{
+			MachineID: "m1", Harness: "claude", Version: "2.1.287", CatalogHash: "abc2",
+			GoalControlJSON: `{}`, LaunchAllowed: true,
+		},
 	})
 	if _, found := read("codex"); found {
 		t.Fatalf("codex survived a replace without it")

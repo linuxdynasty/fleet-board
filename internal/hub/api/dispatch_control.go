@@ -24,9 +24,11 @@ import (
 
 // controlAuditAction is the audit of a ControlGoal that sends a command;
 // re-arms audit as goal.rearm, hub-only moves as goal.state_change (02m).
-const controlAuditAction = "goal.control"
-const rearmAuditAction = "goal.rearm"
-const controlMoveAuditAction = "goal.state_change"
+const (
+	controlAuditAction     = "goal.control"
+	rearmAuditAction       = "goal.rearm"
+	controlMoveAuditAction = "goal.state_change"
+)
 
 // ControlGoal runs an operator's intent on a dispatched goal (02m
 // "Control", 03l "Control actions by phase"). It guards on
@@ -272,8 +274,10 @@ func (f *Fleet) applyHarnessControl(ctx context.Context, tx *sql.Tx, who *typev1
 	if err != nil {
 		return statedb.GoalRow{}, nil, nil, err
 	}
-	mk := &controlCommandKit{tx: tx, who: who, machineID: machineID, pane: ctl.status.GetPane(),
-		now: now, requestID: m.GetRequestId(), catalogHash: inv.catalogHash, control: inv.control}
+	mk := &controlCommandKit{
+		tx: tx, who: who, machineID: machineID, pane: ctl.status.GetPane(),
+		now: now, requestID: m.GetRequestId(), catalogHash: inv.catalogHash, control: inv.control,
+	}
 	switch m.GetAction() {
 	case hubv1.GoalAction_GOAL_ACTION_PAUSE:
 		return f.applyPause(ctx, mk, m, ctl)

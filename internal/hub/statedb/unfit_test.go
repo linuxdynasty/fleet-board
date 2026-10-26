@@ -18,8 +18,10 @@ func TestMachineUnfitFailsFirst(t *testing.T) {
 	s := open(t, dir)
 	ctx := context.Background()
 
-	mark := statedb.UnfitMark{MachineID: "m1", Harness: "claude", Repo: "acme/web",
-		Reason: "REASON_CODE_PUSH_ACCESS_MISSING", SinceMs: 1000, NextCheckMs: 2000}
+	mark := statedb.UnfitMark{
+		MachineID: "m1", Harness: "claude", Repo: "acme/web",
+		Reason: "REASON_CODE_PUSH_ACCESS_MISSING", SinceMs: 1000, NextCheckMs: 2000,
+	}
 	if err := s.Write(ctx, func(tx *sql.Tx) error {
 		return statedb.SetUnfit(ctx, tx, mark)
 	}); err != nil {

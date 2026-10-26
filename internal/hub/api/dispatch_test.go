@@ -12,8 +12,10 @@ import (
 	"github.com/linuxdynasty/fleet-board/internal/hub/statedb"
 )
 
-const dispatchConsentJSON = `{"enabled":true,"consent":{"acts":["CONSENT_ACT_PUSH","CONSENT_ACT_PR_OPEN","CONSENT_ACT_MERGE"]}}`
-const dispatchAccountJSON = `{"consent":["CONSENT_ACT_PUSH","CONSENT_ACT_PR_OPEN","CONSENT_ACT_MERGE"]}`
+const (
+	dispatchConsentJSON = `{"enabled":true,"consent":{"acts":["CONSENT_ACT_PUSH","CONSENT_ACT_PR_OPEN","CONSENT_ACT_MERGE"]}}`
+	dispatchAccountJSON = `{"consent":["CONSENT_ACT_PUSH","CONSENT_ACT_PR_OPEN","CONSENT_ACT_MERGE"]}`
+)
 
 // seedDispatchRepo inserts an enabled watched repo with full consent.
 func seedDispatchRepo(t *testing.T, e *fleetEnv, host, path string) {

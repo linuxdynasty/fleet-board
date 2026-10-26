@@ -29,8 +29,10 @@ const defaultRepoCap = 3
 
 // defaultMaxActive and defaultMaxTotal are the machine slot caps when no
 // settings layer sets them (defaults.md).
-const defaultMaxActive = 2
-const defaultMaxTotal = 4
+const (
+	defaultMaxActive = 2
+	defaultMaxTotal  = 4
+)
 
 // staleAfter is how old a usage reading may be before the account reads
 // STALE and the scheduler stops dispatching on it (03b, defaults.md:
