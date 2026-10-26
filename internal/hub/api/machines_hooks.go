@@ -99,7 +99,7 @@ func (f *Fleet) EnsureMachineHooks(ctx context.Context, req *connect.Request[hub
 			return err
 		}
 		wants := hookreconcile.Decide(hookreconcile.Input{
-			Harnesses: hookViews(harnesses), Repos: hookRepos(stored), Live: live, Force: force,
+			Harnesses: hookViews(harnesses, m.GetProfile()), Repos: hookRepos(stored), Live: live, Force: force,
 		})
 		versions := hookreconcile.ExpectedVersions()
 		ops = ops[:0]
@@ -163,12 +163,13 @@ func hookHarnesses(name string) ([]string, error) {
 }
 
 // hookViews lists harnesses with no reported state: the button installs
-// to learn it. Everything here may launch by construction; the agent
-// refuses what it cannot run.
-func hookViews(names []string) []hookreconcile.Harness {
+// to learn it. The requested profile rides along so a named profile
+// actually fans out. Everything here may launch by construction; the
+// agent refuses what it cannot run.
+func hookViews(names []string, profile string) []hookreconcile.Harness {
 	out := make([]hookreconcile.Harness, 0, len(names))
 	for _, name := range names {
-		out = append(out, hookreconcile.Harness{Name: name, LaunchAllowed: true})
+		out = append(out, hookreconcile.Harness{Name: name, Profile: profile, LaunchAllowed: true})
 	}
 	return out
 }

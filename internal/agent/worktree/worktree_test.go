@@ -446,3 +446,29 @@ func TestPruneWorktreeKeepsMainBranch(t *testing.T) {
 		t.Fatalf("main checkout branch = %q", out)
 	}
 }
+
+func TestEnsureWorktreeRefusesSymlinkAncestor(t *testing.T) {
+	t.Parallel()
+	needGit(t)
+	ctx := context.Background()
+	top := realTop(t)
+	// Outside the allowed roots: not under t.TempDir, which shares the
+	// test's root.
+	outside, err := os.MkdirTemp("", "fleet-outside-roots")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(outside) })
+	if err := os.Symlink(outside, filepath.Join(top, "link")); err != nil {
+		t.Fatal(err)
+	}
+	m, _ := testManager(t, []string{filepath.Dir(top)}, repoTable{"github.com/acme/repo": top})
+	res := m.EnsureWorktree(ctx, ensureCmd("goalsym", "fleet/sym", "", "link/new"))
+	if res.GetStatus() != typev1.Status_STATUS_REJECTED_BY_POLICY ||
+		res.GetReason() != typev1.ReasonCode_REASON_CODE_REPO_ROOT_NOT_ALLOWED {
+		t.Fatalf("EnsureWorktree through a symlinked ancestor = %v %v, want REJECTED_BY_POLICY REPO_ROOT_NOT_ALLOWED (%s)", res.GetStatus(), res.GetReason(), res.GetMessage())
+	}
+	if entries, _ := os.ReadDir(outside); len(entries) != 0 {
+		t.Fatalf("worktree escaped the roots: %v", entries)
+	}
+}

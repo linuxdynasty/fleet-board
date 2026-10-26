@@ -9,8 +9,8 @@ bootstrap helper both need.
 | File | Holds |
 |---|---|
 | `board.go` | `EnsureBoardDir`: creates `<dir>/.fleet-board/` plus its self-ignoring `.gitignore` (the 01d2 safe writes) |
-| `worktree.go` | `Manager.EnsureWorktree`, `Manager.PruneWorktree` (real `git`) |
-| `scratch.go` | `Manager.EnsureScratch`, `Manager.CollectScratch` (under the agent state dir) |
+| `worktree.go` | `Manager.EnsureWorktree`, `Manager.PruneWorktree` (real `git`; new destinations resolve through existing ancestors before the root check, so a symlinked ancestor cannot escape the roots) |
+| `scratch.go` | `Manager.EnsureScratch`, `Manager.CollectScratch` (under the agent state dir; a non-plain scratch dir is refused, never followed) |
 | `handler.go` | The four `exec.Handler` bindings (`Manager.Handlers`) |
 
 ## Seams for the registry lane

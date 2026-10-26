@@ -24,8 +24,11 @@ fixed and the script carries its version (`HOOK_VERSION`). The merge
 reads the user file, backs it up to `<file>.fleet-backup.<timestamp>`,
 and rewrites it atomically: only entries whose command points into the
 fleet hooks directory are added or updated, everything else keeps its
-bytes and its order. An unparseable user file fails with
-`HOOKS_INSTALL_FAILED` and is left untouched.
+bytes and its order. A group mixing user and fleet commands is spliced
+at nested-command granularity (user entries survive byte-identical);
+uninstall drops only the fleet nested entries the same way. An
+unparseable user file fails with `HOOKS_INSTALL_FAILED` and is left
+untouched.
 
 The hook script (`hook.py`, one copy per harness directory) matches a
 payload against the goal registry: session id first, then the pane

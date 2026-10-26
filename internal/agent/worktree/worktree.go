@@ -144,6 +144,32 @@ func samePath(a, b string) bool {
 	return filepath.Clean(a) == filepath.Clean(b)
 }
 
+// resolveNewPath resolves a not-yet-existing destination through its
+// existing ancestors and rejoins the missing tail. False when no
+// ancestor resolves: the caller refuses rather than guessing.
+func resolveNewPath(path string) (string, bool) {
+	var tail []string
+	cur := path
+	for {
+		if _, err := os.Lstat(cur); err == nil {
+			real, err := filepath.EvalSymlinks(cur)
+			if err != nil {
+				return "", false
+			}
+			for i := len(tail) - 1; i >= 0; i-- {
+				real = filepath.Join(real, tail[i])
+			}
+			return real, true
+		}
+		parent := filepath.Dir(cur)
+		if parent == cur {
+			return "", false
+		}
+		tail = append(tail, filepath.Base(cur))
+		cur = parent
+	}
+}
+
 // checkoutTop resolves a RepoRef to its canonical checkout top: the lookup
 // table names it, git confirms it is a checkout. Anything else is
 // CHECKOUT_MISSING: the hub retries elsewhere.
@@ -275,7 +301,11 @@ func (m *Manager) EnsureWorktree(ctx context.Context, cmd *agentv1.EnsureWorktre
 		}
 		path = joined
 	}
-	if !m.underRoots(path) {
+	// A not-yet-existing path resolves through its existing ancestors: a
+	// symlinked ancestor (link -> /outside with relative_path link/new)
+	// would otherwise defeat the lexical root check below.
+	resolved, ok := resolveNewPath(path)
+	if !ok || !m.underRoots(resolved) {
 		return refuse(typev1.Status_STATUS_REJECTED_BY_POLICY, typev1.ReasonCode_REASON_CODE_REPO_ROOT_NOT_ALLOWED,
 			"the worktree is under no allowed repo root")
 	}

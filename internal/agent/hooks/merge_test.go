@@ -170,3 +170,76 @@ func TestRemoveKeepsOthersAndDropsFleet(t *testing.T) {
 		t.Fatalf("second RemoveUserConfig = (%v, %v), want (false, nil)", changed, err)
 	}
 }
+
+// TestMergeKeepsUserCommandsInMixedGroups: a group holding the user's
+// command next to a stale fleet command keeps the user's bytes; only
+// the fleet entry is replaced.
+func TestMergeKeepsUserCommandsInMixedGroups(t *testing.T) {
+	t.Parallel()
+	raw := `{"hooks":{"UserPromptSubmit":[{"matcher":"","hooks":[{"type":"command","command":"my-linter"},{"type":"command","command":"command -v python3 >/dev/null 2>&1 || exit 0; exec python3 \"/data/hooks/claude/fleet-goal-hook.py\" claude --old-flag"}]}]}}`
+	path := filepath.Join(t.TempDir(), "settings.json")
+	if err := os.WriteFile(path, []byte(raw), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	changed, _, err := hooks.MergeUserConfig(path, "claude", "/data")
+	if err != nil {
+		t.Fatalf("MergeUserConfig: %v", err)
+	}
+	if !changed {
+		t.Fatal("MergeUserConfig reported no change, want the stale fleet entry replaced")
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read merged: %v", err)
+	}
+	if !strings.Contains(string(after), `"command":"my-linter"`) {
+		t.Fatalf("merged file lost the user command:\n%s", after)
+	}
+	if strings.Contains(string(after), "--old-flag") {
+		t.Fatalf("merged file kept the stale fleet entry:\n%s", after)
+	}
+	// The missing events are appended fresh, so 3 fleet commands total;
+	// the mixed group itself holds exactly 1.
+	if n := strings.Count(string(after), `/data/hooks/claude/fleet-goal-hook.py`); n != 3 {
+		t.Fatalf("merged file holds %d current fleet commands, want 3 (one per event)", n)
+	}
+	group := `"my-linter"},{"type":"command","command":"command -v python3`
+	if !strings.Contains(string(after), group) {
+		t.Fatalf("mixed group does not hold user command then fleet command:\n%s", after)
+	}
+	changed, _, err = hooks.MergeUserConfig(path, "claude", "/data")
+	if err != nil {
+		t.Fatalf("second MergeUserConfig: %v", err)
+	}
+	if changed {
+		t.Fatal("second MergeUserConfig changed the file, want a no-op")
+	}
+}
+
+// TestRemoveKeepsUserCommandsInMixedGroups: uninstall drops only the
+// fleet entries; a group left with the user's commands survives.
+func TestRemoveKeepsUserCommandsInMixedGroups(t *testing.T) {
+	t.Parallel()
+	raw := `{"hooks":{"UserPromptSubmit":[{"matcher":"","hooks":[{"type":"command","command":"my-linter"},{"type":"command","command":"command -v python3 >/dev/null 2>&1 || exit 0; exec python3 \"/data/hooks/claude/fleet-goal-hook.py\" claude"}]}]}}`
+	path := filepath.Join(t.TempDir(), "settings.json")
+	if err := os.WriteFile(path, []byte(raw), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	changed, err := hooks.RemoveUserConfig(path, "claude", "/data")
+	if err != nil {
+		t.Fatalf("RemoveUserConfig: %v", err)
+	}
+	if !changed {
+		t.Fatal("RemoveUserConfig reported no change, want the fleet entry dropped")
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read uninstalled: %v", err)
+	}
+	if !strings.Contains(string(after), `"command":"my-linter"`) {
+		t.Fatalf("uninstall deleted the user command:\n%s", after)
+	}
+	if strings.Contains(string(after), "fleet-goal-hook.py") {
+		t.Fatalf("uninstall kept a fleet entry:\n%s", after)
+	}
+}

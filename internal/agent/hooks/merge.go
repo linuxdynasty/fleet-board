@@ -197,6 +197,7 @@ func withNewline(raw, out []byte) []byte {
 // the first fleet element is replaced, duplicates are dropped, and a
 // missing one is appended. same reports no change.
 func mergeArray(arr *rawArray, fresh []byte, hooksDir string) ([]byte, bool) {
+	freshNested := freshNestedEntries(fresh)
 	elems := arr.elems
 	keep := make([]bool, len(elems))
 	repl := make(map[int][]byte)
@@ -204,6 +205,17 @@ func mergeArray(arr *rawArray, fresh []byte, hooksDir string) ([]byte, bool) {
 	changed := false
 	for i, el := range elems {
 		if groupHasFleet(el, hooksDir) {
+			if !hasCommand(el, hooksDir) {
+				if out, ch, ok := spliceFleetNested(el, freshNested, hooksDir); ok {
+					keep[i] = true
+					if ch {
+						repl[i] = out
+						changed = true
+					}
+					replaced = true
+					continue
+				}
+			}
 			if !replaced {
 				keep[i] = true
 				if !sameJSON(el, fresh) {
@@ -234,6 +246,126 @@ func mergeArray(arr *rawArray, fresh []byte, hooksDir string) ([]byte, bool) {
 	return arr.build(keep, out), false
 }
 
+// freshNestedEntries parses the canonical fleet group's nested hook
+// entries (claude/codex shape: {"matcher":..., "hooks":[...]}). Empty
+// when fresh has no nested entries (cursor's flat shape).
+func freshNestedEntries(fresh []byte) [][]byte {
+	obj, err := parseObject(fresh)
+	if err != nil {
+		return nil
+	}
+	hi := obj.index("hooks")
+	if hi < 0 {
+		return nil
+	}
+	arr, err := parseArray(obj.val[hi])
+	if err != nil {
+		return nil
+	}
+	return append([][]byte(nil), arr.elems...)
+}
+
+// isFleetNestedEntry reports whether one nested hook entry points into
+// the fleet hooks directory.
+func isFleetNestedEntry(el []byte, hooksDir string) bool {
+	var h struct {
+		Command string `json:"command"`
+	}
+	if err := json.Unmarshal(el, &h); err != nil {
+		return false
+	}
+	return IsFleetCommand(h.Command, hooksDir)
+}
+
+// nestedHooks parses one group element down to its nested hooks
+// array. False for flat entries and unparseable shapes.
+func nestedHooks(el []byte) (obj *rawObject, hi int, arr *rawArray, ok bool) {
+	obj, err := parseObject(el)
+	if err != nil {
+		return nil, -1, nil, false
+	}
+	if hi = obj.index("hooks"); hi < 0 {
+		return nil, -1, nil, false
+	}
+	if arr, err = parseArray(obj.val[hi]); err != nil {
+		return nil, -1, nil, false
+	}
+	return obj, hi, arr, true
+}
+
+// spliceFleetNested rewrites one mixed group element: fleet nested
+// commands are replaced by fresh's (the first takes fresh's entry,
+// extras are dropped) while every other nested entry keeps its bytes.
+// ok is false when the element is not a nested group (flat cursor
+// entries, unparseable shapes) or holds no user-owned entries: the
+// caller falls back to whole-element handling.
+func spliceFleetNested(el []byte, freshNested [][]byte, hooksDir string) (out []byte, changed, ok bool) {
+	if len(freshNested) == 0 {
+		return nil, false, false
+	}
+	obj, hi, arr, ok := nestedHooks(el)
+	if !ok {
+		return nil, false, false
+	}
+	keep := make([]bool, len(arr.elems))
+	elems := append([][]byte(nil), arr.elems...)
+	replaced := false
+	seenUser := false
+	for i, n := range arr.elems {
+		if !isFleetNestedEntry(n, hooksDir) {
+			keep[i] = true
+			seenUser = true
+			continue
+		}
+		if !replaced {
+			keep[i] = true
+			if !sameJSON(n, freshNested[0]) {
+				elems[i] = freshNested[0]
+				changed = true
+			}
+			replaced = true
+			continue
+		}
+		changed = true // drop duplicate fleet entries
+	}
+	if !seenUser {
+		return nil, false, false
+	}
+	if !changed {
+		return el, false, true
+	}
+	vals := append([][]byte(nil), obj.val...)
+	vals[hi] = arr.build(keep, elems)
+	return obj.build(nil, vals), true, true
+}
+
+// dropFleetNested removes the fleet nested commands from a mixed
+// group, keeping the rest byte-identical. False when nothing
+// user-owned would remain or the element is not nested.
+func dropFleetNested(el []byte, hooksDir string) (out []byte, changed, ok bool) {
+	obj, hi, arr, ok := nestedHooks(el)
+	if !ok {
+		return nil, false, false
+	}
+	keep := make([]bool, len(arr.elems))
+	kept := 0
+	for i, n := range arr.elems {
+		keep[i] = !isFleetNestedEntry(n, hooksDir)
+		if keep[i] {
+			kept++
+		}
+	}
+	if kept == len(arr.elems) {
+		return el, false, true
+	}
+	if kept == 0 {
+		return nil, false, false
+	}
+	vals := append([][]byte(nil), obj.val...)
+	vals[hi] = arr.build(keep, nil)
+	return obj.build(nil, vals), true, true
+}
+
 // removeBytes drops every fleet entry; emptied events are dropped too.
 // Other events keep their exact bytes.
 func removeBytes(raw []byte, harness, hooksDir string) ([]byte, bool, error) {
@@ -259,21 +391,34 @@ func removeBytes(raw []byte, harness, hooksDir string) ([]byte, bool, error) {
 			return nil, false, fmt.Errorf("event %s: %w", hooks.keys[i], err)
 		}
 		keep := make([]bool, len(arr.elems))
+		outs := append([][]byte(nil), arr.elems...)
 		kept := 0
+		elemChanged := false
 		for j, el := range arr.elems {
+			if groupHasFleet(el, hooksDir) && !hasCommand(el, hooksDir) {
+				if out, ch, ok := dropFleetNested(el, hooksDir); ok {
+					keep[j] = true
+					kept++
+					if ch {
+						outs[j] = out
+						elemChanged = true
+					}
+					continue
+				}
+			}
 			keep[j] = !groupHasFleet(el, hooksDir)
 			if keep[j] {
 				kept++
 			}
 		}
 		switch {
-		case kept == len(arr.elems):
+		case kept == len(arr.elems) && !elemChanged:
 			keepHooks[i] = true
 		case kept == 0:
 			changed = true // drop the emptied event
 		default:
 			keepHooks[i] = true
-			hooksVals[i] = arr.build(keep, nil)
+			hooksVals[i] = arr.build(keep, outs)
 			changed = true
 		}
 	}

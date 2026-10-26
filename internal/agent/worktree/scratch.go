@@ -156,7 +156,7 @@ func (m *Manager) CollectScratch(ctx context.Context, cmd *agentv1.CollectScratc
 	}
 	text := sanitizeScratch(raw)
 	truncated := fi.Size() > maxScratchRead
-	if !truncated && int64(len(text)) > int64(limit) {
+	if int64(len(text)) > int64(limit) {
 		text = cutUTF8(text, int(limit))
 		truncated = true
 	}

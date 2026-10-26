@@ -1,6 +1,7 @@
 package worktree_test
 
 import (
+	"bytes"
 	"context"
 	"os"
 	"path/filepath"
@@ -439,5 +440,32 @@ func TestCollectScratchRefusesSymlinkDir(t *testing.T) {
 	res := m.CollectScratch(ctx, &agentv1.CollectScratch{Goal: &typev1.GoalId{Value: "01abc"}, Name: "a.json"})
 	if res.GetStatus() != typev1.Status_STATUS_FAILED || res.GetReason() != typev1.ReasonCode_REASON_CODE_SCRATCH_MISSING {
 		t.Fatalf("CollectScratch through a symlinked dir = %v %v, want FAILED SCRATCH_MISSING", res.GetStatus(), res.GetReason())
+	}
+}
+
+func TestCollectScratchCapsTruncatedRead(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	state := t.TempDir()
+	m := scratchManager(t, state)
+	// Stage directly: EnsureScratch caps writes at 512KiB, but Collect
+	// must still honor max_bytes against whatever is on disk.
+	big := bytes.Repeat([]byte("x"), 5<<20)
+	dir := filepath.Join(state, "scratch", "01big")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "a.json"), big, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got := m.CollectScratch(ctx, &agentv1.CollectScratch{Goal: &typev1.GoalId{Value: "01big"}, Name: "a.json"})
+	if got.GetStatus() != typev1.Status_STATUS_OK {
+		t.Fatalf("CollectScratch: %v (%s)", got.GetStatus(), got.GetMessage())
+	}
+	if !got.GetCollectScratch().GetTruncated() {
+		t.Fatal("CollectScratch of an over-cap file is not marked truncated")
+	}
+	if n := len(got.GetCollectScratch().GetText()); n > 65536 {
+		t.Fatalf("CollectScratch returned %d bytes, want at most 64KiB", n)
 	}
 }

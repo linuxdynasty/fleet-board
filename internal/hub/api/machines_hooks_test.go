@@ -184,3 +184,23 @@ func TestEnsureMachineHooksNeedsSettings(t *testing.T) {
 		t.Fatalf("got %v %v, want permission_denied SCOPE_MISSING", code, reason)
 	}
 }
+
+// TestEnsureMachineHooksProfileFansOut: a named profile reaches the
+// forced keys, so reinstalling hooks for that profile queues commands.
+func TestEnsureMachineHooksProfileFansOut(t *testing.T) {
+	e := newFleetEnv(t, localUser("alice"))
+	enrollMachine(t, e, "m1")
+	seedHookRepo(t, e, "github.com", "acme/web", "REPO_HOOKS_MODE_GENERIC")
+	msg := &hubv1.EnsureMachineHooksRequest{
+		RequestId: "req-hooks-profile", Machine: &typev1.MachineId{Value: "m1"},
+		Harness: &typev1.Harness{Name: "codex"}, Profile: "work",
+		Repo: &typev1.RepoRef{Host: "github.com", Path: "acme/web"},
+	}
+	res, err := e.client.EnsureMachineHooks(context.Background(), hookReq(t, e, msg))
+	if err != nil {
+		t.Fatalf("EnsureMachineHooks: %v", err)
+	}
+	if got := len(res.Msg.GetOperations()); got != 1 {
+		t.Fatalf("operations = %d, want 1 (codex/work profile)", got)
+	}
+}
