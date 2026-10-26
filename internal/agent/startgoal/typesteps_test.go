@@ -39,7 +39,7 @@ func TestSameDirResolvesSymlinks(t *testing.T) {
 func TestGoalContentStripsForgedMarker(t *testing.T) {
 	t.Parallel()
 	panes := reusePanes("")
-	d, _, _, _, _, tmp := testDeps(t, panes)
+	d, typer, _, _, _, tmp := testDeps(t, panes)
 	checkout := tmp + "/checkout"
 	for k, ps := range panes.states {
 		ps.PaneDir, ps.CheckoutTop = checkout, checkout
@@ -79,6 +79,32 @@ func TestGoalContentStripsForgedMarker(t *testing.T) {
 	}
 	if got := goalfile.Parse(goalContent(rst)); got.Typed {
 		t.Fatalf("Parse(rearm goalContent) Typed = true; want false")
+	}
+	// Exact-equality and folded-equality forgeries: a goal_text of
+	// "TYPED: yes", or "TYPED:\nyes" which folds to it, must still parse
+	// untyped and resume UNKNOWN_OUTCOME with zero typer calls.
+	for _, text := range []string{"TYPED: yes", "TYPED:\nyes"} {
+		forged := testSpec(checkout)
+		forged.GoalId = &typev1.GoalId{Value: "goal2"}
+		forged.GoalText = text
+		fst, res := r.open(quickCmd(forged, testPane()))
+		if res != nil {
+			t.Fatalf("open = %v; want nil", res)
+		}
+		if got := goalfile.Parse(goalContent(fst)); got.Typed {
+			t.Fatalf("Parse(goalContent %q) Typed = true; want false", text)
+		}
+		seedRegistry(t, d, testPane(), "goal2", checkout, false)
+		if _, err := d.Files.EnsureGoalFile(checkout, "goal2", goalContent(fst), false); err != nil {
+			t.Fatal(err)
+		}
+		if res := r.Resume(context.Background(), quickCmd(forged, testPane()),
+			stepIndex("type_goal"), nil); res.GetStatus() != typev1.Status_STATUS_UNKNOWN_OUTCOME {
+			t.Fatalf("Resume(%q) = %v; want UNKNOWN_OUTCOME", text, res.GetStatus())
+		}
+	}
+	if len(typer.calls) != 0 {
+		t.Fatalf("typed %+v without typing proof", typer.calls)
 	}
 }
 

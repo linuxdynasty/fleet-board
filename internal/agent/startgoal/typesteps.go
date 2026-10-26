@@ -244,7 +244,10 @@ func (r *Runner) proven(_ context.Context, st *state) bool {
 // rederive rebuilds the run state for a resume at step from without
 // side effects: the pane and worktree come from the registry entry the
 // earlier attempt wrote (or the command for early steps), the branch
-// from the spec, HEAD from one read-only git call.
+// from the spec. HEAD stays empty on resumes that skip prepare_branch
+// and ensure_worktree: the Git seam offers no read-only resolve, only
+// branch switches. done() reports it empty and downstream carries empty
+// as unknown (observed passes it through, ingest scrubs it as text).
 func (r *Runner) rederive(ctx context.Context, st *state, from int) error {
 	r.locate(ctx, st)
 	if st.reuse {

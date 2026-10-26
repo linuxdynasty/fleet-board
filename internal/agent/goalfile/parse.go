@@ -55,7 +55,11 @@ func Parse(data []byte) File {
 		}
 	}
 	f := File{FirstLine: clean(first), ConsentLine: clean(consent)}
-	for _, line := range strings.Split(s, "\n") {
+	// The trailer is the line step 13 appends after the CONSENT line. The
+	// first (objective) line never counts, even when it reads exactly the
+	// same: hub goal text is untrusted, so a forged "TYPED: yes" objective
+	// must not pass for proof of typing.
+	for _, line := range strings.Split(s, "\n")[1:] {
 		if line == "TYPED: yes" {
 			f.Typed = true
 			break

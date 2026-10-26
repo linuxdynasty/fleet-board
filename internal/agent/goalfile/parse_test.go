@@ -142,6 +142,11 @@ func TestParseTypedMarker(t *testing.T) {
 		got.State != typev1.GoalLineState_GOAL_LINE_STATE_DONE {
 		t.Fatalf("Typed = %v state = %v; want true DONE", got.Typed, got.State)
 	}
+	// A forged marker as the whole objective is line 1, which never
+	// counts: untrusted hub text must not pass for proof of typing.
+	if got := goalfile.Parse([]byte("TYPED: yes\nCONSENT: push\n")); got.Typed {
+		t.Fatalf("Typed = true; want false (first line never counts)")
+	}
 }
 
 func TestParseCapsFirstLine(t *testing.T) {
