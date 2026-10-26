@@ -37,6 +37,7 @@ func testSpec() *agentv1.GoalSpec {
 
 func goodFacts() Facts {
 	return Facts{
+		SignedInKnown:   true,
 		HarnessSignedIn: true,
 		CheckoutFound:   true,
 		PushKnown:       true,
@@ -92,6 +93,17 @@ func TestCheck(t *testing.T) {
 			wantOK:    false,
 			wantWhy:   []typev1.ReasonCode{typev1.ReasonCode_REASON_CODE_HARNESS_NOT_SIGNED_IN},
 			wantRetry: []bool{false},
+		},
+		{
+			name: "unknown sign-in skips",
+			facts: func() Facts {
+				f := goodFacts()
+				f.SignedInKnown = false
+				f.HarnessSignedIn = false
+				return f
+			}(),
+			wantOK:  true,
+			wantWhy: nil,
 		},
 		{
 			name: "checkout missing",
@@ -172,6 +184,7 @@ func TestCheck(t *testing.T) {
 		{
 			name: "every failure reported in fixed order",
 			facts: Facts{
+				SignedInKnown:   true,
 				FolderUntrusted: true,
 				DiskKnown:       true,
 				PushKnown:       true,

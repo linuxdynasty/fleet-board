@@ -44,6 +44,7 @@ func TestHandlerRun(t *testing.T) {
 		{
 			name: "refusal is still status OK with reasons",
 			facts: Facts{
+				SignedInKnown:   true,
 				FolderUntrusted: true,
 				DiskKnown:       true,
 				DiskFreeBytes:   20 * 1024 * 1024 * 1024,

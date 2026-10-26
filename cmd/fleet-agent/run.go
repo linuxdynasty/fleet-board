@@ -229,9 +229,13 @@ func runAgentWithDeps(ctx context.Context, dir, cfgDir, version, boot string, te
 	if h := observed.goalHooksHandler(); h != nil {
 		handlers = append(handlers, h)
 	}
-	// StartGoal (row 21, G3) and the hook-spool tailer (E8); nil
-	// without tmux. The local goal cap follows the merged settings.
+	// Preflight (row 21, I1) and StartGoal (row 21, G3) plus the
+	// hook-spool tailer (E8); nil without tmux. The local goal cap
+	// follows the merged settings.
 	if observed != nil {
+		if h := observed.preflightHandler(); h != nil {
+			handlers = append(handlers, h)
+		}
 		observed.setGoalCap(func() uint32 {
 			if sm == nil {
 				return 0

@@ -22,8 +22,12 @@ const detailCap = 200
 // table, the forge status, the harness screen trust bit and the disk
 // sample, and never types a key.
 type Facts struct {
-	// HarnessSignedIn is the snapshot AccountIdentity for the goal's
-	// harness: the status screen shows a signed-in state.
+	// SignedInKnown says a sign-in reading exists for the goal's
+	// harness; HarnessSignedIn is its verdict. Unknown is skipped,
+	// never failed: the agent has no sign-in source before a harness
+	// screen is read, and the hub gates dispatch on its own account
+	// knowledge meanwhile.
+	SignedInKnown   bool
 	HarnessSignedIn bool
 	// CheckoutFound names a checkout of the goal's repo under an allowed root.
 	CheckoutFound bool
@@ -86,7 +90,7 @@ func (c *Checker) Check(ctx context.Context, spec *agentv1.GoalSpec) (*agentv1.P
 			Retryable: retryable,
 		})
 	}
-	if !facts.HarnessSignedIn {
+	if facts.SignedInKnown && !facts.HarnessSignedIn {
 		fail(typev1.ReasonCode_REASON_CODE_HARNESS_NOT_SIGNED_IN, false,
 			fmt.Sprintf("harness %q shows no signed-in account; sign in on the machine", harness))
 	}

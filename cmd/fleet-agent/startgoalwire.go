@@ -11,6 +11,7 @@ import (
 	typev1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/type/v1"
 	"github.com/linuxdynasty/fleet-board/internal/agent/exec"
 	"github.com/linuxdynasty/fleet-board/internal/agent/goalfile"
+	"github.com/linuxdynasty/fleet-board/internal/agent/preflight"
 	"github.com/linuxdynasty/fleet-board/internal/agent/probe"
 	"github.com/linuxdynasty/fleet-board/internal/agent/startgoal"
 	"github.com/linuxdynasty/fleet-board/internal/harness"
@@ -253,4 +254,60 @@ func (g *goalsRun) inUse(path string) bool {
 		}
 	}
 	return false
+}
+
+// preflightHandler returns the I1 Preflight handler, or nil without
+// tmux (no panes or checkouts to judge).
+func (g *goalsRun) preflightHandler() exec.Handler {
+	if g == nil || g.tmx.obs == nil {
+		return nil
+	}
+	return preflight.Handler{Checker: &preflight.Checker{
+		Reader: preflightReader{
+			panes:    &paneExaminer{g: g},
+			diskFree: diskFreeSource(g.stateDir),
+		},
+		Typer: neverTyper{},
+	}}
+}
+
+// preflightReader answers the I1 checks from production seams: the
+// checkout table and forge access through the pane examiner, the free
+// space on the state volume. Sign-in stays unknown (no agent-side
+// source before a harness screen is read; the checker skips it) as
+// does folder trust (nothing is open to prompt pre-pane; the StartGoal
+// reuse path re-checks the live pane).
+type preflightReader struct {
+	panes    startgoal.Panes
+	diskFree func() (int64, bool)
+}
+
+func (r preflightReader) Facts(ctx context.Context, spec *agentv1.GoalSpec) (preflight.Facts, error) {
+	if spec == nil {
+		return preflight.Facts{}, fmt.Errorf("preflight: nil goal spec")
+	}
+	repo := spec.GetRepo()
+	top, err := r.panes.LookupRepo(repo)
+	push, known := r.panes.PushAccess(ctx, repo)
+	free, ok := r.diskFree()
+	var bytes uint64
+	if ok && free > 0 {
+		bytes = uint64(free)
+	}
+	return preflight.Facts{
+		CheckoutFound:   err == nil && top != "",
+		PushKnown:       known,
+		PushAccess:      push,
+		FolderUntrusted: false,
+		DiskKnown:       ok,
+		DiskFreeBytes:   bytes,
+	}, nil
+}
+
+// neverTyper refuses every keystroke: preflight only reads, and Check
+// never calls it. A call would be a bug, so it fails loudly.
+type neverTyper struct{}
+
+func (neverTyper) TypeKeys(context.Context, string) error {
+	return fmt.Errorf("preflight never types")
 }

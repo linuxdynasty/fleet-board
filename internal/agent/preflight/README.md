@@ -16,10 +16,13 @@ failure returned as its reason, nothing typed on any path.
 
 `Config` carries what this lane does not own:
 
-- `Reader Facts(ctx, spec)`: one read-only snapshot (harness sign-in from
-  the snapshot `AccountIdentity`, checkout table, forge push access, the
-  harness screen trust bit, the disk sample). A later slice wires the
-  production reader; until then tests inject fakes.
+- `Reader Facts(ctx, spec)`: one read-only snapshot (checkout table,
+  forge push access, the disk sample). Production
+  (`cmd/fleet-agent/startgoalwire.go`) reads the checkout table, asks
+  gh for push access, and samples the state volume; sign-in stays
+  unknown (no agent-side source before a harness screen is read) and
+  folder trust is false pre-pane (nothing open to prompt). Tests
+  inject fakes.
 - `Typer`: the only key-typing path the checker can see. `Check` never
   calls it; every test asserts the call count stays zero, which is the
   proof no refusal path types a key.

@@ -9,8 +9,8 @@ import (
 )
 
 // Handler is the exec.Handler for Preflight (02e "Command kinds and
-// capabilities"). The run wiring registers it; until the production
-// Reader lands the coordinator owns that wiring.
+// capabilities"). The run wiring registers it with the production
+// Reader (cmd/fleet-agent/startgoalwire.go).
 type Handler struct{ Checker *Checker }
 
 // Kind is the Command.kind arm's message name.
