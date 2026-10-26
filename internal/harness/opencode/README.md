@@ -33,6 +33,9 @@ no `/goal` (01b).
   `testdata/1.19.0/tui-slash-menu-catalog.tsv` and
   `testdata/1.19.3/tui-slash-menu-catalog.tsv`, so a new command in a
   later catalog needs a reviewed verdict here.
+- `goalcontrol.go`: `GoalControl` reports the G4 table (02h): nil, since
+  OpenCode has no native `/goal`, so the hub sends no goal control to an
+  OpenCode pane. The test pins the nil table and the missing `/goal`.
 - `opencode_test.go`: the adapter's declaration for the shared
   conformance test (`harness.Conform`). Versions `1.18.34`, `1.19.0`
   and `1.19.3` are `UNVERIFIED_PARSING` with `USAGE`, `IDENTITY` and
