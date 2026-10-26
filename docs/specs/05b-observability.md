@@ -480,7 +480,7 @@ text but can hint at structure, hence the double guard.
 | The evaluator itself stalls | `hub.system.evaluate` stops, `observed_time` goes stale; the UI shows "System status is old" above 60 s; `fleet doctor` reads the same status |
 | Hub restart | metrics reset (counters restart at 0; Prometheus handles it), `hub_instance_id` changes, SYSTEM items persist in the store and re-evaluate within 30 s |
 | The same heartbeat arrives twice | the latest wins; the second changes nothing |
-| The agent cannot build the StartGoal handler at start (a wiring dependency is missing) | the handler is skipped, so goal commands stay unhandled: `startgoal.handler_failed` (error; `err_kind`) |
+| The agent cannot build the StartGoal handler at start (a wiring dependency is missing) | the handler is skipped, so goal commands stay unhandled: `startgoal.handler_failed` (error, no labels: a nil seam is never I/O) |
 | The agent cannot build the hook spool tailer at start | hook lines stay in the spool file and never reach the registry: `spool.tail_failed` (error; `err_kind`); goals still run. A runtime TurnEnd failure stops the tailer the same silent way: `spool.tail_stopped` (error; `err_kind`) says hook lines stopped flowing |
 | Too many labels | a new label value space is a review block; the bounded sets above are the contract |
 

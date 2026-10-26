@@ -81,9 +81,12 @@ func goalContent(st *state) []byte {
 		}
 		words = append(words, w)
 	}
-	first := st.spec.GetGoalText()
+	// Hub text is untrusted and multiline: fold it to one line before it
+	// reaches the file, or a goal_text or rearm_reason carrying a forged
+	// "TYPED: yes" line would pass for proof of typing on resume.
+	first := cleanLine(st.spec.GetGoalText())
 	if st.rearm {
-		first += " reopened: " + st.cmd.GetRearmReason()
+		first += " reopened: " + cleanLine(st.cmd.GetRearmReason())
 	}
 	var b strings.Builder
 	b.WriteString(first + "\n")
