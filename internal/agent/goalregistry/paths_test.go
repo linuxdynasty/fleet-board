@@ -87,3 +87,25 @@ func TestReleaseByPath(t *testing.T) {
 		t.Fatalf("ReleaseByPath prefix sibling = %d; want 0", len(got))
 	}
 }
+
+func TestReleaseByPathOrdersByGoalID(t *testing.T) {
+	t.Parallel()
+	em := &emitter{}
+	r := testRegistry(em)
+	mustRegisterPath(t, r, "default", "s1", "%1", "03c", "/wt/one")
+	mustRegisterPath(t, r, "default", "s1", "%2", "01a", "/wt/one/sub")
+	mustRegisterPath(t, r, "default", "s1", "%3", "05e", "/wt/one")
+	mustRegisterPath(t, r, "default", "s1", "%4", "02b", "/wt/one/deep")
+	mustRegisterPath(t, r, "default", "s1", "%5", "04d", "/wt/one")
+
+	released := r.ReleaseByPath("/wt/one")
+	want := []string{"01a", "02b", "03c", "04d", "05e"}
+	if len(released) != len(want) {
+		t.Fatalf("ReleaseByPath = %d entries; want %d", len(released), len(want))
+	}
+	for i, entry := range released {
+		if got := entry.GetGoal().GetValue(); got != want[i] {
+			t.Fatalf("released[%d] goal = %q; want %q (ordered by goal id)", i, got, want[i])
+		}
+	}
+}

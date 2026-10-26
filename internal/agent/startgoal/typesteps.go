@@ -3,6 +3,7 @@ package startgoal
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -279,7 +280,20 @@ func (r *Runner) reportFail(rep Report, step string, index int, res *agentv1.Com
 
 // sameDir compares two checkout paths after best-effort symlink
 // resolution; unresolvable sides compare lexically.
-func sameDir(a, b string) bool { return a != "" && a == b }
+func sameDir(a, b string) bool {
+	if a == "" || b == "" {
+		return false
+	}
+	ra, err := filepath.EvalSymlinks(a)
+	if err != nil {
+		ra = a
+	}
+	rb, err := filepath.EvalSymlinks(b)
+	if err != nil {
+		rb = b
+	}
+	return ra == rb
+}
 
 // errorsIsDirty reports whether a branch switch failed on dirt. The Git
 // seam returns a fail-closed error; production wraps ErrDirty.

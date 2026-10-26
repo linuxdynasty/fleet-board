@@ -19,7 +19,9 @@ const DefaultPoll = time.Second
 // Tailer follows the spool file, running each new line through TurnEnd.
 // Offset is the byte count already handled, kept in memory and in the
 // sidecar file offsetPath (the spool path plus ".offset"), fsynced
-// after every line so a restart replays at most one line.
+// after every line so a restart replays at most one line. Nothing
+// truncates the spool file: row 25 (shipping) owns rotation, so it
+// grows with hook traffic until then.
 type Tailer struct {
 	spool  string
 	offset string

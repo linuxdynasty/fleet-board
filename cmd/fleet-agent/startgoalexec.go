@@ -343,5 +343,7 @@ func (g *goalsRun) runSpool(ctx context.Context) {
 		g.log.Logger.ErrorContext(ctx, "spool.tail_failed", "err_kind", "io")
 		return
 	}
-	_ = tail.Run(ctx)
+	if err := tail.Run(ctx); err != nil {
+		g.log.Logger.ErrorContext(ctx, "spool.tail_stopped", "err_kind", "io")
+	}
 }

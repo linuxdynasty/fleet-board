@@ -3,6 +3,7 @@ package goalregistry
 import (
 	"context"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	agentv1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/agent/v1"
@@ -42,6 +43,9 @@ func (r *Registry) ReleaseByPath(path string) []*agentv1.GoalRegistration {
 		dropped = append(dropped, entry)
 	}
 	r.mu.Unlock()
+	sort.Slice(dropped, func(i, j int) bool {
+		return dropped[i].GetGoal().GetValue() < dropped[j].GetGoal().GetValue()
+	})
 	for _, entry := range dropped {
 		_ = r.changed(context.Background(), agentv1.ChangeKind_CHANGE_KIND_CLOSED, entry)
 	}
