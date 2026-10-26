@@ -109,8 +109,8 @@ so "active" means one thing.
 
 **Live** = ACTIVE ∪ HELD (an observed goal, 03k, holds nothing). `UNSPECIFIED`
 and any phase the contract does not name read ENDED: the hub never
-schedules, holds or frees on them. Row 22 implements this table in
-`internal/hub/goals` (`ClassOf`, `Live`). The DB unique indexes are `(work_item) WHERE live`,
+schedules, holds or frees on them. Row 22 implements this table in internal/hub/goals (the ClassOf and Live
+functions). The DB unique indexes are `(work_item) WHERE live`,
 `(repo, branch) WHERE live` (one agent per branch) and, for routines, `(routine)
 WHERE live`. A `LIMIT_WAIT` goal therefore holds a total slot and its branch for
 up to a week, by design; an operator can clear it. The heartbeat check compares
