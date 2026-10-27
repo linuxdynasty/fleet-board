@@ -125,6 +125,32 @@ func TestRegistrySightingDrivesGoalLifecycle(t *testing.T) {
 	}
 }
 
+// TestRegistryDoneSightingSkipsRunning proves the shortcut the spec names:
+// a DONE sighting on a goal the hub never saw working moves STARTING
+// straight to VERIFYING (with the in-transaction verify) instead of
+// stopping at RUNNING.
+func TestRegistryDoneSightingSkipsRunning(t *testing.T) {
+	t.Parallel()
+	e := newFleetEnv(t, localUser("alice"))
+	goalID := startDispatchedGoal(t, e)
+
+	goals, items := applySighting(t, e, "m1", registrySighting(goalID,
+		agentv1.GoalBindingSource_GOAL_BINDING_SOURCE_REGISTRY,
+		typev1.GoalLineState_GOAL_LINE_STATE_DONE))
+	if got := goalPhaseOf(t, e, goalID); got != "GOAL_PHASE_VERIFYING" {
+		t.Fatalf("phase = %s, want GOAL_PHASE_VERIFYING", got)
+	}
+	if got := goalItemStageOf(t, e, goalID); got != int32(hubv1.WorkStage_WORK_STAGE_DONE_CLAIMED) {
+		t.Fatalf("item stage = %d, want DONE_CLAIMED", got)
+	}
+	if len(goals) != 1 || goals[0].ID != goalID {
+		t.Fatalf("goal after-images = %v, want the moved goal", goals)
+	}
+	if len(items) != 1 || items[0].Key == "" {
+		t.Fatalf("item after-images = %v, want the staged item", items)
+	}
+}
+
 // TestRegistrySightingIgnoresForeignGoals proves the applier touches only
 // the machine's own dispatched goals: observed bindings, unknown ids and
 // other machines' goals change nothing and return no after-images.
