@@ -75,6 +75,7 @@ stateDiagram-v2
   LIMIT_WAIT --> PAUSED: operator pause (cancels the automatic resume)
   PAUSED --> LIMIT_WAIT: pause ended, limit still showing
   STARTING --> RUNNING: agent WORKING (registry pass, row 22)
+  STARTING --> VERIFYING: DONE claimed before RUNNING was seen (registry pass, row 22)
   RUNNING --> VERIFYING: DONE
   VERIFYING --> MERGED: change request merged or work item closed as done
   VERIFYING --> DISAGREE: open after verify_grace (triage)
@@ -100,7 +101,9 @@ The `STARTING --> RUNNING` and `RUNNING --> VERIFYING` edges are driven
 by the registry pass (row 22): the agent's `REGISTRY` goal states in a
 Snapshot or `goal_state` event move the goal inside the ingest
 transaction, and the `DONE` edge runs the verifier there too, so the
-claim settles against the code-host mirror in the same commit. Every
+claim settles against the code-host mirror in the same commit. A `DONE`
+sighting on a goal still `STARTING` moves it straight to `VERIFYING`
+(the agent finished before the hub saw it working). Every
 move audits `goal.state_change` and stages the work item beside it; a
 repeated sighting writes nothing.
 

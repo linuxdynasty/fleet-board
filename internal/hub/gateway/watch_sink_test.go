@@ -387,3 +387,46 @@ func TestWatchSinkSnapshotPublishesGoalsBeforeMachine(t *testing.T) {
 		t.Fatalf("publish order = %v, want [goals machine]", order)
 	}
 }
+
+// A Snapshot commit publishes the work items its appliers staged beside
+// a goal move: the after-images the appliers captured in the job reach
+// Watch with their key and stamp.
+func TestWatchSinkSnapshotPublishesApplierWorkItems(t *testing.T) {
+	t.Parallel()
+	staged := statedb.WorkItemRow{Key: "github-1/ISSUE/acme/web/7398", HubSeq: 7}
+	var mu sync.Mutex
+	var got []statedb.WorkItemChange
+	done := make(chan struct{})
+	var once sync.Once
+	sink := gateway.WatchSink{
+		WorkItemsCommitted: func(_ context.Context, changes []statedb.WorkItemChange) {
+			mu.Lock()
+			got = append(got, changes...)
+			mu.Unlock()
+			once.Do(func() { close(done) })
+		},
+	}
+	items := applierFunc(func(context.Context, *sql.Tx, string, *agentv1.Snapshot) ([]statedb.GoalRow, []statedb.WorkItemRow, error) {
+		return nil, []statedb.WorkItemRow{staged}, nil
+	})
+	h := startHub(t, func(o *gateway.ServerOptions) {
+		o.Watch = sink
+		o.Appliers = []ingest.Applier{items}
+		o.EventAppliers = []ingest.EventApplier{observed.Applier{}}
+	})
+	m := h.enrollMachine(t)
+	s := h.open(t, m)
+	s.send(t, hello(m, 0))
+	s.ack(t)
+	s.send(t, snapshotWithGoal(5, "Working"))
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("timed out waiting for the work-item publish")
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(got) != 1 || got[0].Key != staged.Key || got[0].HubSeq != staged.HubSeq {
+		t.Fatalf("work-item changes = %+v, want the staged after-image", got)
+	}
+}
