@@ -30,18 +30,31 @@ type GoalRow struct {
 	EndMs      *int64
 	ObservedMs int64
 	HubSeq     int64
+	// Dispatch columns (migration 28): spec version (EDIT bumps it),
+	// attempt number, the previous goal, the work item, repo and branch
+	// links, and the start error for the three-machine rule. Observed
+	// rows read version 1, attempt 0 ("not an attempt") and empty links.
+	Version      int64
+	Attempt      int64
+	PreviousGoal string
+	WorkItem     string
+	Repo         string
+	Branch       string
+	StartError   string
 }
 
 // goalColumns lists every goals column a GoalRow scan reads.
 const goalColumns = `id, origin, machine_id, spec, status, phase, phase_reason,
-	start_time, end_time, observed_time, hub_seq`
+	start_time, end_time, observed_time, hub_seq, version, attempt, previous_goal,
+	work_item, repo, branch, start_error`
 
 // scanGoalRow reads one goals row, single or from a result set.
 func scanGoalRow(row *sql.Row) (GoalRow, error) {
 	var g GoalRow
 	var end sql.NullInt64
 	err := row.Scan(&g.ID, &g.Origin, &g.MachineID, &g.Spec, &g.Status, &g.Phase, &g.Reason,
-		&g.StartMs, &end, &g.ObservedMs, &g.HubSeq)
+		&g.StartMs, &end, &g.ObservedMs, &g.HubSeq, &g.Version, &g.Attempt, &g.PreviousGoal,
+		&g.WorkItem, &g.Repo, &g.Branch, &g.StartError)
 	if errors.Is(err, sql.ErrNoRows) {
 		return GoalRow{}, ErrGoalUnknown
 	}
@@ -59,7 +72,8 @@ func scanGoalRows(row *sql.Rows) (GoalRow, error) {
 	var g GoalRow
 	var end sql.NullInt64
 	err := row.Scan(&g.ID, &g.Origin, &g.MachineID, &g.Spec, &g.Status, &g.Phase, &g.Reason,
-		&g.StartMs, &end, &g.ObservedMs, &g.HubSeq)
+		&g.StartMs, &end, &g.ObservedMs, &g.HubSeq, &g.Version, &g.Attempt, &g.PreviousGoal,
+		&g.WorkItem, &g.Repo, &g.Branch, &g.StartError)
 	if err != nil {
 		return GoalRow{}, fmt.Errorf("statedb: read goal row: %w", err)
 	}

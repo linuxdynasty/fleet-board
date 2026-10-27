@@ -179,6 +179,15 @@ func (s *Server) SetWatchSink(sink WatchSink) {
 	s.connect.watch = sink
 }
 
+// AddAppliers appends the dispatch row's appliers to the snapshot and
+// event jobs: the daemon calls it with the registry pass once the Fleet
+// exists to drive it. Like SetWatchSink it must run before the server
+// serves; no stream is open yet, so nothing reads the slices.
+func (s *Server) AddAppliers(as []ingest.Applier, es []ingest.EventApplier) {
+	s.connect.appliers = append(s.connect.appliers, as...)
+	s.connect.eventAppliers = append(s.connect.eventAppliers, es...)
+}
+
 // InstanceID is the hub_instance_id this process sends on the agent wire
 // (HelloAck): random per process start, shared with GetServerInfo so a new
 // process id invalidates every Watch resume token (02k).

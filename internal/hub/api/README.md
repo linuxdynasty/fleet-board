@@ -158,26 +158,26 @@ goal has no `end_time`, and `live` follows the 03l phase classes, so an
 open observed goal reads live. The read reports the row's phase, reason
 and end over the stored status, so a goal a snapshot drop ended reads
 `CLOSED` with its end_time, matching what the filter sees. `ListGoalRuns`
-serves the single run 1 off the row (cause `START`, the goal's start,
-machine, session and counters; the ending once the goal closes);
-`ListGoalTransitions` reads empty until the dispatch rows record
-transitions. All three miss an unknown id with `RESOURCE_NOT_FOUND`.
+serves the runs off the row (an observed goal has the single run 1, cause `START`; a dispatched
+goal gains one run per attempt, the ending once the goal closes); `ListGoalTransitions` serves the
+recorded transitions (03l state machine). All three miss an unknown id with `RESOURCE_NOT_FOUND`.
+The registry pass drives a dispatched goal from agent sightings (row 22): `WORKING` moves
+`STARTING` to `RUNNING`, `DONE` to `VERIFYING` with the verifier in the same tx; each move audits and stages.
 
-`ListWorkItems` and `GetWorkItem` need `READ` (02d). The store holds the
-synced provider mirrors (row 11) with the
-hub's verdicts beside each item: `ListWorkItems` serves the 02c WorkItem
-filter (`id`, `integration`, `kind`, `repo`, `stage`, `state`, `trusted`,
-`label`, `manual_reason`, `create_time`, `update_time`) but not `goal`
-(the goal link needs the dispatch rows, which no row stores yet);
-`order_by` takes `ct`, `ut`, `provider_update_time` and
-`dispatch_order` and defaults to `ct`, and `dispatch_order` takes no `desc`;
-pages are 50 by default, 500 at most, with a query-bound token good for
-10 minutes. `create_time` is the first sight and `last_sync_time` the last
-poll; `update_time` reads as `create_time` until a later row stores the
-hub-change stamp beside the version; the `goal` and `dispatch_block` stay
-unset until the dispatch rows land. `GetWorkItem` misses an unknown id with
-`RESOURCE_NOT_FOUND`, and `include_body` (the provider body fetch) stays
-`UNIMPLEMENTED` until a row builds the provider call.
+`ListWorkItems` and `GetWorkItem` need `READ` (02d). The store holds the synced provider
+mirrors (row 11) with the hub's verdicts beside each item: `ListWorkItems` serves the
+02c WorkItem filter (`id`, `integration`, `kind`, `repo`, `stage`, `state`, `trusted`,
+`label`, `manual_reason`, `create_time`, `update_time`) but not `goal` (the goal link
+lives only on the goal row; no work-item goal link is stored, so the filter stays
+refused); `order_by` takes `ct`, `ut`, `provider_update_time` and `dispatch_order` and
+defaults to `ct`, and `dispatch_order` takes no `desc`; pages are 50 by default, 500 at
+most, with a query-bound token good for 10 minutes. `create_time` is the first sight and
+`last_sync_time` the last poll; `update_time` reads as `create_time` until a later row
+stores the hub-change stamp beside the version. A manual dispatch moves the item through
+`SetWorkItemGoalStage`, which writes the `stage` and `manual_reason` the phase maps to;
+the `goal` id it minted is readable on the goal row, not the item. `GetWorkItem` misses
+an unknown id with `RESOURCE_NOT_FOUND`, and `include_body` (the provider body fetch)
+stays `UNIMPLEMENTED` until a row builds the provider call.
 
 `ListChangeRequests` and `GetChangeRequest` need `READ` (02d). The store
 holds the synced provider mirrors (row 11):

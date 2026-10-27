@@ -74,6 +74,9 @@ stateDiagram-v2
   LIMIT_WAIT --> RUNNING: resumed at limit_wait_until_time (03h)
   LIMIT_WAIT --> PAUSED: operator pause (cancels the automatic resume)
   PAUSED --> LIMIT_WAIT: pause ended, limit still showing
+  STARTING --> RUNNING: agent WORKING (registry pass, row 22)
+  STARTING --> VERIFYING: DONE claimed before RUNNING was seen (registry pass, row 22)
+  START_UNKNOWN --> VERIFYING: DONE claimed while the start was unconfirmed (registry pass, row 22)
   RUNNING --> VERIFYING: DONE
   VERIFYING --> MERGED: change request merged or work item closed as done
   VERIFYING --> DISAGREE: open after verify_grace (triage)
@@ -95,6 +98,17 @@ Where the diagram draws `RUNNING` as the source of pause, clear or a provider
 change, the exact source phases are the control table below and, for a human
 merge or a close, [03h](03h-goal-phases-in-depth.md#provider-side-changes-under-a-live-goal).
 
+The `STARTING --> RUNNING` and `RUNNING --> VERIFYING` edges are driven
+by the registry pass (row 22): the agent's `REGISTRY` goal states in a
+Snapshot or `goal_state` event move the goal inside the ingest
+transaction, and the `DONE` edge runs the verifier there too, so the
+claim settles against the code-host mirror in the same commit. A `DONE`
+sighting on a goal still `STARTING` (or on `START_UNKNOWN`, whose start
+the hub never confirmed) moves it straight to `VERIFYING`: the agent
+finished before the hub saw it working. Every
+move audits `goal.state_change` and stages the work item beside it; a
+repeated sighting writes nothing.
+
 ### Phase classes
 
 One table decides what a goal holds. The unique indexes, `MachineSlots`,
@@ -107,7 +121,10 @@ so "active" means one thing.
 | **HELD** (keeps its worker, spends almost no quota) | `WAITING`, `BLOCKED_OWNER`, `STUCK`, `COOLDOWN`, `PAUSED`, `LIMIT_WAIT`, `VERIFYING`, `DISAGREE`, `PANE_LOST` | a total slot and the repo cap only |
 | **ENDED** | `MERGED` (until `CLOSED`), `CLOSED`, `START_FAILED`, `START_EXHAUSTED`, `EXPIRED`, `ABANDONED`, `CLEARED`, `CANCELLED` | nothing: `MERGED` frees the worker, so the pane is reusable at once |
 
-**Live** = ACTIVE ∪ HELD (an observed goal, 03k, holds nothing). The DB unique indexes are `(work_item) WHERE live`,
+**Live** = ACTIVE ∪ HELD (an observed goal, 03k, holds nothing). `UNSPECIFIED`
+and any phase the contract does not name read ENDED: the hub never
+schedules, holds or frees on them. Row 22 implements this table in internal/hub/goals (the ClassOf and Live
+functions). The DB unique indexes are `(work_item) WHERE live`,
 `(repo, branch) WHERE live` (one agent per branch) and, for routines, `(routine)
 WHERE live`. A `LIMIT_WAIT` goal therefore holds a total slot and its branch for
 up to a week, by design; an operator can clear it. The heartbeat check compares

@@ -271,6 +271,11 @@ on their own resources (a new window on the `Session`, the goal's `phase`).
 | sign-in, user, token and login-session RPCs | none (hub only) |
 | `ProbeAccount` | `EnsureProbe{run_now}` |
 
+`StartGoalRequest` carries `acknowledged_warnings` (WARN reasons the caller
+saw and accepts; a WARN that is not listed fails the call, 03h "the
+unacknowledged-warning rule") and `skip_preflight` (reuse the hub's own
+preflight result when it is under a minute old).
+
 Served so far (row 12 slices): `CapturePane` sends the visible screen
 (`last_lines` 0, `READ`) or scrollback (`last_lines` above 0, `LOGS`) as one
 agent command, idempotent on `request_id` and audited as `session.capture`.

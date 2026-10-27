@@ -114,7 +114,7 @@ func (r *rig) apply(snap *agentv1.Snapshot) {
 	if err != nil {
 		r.t.Fatal(err)
 	}
-	if _, err := a.Apply(context.Background(), tx, "m1", snap); err != nil {
+	if _, _, err := a.Apply(context.Background(), tx, "m1", snap); err != nil {
 		_ = tx.Rollback()
 		r.t.Fatalf("Apply: %v", err)
 	}
@@ -270,7 +270,7 @@ func (r *rig) applyEvent(gs *agentv1.GoalState, history bool) {
 	}
 	out := statedb.EventOut{Outcome: statedb.EventApplied, History: history}
 	ev := &agentv1.Event{Body: &agentv1.Event_GoalState{GoalState: gs}}
-	if _, err := a.ApplyEvent(context.Background(), tx, "m1", out, ev); err != nil {
+	if _, _, err := a.ApplyEvent(context.Background(), tx, "m1", out, ev); err != nil {
 		_ = tx.Rollback()
 		r.t.Fatalf("ApplyEvent: %v", err)
 	}

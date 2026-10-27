@@ -200,12 +200,13 @@ renders and joins the acts itself, so nothing the hub sends can add a `--`, a
 comma or a newline to the typed line; an act the agent does not know is
 `INVALID_ARGUMENT` and the goal is not typed.
 
-### Default goal text for repos without eshu's hooks (0.18 — DRAFT, needs owner approval)
+### Default goal text for repos without eshu's hooks (0.18 — approved)
 
-DRAFT for [#63](https://github.com/linuxdynasty/fleet-board/issues/63): the
-wording below is proposed, not decided. It becomes normative when the owner
-approves it (approval is merging this section, plus a comment on #63). Until
-then row 22 gates the first `StartGoal` in such a repo.
+Approved in [#63](https://github.com/linuxdynasty/fleet-board/issues/63)
+(closed 2026-10-26): the wording below is normative. The owner direction
+keeps it generic — learnings from eshu and this project rebuilt for any
+repo, no eshu-specific paths or assumptions. Row 22 no longer gates the
+first `StartGoal` in such a repo.
 
 When the checkout does not ship eshu's hooks, the hub builds
 `GoalSpec.goal_text` from this template (`<...>` is filled per goal; the
@@ -329,7 +330,11 @@ window, elsewhere, triage; which count toward `START_EXHAUSTED`) is the table in
   span per step; the link is `Command.trace` and `CommandResult.trace` (02g).
 - Logs: `dispatch.planned{goal_id, work_item, repo, machine, account, harness,
   reuse_pane, consent}`, `dispatch.step{goal_id, step, status, reason}`,
-  `dispatch.skipped{reason, detail}` (one per pass, summarised).
+  `dispatch.skipped{reason, detail}` (one per pass, summarised),
+  `dispatch.preflight{actor, work_item, machine, checks}` (one per manual
+  preflight), `dispatch.control{actor, goal, action}`, `dispatch.issue_refused{reason}`
+  (caller errors, with actor when known), `dispatch.failed{step=store, err_kind, actor}`
+  (hub-side store failure, error).
 
 At 3 AM: "why is nothing starting?" → `Account.status.pacing.idle_causes` (or
 `fleet_hub_scheduler_skips_total{reason}` over the last hour); "why did this start

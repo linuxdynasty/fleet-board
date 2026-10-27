@@ -116,19 +116,24 @@ func eventArm(ctx context.Context, a *agentService, s *stream, m *agentv1.Connec
 	pctx := context.WithoutCancel(wctx) // the publish hook runs on the writer after the waiter may have left
 	pane := a.panePublication(s, ev)
 	p, err := ingest.SubmitEvent(wctx, a.store, in, ev, a.eventAppliers,
-		func(out statedb.EventOut, goals []statedb.GoalRow) {
+		func(out statedb.EventOut, goals []statedb.GoalRow, items []statedb.WorkItemRow) {
 			// The job committed: publish its machine stamp, its goal
 			// writes and its pane summary (never a replayed one) for
 			// the Watch ingest slice. This runs on the writer in commit
 			// order (#393), so no interleaving of commits can invert
 			// the bus. The before images above predate the submit and
 			// the goals are exactly this job's stamped after-images.
+			// Applier-staged work items publish from their after-images
+			// the same way.
 			if out.Outcome != statedb.EventApplied {
 				return
 			}
 			a.publishMachineEvent(pctx, out.Row)
 			if !out.History && kind == "goal_state" && goalsOK {
 				a.publishGoalsCommitted(pctx, s.machineID, beforeGoals, goals)
+			}
+			if !out.History {
+				a.publishWorkItemsCommitted(pctx, items)
 			}
 			if pane != nil && !out.History {
 				p := *pane

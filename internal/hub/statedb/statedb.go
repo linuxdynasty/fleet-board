@@ -163,6 +163,26 @@ func Migrations() []store.Migration {
 		Version: 27,
 		Name:    "usage_readings_read_ms",
 		SQL:     usageReadingsReadMsSQL,
+	}, {
+		Version: 28,
+		Name:    "goals_dispatched",
+		SQL:     goalsDispatchSQL,
+	}, {
+		Version: 29,
+		Name:    "machine_unfit",
+		SQL:     unfitSQL,
+	}, {
+		Version: 30,
+		Name:    "dispatch_confirms",
+		SQL:     dispatchConfirmSQL,
+	}, {
+		Version: 31,
+		Name:    "machine_harness",
+		SQL:     machineHarnessSQL,
+	}, {
+		Version: 32,
+		Name:    "dispatch_confirm_reasons",
+		SQL:     dispatchConfirmReasonsSQL,
 	}}
 }
 

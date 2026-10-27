@@ -29,8 +29,10 @@ type Applier interface {
 	// Apply runs the row's part of the Snapshot job and returns the
 	// stamped goal after-images it wrote, so Watch publishes each job's
 	// own writes: a later job must never publish an earlier job's change
-	// twice while losing its own intermediate state.
-	Apply(ctx context.Context, tx *sql.Tx, machineID string, snap *agentv1.Snapshot) ([]statedb.GoalRow, error)
+	// twice while losing its own intermediate state. It also returns the
+	// stamped work-item after-images it wrote beside a goal move (a goal
+	// move always stages its item), for the same Watch publish.
+	Apply(ctx context.Context, tx *sql.Tx, machineID string, snap *agentv1.Snapshot) ([]statedb.GoalRow, []statedb.WorkItemRow, error)
 }
 
 // ErrApplier wraps the error of a failing [Applier].
@@ -62,7 +64,7 @@ type Stream struct {
 // Like every post-commit hook it must be short and non-blocking: no
 // Submit or Write, no network call.
 func SubmitSnapshot(ctx context.Context, st *store.Store, s Stream, snap *agentv1.Snapshot, appliers []Applier,
-	now time.Time, onCommit func(out statedb.SnapshotOut, goals []statedb.GoalRow, expired []outbox.Closed),
+	now time.Time, onCommit func(out statedb.SnapshotOut, goals []statedb.GoalRow, items []statedb.WorkItemRow, expired []outbox.Closed),
 ) (*Pending, error) {
 	in, err := snapshotIn(s, snap, now)
 	if err != nil {
@@ -77,10 +79,12 @@ func SubmitSnapshot(ctx context.Context, st *store.Store, s Stream, snap *agentv
 		}
 		for i, a := range appliers {
 			var goals []statedb.GoalRow
-			if goals, err = apply(jctx, tx, a, s.MachineID, snap); err != nil {
+			var items []statedb.WorkItemRow
+			if goals, items, err = apply(jctx, tx, a, s.MachineID, snap); err != nil {
 				return fmt.Errorf("%w: applier %d: %w", ErrApplier, i, err)
 			}
 			p.goals = append(p.goals, goals...)
+			p.items = append(p.items, items...)
 		}
 		if p.expired, err = outbox.Expire(jctx, tx, s.MachineID, now, ExpireInSnapshot); err != nil {
 			return err
@@ -99,7 +103,7 @@ func SubmitSnapshot(ctx context.Context, st *store.Store, s Stream, snap *agentv
 		p.done, err = st.Submit(ctx, apply)
 	} else {
 		p.done, err = st.SubmitHook(ctx, statedb.WithAuditCapture(jctx, apply, &p.audits), func() {
-			onCommit(p.out, p.goals, p.expired)
+			onCommit(p.out, p.goals, p.items, p.expired)
 			// The job's own audits publish here, after its resources, in
 			// batch order: a resume never skips them (#403).
 			statedb.PublishAudits(st, p.audits)
@@ -123,6 +127,7 @@ type Pending struct {
 	out     statedb.SnapshotOut // written by the job; read after done
 	expired []outbox.Closed     // written by the job; read after done
 	goals   []statedb.GoalRow   // the appliers' stamped after-images; read after done
+	items   []statedb.WorkItemRow
 	audits  []statedb.AuditStored
 	result  error
 	read    bool
@@ -148,6 +153,16 @@ func (p *Pending) Goals() []statedb.GoalRow {
 	return p.goals
 }
 
+// Items are the stamped work-item after-images the job's appliers wrote
+// beside a goal move, for the same Watch publish; nil until a
+// [Pending.Wait] returned without error.
+func (p *Pending) Items() []statedb.WorkItemRow {
+	if !p.read || p.result != nil {
+		return nil
+	}
+	return p.items
+}
+
 // Wait returns the job's result once it committed or failed, or ctx's
 // error (the outcome still unknown; Wait may be called again).
 func (p *Pending) Wait(ctx context.Context) (statedb.SnapshotOut, error) {
@@ -169,10 +184,10 @@ func (p *Pending) Wait(ctx context.Context) (statedb.SnapshotOut, error) {
 // the store's writer goroutine, which has no recover, so a panic on agent
 // data would end the hub. The error rolls the Snapshot back like any other.
 func apply(ctx context.Context, tx *sql.Tx, a Applier, machineID string, snap *agentv1.Snapshot,
-) (goals []statedb.GoalRow, err error) {
+) (goals []statedb.GoalRow, items []statedb.WorkItemRow, err error) {
 	defer func() {
 		if r := recover(); r != nil {
-			goals, err = nil, fmt.Errorf("%w: %v", errApplierPanic, r)
+			goals, items, err = nil, nil, fmt.Errorf("%w: %v", errApplierPanic, r)
 		}
 	}()
 	return a.Apply(ctx, tx, machineID, snap)
@@ -206,6 +221,10 @@ func snapshotIn(s Stream, snap *agentv1.Snapshot, now time.Time) (statedb.Snapsh
 		loaded = p.GetLoadedTime().AsTime()
 	}
 	d := snap.GetDrain()
+	harnesses, err := snapshotHarnesses(snap)
+	if err != nil {
+		return statedb.SnapshotIn{}, fmt.Errorf("ingest: encode harnesses: %w", err)
+	}
 	return statedb.SnapshotIn{
 		MachineID: s.MachineID, Epoch: s.Epoch, Seq: snap.GetSeq(), Facts: string(fj), Resources: resources,
 		Policy: statedb.Policy{
@@ -216,6 +235,25 @@ func snapshotIn(s Stream, snap *agentv1.Snapshot, now time.Time) (statedb.Snapsh
 			Draining: d.GetDraining(),
 			Local:    d.GetRequestedByPrincipal().GetKind() == typev1.PrincipalKind_PRINCIPAL_KIND_LOCAL_USER,
 		},
-		LastEventSeq: s.LastEventSeq, Counters: s.Counters, InstallID: s.InstallID, Now: now,
+		LastEventSeq: s.LastEventSeq, Counters: s.Counters, InstallID: s.InstallID, Harnesses: harnesses, Now: now,
 	}, nil
+}
+
+// snapshotHarnesses reads the snapshot's reported harness inventory (the
+// catalog hash RunHarnessCommand must match and the goal-control account
+// as protojson) for the machine_harness replace.
+func snapshotHarnesses(snap *agentv1.Snapshot) ([]statedb.HarnessInventory, error) {
+	var out []statedb.HarnessInventory
+	for _, h := range snap.GetHarnesses() {
+		gc, err := protojson.Marshal(h.GetGoalControl())
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, statedb.HarnessInventory{
+			Harness: h.GetHarness().GetName(), Profile: h.GetProfile(), Version: h.GetVersion(),
+			CatalogHash: h.GetCatalog().GetHash(), GoalControlJSON: string(gc),
+			LaunchAllowed: h.GetLaunchAllowed(),
+		})
+	}
+	return out, nil
 }

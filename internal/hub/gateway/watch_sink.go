@@ -45,6 +45,11 @@ type WatchSink struct {
 	// stamped after-images the job's appliers captured in its transaction,
 	// diffed by stamp against the before image the arm read.
 	GoalsCommitted func(ctx context.Context, machineID string, before, after []statedb.GoalRow)
+	// WorkItemsCommitted publishes an ingest job's goal-move work-item
+	// writes: the staged after-images the job's appliers captured in its
+	// transaction. Appliers return only rows they staged, so no before
+	// image is needed. A nil hook skips the publish.
+	WorkItemsCommitted func(ctx context.Context, changes []statedb.WorkItemChange)
 	// Pane publishes one applied agent PaneSummary event with the
 	// machine stamp of its event job.
 	Pane func(ctx context.Context, p PanePublication)
@@ -92,6 +97,21 @@ func (a *agentService) publishGoalsCommitted(ctx context.Context, machineID stri
 	if a.watch.GoalsCommitted != nil {
 		a.watch.GoalsCommitted(ctx, machineID, before, after)
 	}
+}
+
+// publishWorkItemsCommitted publishes an ingest job's applier-staged
+// work items as UPDATED changes, the way the dispatch path publishes a
+// goal move's item stage: the after-image carries the key and stamp, and
+// no before image is needed because appliers return only rows they wrote.
+func (a *agentService) publishWorkItemsCommitted(ctx context.Context, after []statedb.WorkItemRow) {
+	if a.watch.WorkItemsCommitted == nil {
+		return
+	}
+	changes := make([]statedb.WorkItemChange, 0, len(after))
+	for _, row := range after {
+		changes = append(changes, statedb.WorkItemChange{Key: row.Key, HubSeq: row.HubSeq, After: row})
+	}
+	a.watch.WorkItemsCommitted(ctx, changes)
 }
 
 func (a *agentService) publishPane(ctx context.Context, p PanePublication) {

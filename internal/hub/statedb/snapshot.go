@@ -86,6 +86,10 @@ type SnapshotIn struct {
 	LastEventSeq uint64
 	Counters     EventCounters
 	InstallID    string
+	// Harnesses is the snapshot's reported harness inventory (catalog hash
+	// and goal-control account per harness); ApplySnapshot replaces the
+	// machine's rows with it.
+	Harnesses []HarnessInventory
 	// Now is the hub clock the caller read when it built the job.
 	Now time.Time
 }
@@ -203,6 +207,9 @@ func ApplySnapshot(ctx context.Context, tx *sql.Tx, in SnapshotIn) (SnapshotOut,
 		int64(in.Seq), int64(in.Epoch), in.Now.UnixMilli(), in.MachineID) //nolint:gosec // G115: validated
 	if err != nil {
 		return SnapshotOut{}, fmt.Errorf("statedb: store snapshot: %w", err)
+	}
+	if err := ReplaceMachineHarness(ctx, tx, in.MachineID, in.Harnesses, in.Now.UnixMilli()); err != nil {
+		return SnapshotOut{}, err
 	}
 	if err := snapshotMarkers(ctx, tx, in, out); err != nil {
 		return SnapshotOut{}, err

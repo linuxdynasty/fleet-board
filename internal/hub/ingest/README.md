@@ -32,6 +32,9 @@ out, err := p.Wait(ctx) // out.Generation, out.Rollback (02i rule 3 causes), out
 - **A Snapshot without `PolicyInfo`** is stored as an empty policy (hash
   `''`, not safe mode), which reads as "no policy file", the agent's normal
   first run (03e).
+- **A Snapshot's harness inventory** is parsed into `HarnessInventory` rows
+  (catalog hash, goal-control account as protojson, launch allowed) for the
+  `machine_harness` replace (03f store map).
 - **`ApplySnapshot`** is one writer job: `statedb.ApplySnapshot`, then each
   `Applier` in the order given, then `statedb.MarkOnline`. The facts and
   resources are stored as protojson, the encoding Enroll uses for
@@ -46,10 +49,12 @@ out, err := p.Wait(ctx) // out.Generation, out.Rollback (02i rule 3 causes), out
 - **`Applier`** is the seam plan rows 7 to 10 fill: `Apply(ctx, tx,
   machineID, snap)` replaces that row's tables for the machine inside the
   job and returns the stamped goal after-images it wrote (`Pending.Goals`
-  reads them after `Wait` succeeds), so Watch publishes each job's own
-  writes instead of re-reading the latest state. The gateway's
-  `ServerOptions.Appliers` is the ordered list (empty
-  in 5c1). Notes for the rows that build on it:
+  reads them after `Wait` succeeds), plus the stamped work-item
+  after-images it staged beside a goal move (`Pending.Items`), so Watch
+  publishes each job's own writes instead of re-reading the latest state.
+  The gateway's `ServerOptions.Appliers` is the ordered list, with the
+  dispatch row's registry pass appended by the daemon once the Fleet
+  exists (row 22). Notes for the rows that build on it:
   - Inventory rows (7 to 10) replace their tables wholesale from the
     Snapshot and diff derived state (03 "Ordering and consistency").
   - 5g expires the machine's due commands in the job, after the appliers

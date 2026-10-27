@@ -88,6 +88,11 @@ type FleetOptions struct {
 	// means the defaults.md value. Tests set a short one to read
 	// checkpoints without waiting out the production interval.
 	WatchCheckpoint time.Duration
+	// MaxSyncLag is timing.max_sync_lag (how far behind the provider the
+	// mirror may be before dispatch treats claims as stale); zero means
+	// the documented 10-minute default. The daemon passes the configured
+	// value.
+	MaxSyncLag time.Duration
 }
 
 // Fleet is the hub's FleetService. The caller comes from [PrincipalFrom],
@@ -141,13 +146,19 @@ type Fleet struct {
 	volatile *volatileGates
 	// paneVersions counts the published summaries per pane, so a client
 	// dedupes them by version.
-	paneVersions   map[string]uint64
-	watchStreams   metric.Int64Counter
-	watchResyncs   metric.Int64Counter
-	tokens         metric.Int64Counter
-	sessCmds       metric.Int64Counter
-	approvals      metric.Int64Counter
-	repos          metric.Int64Counter
+	paneVersions map[string]uint64
+	watchStreams metric.Int64Counter
+	watchResyncs metric.Int64Counter
+	tokens       metric.Int64Counter
+	sessCmds     metric.Int64Counter
+	approvals    metric.Int64Counter
+	repos        metric.Int64Counter
+	// dispatches counts dispatch RPCs by mode and result (03c), and
+	// goalMoves counts recorded goal transitions by endpoints (03l).
+	dispatches metric.Int64Counter
+	goalMoves  metric.Int64Counter
+	// maxLag is timing.max_sync_lag for the integration-lag check.
+	maxLag         time.Duration
 	workItems      metric.Int64ObservableGauge
 	sysSignalState metric.Float64ObservableGauge
 	sysSignalValue metric.Float64ObservableGauge
@@ -236,6 +247,17 @@ func NewFleet(opts FleetOptions) (*Fleet, error) {
 	if err != nil {
 		return nil, fmt.Errorf("api: repo counter: %w", err)
 	}
+	f.dispatches, err = f.tel.Meter(scope).Int64Counter(f.tel.MetricPrefix()+"_dispatch_total",
+		metric.WithDescription("Dispatch RPCs by mode and result: preflight or start; ok, blocked, confirm, warn_unacked, sent or refused."))
+	if err != nil {
+		return nil, fmt.Errorf("api: dispatch counter: %w", err)
+	}
+	f.goalMoves, err = f.tel.Meter(scope).Int64Counter(f.tel.MetricPrefix()+"_goal_transitions_total",
+		metric.WithDescription("Recorded goal transitions by from and to phase and reason."))
+	if err != nil {
+		return nil, fmt.Errorf("api: goal transition counter: %w", err)
+	}
+	f.maxLag = opts.MaxSyncLag
 	f.workItems, err = f.tel.Meter(scope).Int64ObservableGauge(f.tel.MetricPrefix()+"_work_items",
 		metric.WithDescription("Synced work items by integration and hub stage (03m)."))
 	if err != nil {

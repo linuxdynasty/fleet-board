@@ -70,14 +70,14 @@ func TestAFailingApplierRollsTheWholeSnapshotBack(t *testing.T) {
 	t.Parallel()
 	var hook applied
 	var order []string
-	first := applierFunc(func(ctx context.Context, tx *sql.Tx, id string, s *agentv1.Snapshot) ([]statedb.GoalRow, error) {
+	first := applierFunc(func(ctx context.Context, tx *sql.Tx, id string, s *agentv1.Snapshot) ([]statedb.GoalRow, []statedb.WorkItemRow, error) {
 		order = append(order, "first:"+s.GetFacts().GetHostname())
 		_, err := tx.ExecContext(ctx, `UPDATE machines SET name = 'changed' WHERE machine_id = ?`, id)
-		return nil, err
+		return nil, nil, err
 	})
-	failing := applierFunc(func(context.Context, *sql.Tx, string, *agentv1.Snapshot) ([]statedb.GoalRow, error) {
+	failing := applierFunc(func(context.Context, *sql.Tx, string, *agentv1.Snapshot) ([]statedb.GoalRow, []statedb.WorkItemRow, error) {
 		order = append(order, "failing")
-		return nil, errors.New("a row 7 bug")
+		return nil, nil, errors.New("a row 7 bug")
 	})
 	h := startHub(t, func(o *gateway.ServerOptions) {
 		o.Appliers = []ingest.Applier{first, failing}

@@ -136,11 +136,11 @@ func TestEventFreeTextIsScrubbedBeforeTheStore(t *testing.T) {
 // stays below the lost event and the agent sends it again.
 func TestAFailingEventApplierEndsTheStreamAndLosesNothing(t *testing.T) {
 	t.Parallel()
-	failing := eventApplierFunc(func(_ context.Context, _ *sql.Tx, _ string, _ statedb.EventOut, ev *agentv1.Event) ([]statedb.GoalRow, error) {
+	failing := eventApplierFunc(func(_ context.Context, _ *sql.Tx, _ string, _ statedb.EventOut, ev *agentv1.Event) ([]statedb.GoalRow, []statedb.WorkItemRow, error) {
 		if ev.GetSeq() == 12 {
-			return nil, errors.New("a row 7 bug")
+			return nil, nil, errors.New("a row 7 bug")
 		}
-		return nil, nil
+		return nil, nil, nil
 	})
 	h := startHub(t, func(o *gateway.ServerOptions) { o.EventAppliers = []ingest.EventApplier{failing} })
 	m, s := h.snapshotted(t, 10)

@@ -142,7 +142,10 @@ and never appear in a preflight: a manual dispatch ignores them. The
 unacknowledged-warning rule means a client cannot dispatch past a warning it
 never showed: the CLI prints the warnings and needs `--yes-warnings`, the UI
 ticks them. "Manual dispatch allowed with a warning" (03m, 03c, 03e) is exactly
-the `WARN` and `CONFIRM` rows.
+the `WARN` and `CONFIRM` rows. Row 22 implements this table in
+internal/hub/goals: the Evaluate function emits one `PreflightCheck` per
+failed finding in table order, and DecideStart maps the set to proceed,
+block, unacknowledged-warning refusal, or `DISPATCH_CONFIRM` approval.
 
 **Operation versus approval.** `StartGoal` with a CONFIRM check, `RunHarnessCommand`
 with a DESTRUCTIVE command and `KillWindow` on a developer's window are one

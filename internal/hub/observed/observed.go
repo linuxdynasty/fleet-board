@@ -34,7 +34,7 @@ func (a Applier) now() time.Time {
 // OBSERVED GoalState is inserted or refreshed, and every stored observed
 // goal the snapshot no longer lists ends OBSERVED_GONE. Bindings the
 // fleet manages (REGISTRY, ENV) are row 21's, never this applier's.
-func (a Applier) Apply(ctx context.Context, tx *sql.Tx, machineID string, snap *agentv1.Snapshot) ([]statedb.GoalRow, error) {
+func (a Applier) Apply(ctx context.Context, tx *sql.Tx, machineID string, snap *agentv1.Snapshot) ([]statedb.GoalRow, []statedb.WorkItemRow, error) {
 	now := a.now()
 	var keep []string
 	var afters []statedb.GoalRow
@@ -44,7 +44,7 @@ func (a Applier) Apply(ctx context.Context, tx *sql.Tx, machineID string, snap *
 		}
 		after, err := a.applyOne(ctx, tx, machineID, harnessOf(snap, gs), gs, now)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		if after != nil {
 			afters = append(afters, *after)
@@ -53,43 +53,43 @@ func (a Applier) Apply(ctx context.Context, tx *sql.Tx, machineID string, snap *
 	}
 	stamp, err := statedb.NextStamp(ctx, tx, now)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	closed, err := statedb.EndObservedGone(ctx, tx, machineID, keep, now.UnixMilli(), stamp.HubSeq)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	for _, id := range closed {
 		after, err := statedb.ReadGoalTx(ctx, tx, id)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		afters = append(afters, after)
 	}
-	return afters, nil
+	return afters, nil, nil
 }
 
 // ApplyEvent stores one GoalState event with binding OBSERVED. History
 // events (at or below the Snapshot floor) run no rule; anything else is
 // row 21's.
-func (a Applier) ApplyEvent(ctx context.Context, tx *sql.Tx, machineID string, out statedb.EventOut, ev *agentv1.Event) ([]statedb.GoalRow, error) {
+func (a Applier) ApplyEvent(ctx context.Context, tx *sql.Tx, machineID string, out statedb.EventOut, ev *agentv1.Event) ([]statedb.GoalRow, []statedb.WorkItemRow, error) {
 	if out.History {
-		return nil, nil
+		return nil, nil, nil
 	}
 	gs := ev.GetGoalState()
 	if gs == nil || gs.GetBinding() != agentv1.GoalBindingSource_GOAL_BINDING_SOURCE_OBSERVED {
-		return nil, nil
+		return nil, nil, nil
 	}
 	// An event carries no inventory: the pane's harness is unknown here
 	// (the snapshot fills it when known; row 8 names it).
 	after, err := a.applyOne(ctx, tx, machineID, "", gs, a.now())
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if after == nil {
-		return nil, nil
+		return nil, nil, nil
 	}
-	return []statedb.GoalRow{*after}, nil
+	return []statedb.GoalRow{*after}, nil, nil
 }
 
 // applyOne inserts or refreshes one goal and returns the stamped

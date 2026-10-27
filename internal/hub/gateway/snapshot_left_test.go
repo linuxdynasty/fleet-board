@@ -107,7 +107,7 @@ func TestASnapshotCutByHousekeepingIsAbandonedAsCut(t *testing.T) {
 // must never die.
 func TestAPanickingApplierRollsBackAndTheHubLivesOn(t *testing.T) {
 	t.Parallel()
-	panicky := applierFunc(func(context.Context, *sql.Tx, string, *agentv1.Snapshot) ([]statedb.GoalRow, error) {
+	panicky := applierFunc(func(context.Context, *sql.Tx, string, *agentv1.Snapshot) ([]statedb.GoalRow, []statedb.WorkItemRow, error) {
 		panic("row 8 bug")
 	})
 	h := startHub(t, func(o *gateway.ServerOptions) { o.Appliers = []ingest.Applier{panicky} })
