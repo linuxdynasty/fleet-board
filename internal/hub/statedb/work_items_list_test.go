@@ -54,3 +54,18 @@ func TestWorkItemListAndRead(t *testing.T) {
 		t.Errorf("unknown key: %v, want ErrWorkItemUnknown", err)
 	}
 }
+
+// TestWorkKeySpellingsMeet is the syncer-dispatch seam: the syncer
+// writes full-form kinds ("WORK_ITEM_KIND_ISSUE") while the dispatch
+// path builds short-form keys ("ISSUE"). Both spellings name the same
+// row, or a pass re-checks a claim it can never find.
+func TestWorkKeySpellingsMeet(t *testing.T) {
+	t.Parallel()
+	if a, b := statedb.SyncKey("github-1", "WORK_ITEM_KIND_ISSUE", "acme/web", "7398"),
+		statedb.SyncKey("github-1", "ISSUE", "acme/web", "7398"); a != b {
+		t.Fatalf("SyncKey spellings differ: %q vs %q", a, b)
+	}
+	if got := statedb.NormalizeWorkKey("github-1/WORK_ITEM_KIND_ISSUE/acme/web/7398"); got != "github-1/ISSUE/acme/web/7398" {
+		t.Fatalf("NormalizeWorkKey = %q, want the short form", got)
+	}
+}

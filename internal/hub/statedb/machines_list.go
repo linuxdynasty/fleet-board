@@ -123,21 +123,34 @@ func ReadMachineRowTx(ctx context.Context, tx *sql.Tx, id string) (MachineRow, e
 func ListMachineRows(ctx context.Context, s *store.Store) ([]MachineRow, error) {
 	var out []MachineRow
 	err := s.Read(ctx, func(tx *sql.Tx) error {
-		rows, err := tx.QueryContext(ctx, `SELECT `+machineColumns+` FROM machines`)
-		if err != nil {
-			return fmt.Errorf("statedb: list machine rows: %w", err)
-		}
-		defer func() { _ = rows.Close() }()
-		for rows.Next() {
-			m, err := scanMachineRow(rows)
-			if err != nil {
-				return err
-			}
-			out = append(out, m)
-		}
-		return rows.Err()
+		var err error
+		out, err = ListMachineRowsTx(ctx, tx)
+		return err
 	})
 	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// ListMachineRowsTx reads every machine row in the caller's transaction,
+// so the row-23 scheduler snapshot reads machines, facts and dispatch
+// load from one consistent state.
+func ListMachineRowsTx(ctx context.Context, tx *sql.Tx) ([]MachineRow, error) {
+	rows, err := tx.QueryContext(ctx, `SELECT `+machineColumns+` FROM machines`)
+	if err != nil {
+		return nil, fmt.Errorf("statedb: list machine rows: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []MachineRow
+	for rows.Next() {
+		m, err := scanMachineRow(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, m)
+	}
+	if err := rows.Err(); err != nil {
 		return nil, err
 	}
 	return out, nil

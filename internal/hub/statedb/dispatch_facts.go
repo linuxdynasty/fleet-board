@@ -251,6 +251,38 @@ func ReadSettingsLayerTx(ctx context.Context, tx *sql.Tx, scope string) (string,
 	return raw, true, nil
 }
 
+// ActiveGoalSpec is one ACTIVE-class live goal's definition: the
+// scheduler counts active goals per account from these rows at plan
+// time (03c rule 2, 03l "Phase classes": ACTIVE goals hold an active
+// slot). The definition carries the account; the store keeps no
+// account column, so the caller parses it.
+type ActiveGoalSpec struct {
+	Spec string
+}
+
+// ListActiveGoalSpecsTx reads every ACTIVE-class live goal's definition
+// in the caller's transaction. Fleets hold tens of live goals, so the
+// scheduler counts per account in memory over this snapshot.
+func ListActiveGoalSpecsTx(ctx context.Context, tx *sql.Tx) ([]ActiveGoalSpec, error) {
+	rows, err := tx.QueryContext(ctx, `SELECT spec FROM goals WHERE phase IN (`+activePhaseList+`)`)
+	if err != nil {
+		return nil, fmt.Errorf("statedb: list active goal specs: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []ActiveGoalSpec
+	for rows.Next() {
+		var g ActiveGoalSpec
+		if err := rows.Scan(&g.Spec); err != nil {
+			return nil, fmt.Errorf("statedb: scan active goal spec: %w", err)
+		}
+		out = append(out, g)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // MachineStateNames names the stored machine states for dispatch
 // decisions (machinestate.go owns the transitions).
 const (

@@ -70,3 +70,46 @@ func TestMachineHarnessFailsFirst(t *testing.T) {
 		t.Fatalf("claude = %+v, found %v, want the new snapshot", got, found)
 	}
 }
+
+// TestListMachineHarness lists one machine's harness rows for the row-23
+// scheduler's machine ranking: a machine with no rows launches nothing.
+func TestListMachineHarness(t *testing.T) {
+	t.Parallel()
+	dir := stateDir(t)
+	create(t, dir)
+	s := open(t, dir)
+	ctx := context.Background()
+
+	list := func(machine string) []statedb.HarnessInventory {
+		t.Helper()
+		var out []statedb.HarnessInventory
+		err := s.Read(ctx, func(tx *sql.Tx) error {
+			var err error
+			out, err = statedb.ListMachineHarnessTx(ctx, tx, machine)
+			return err
+		})
+		if err != nil {
+			t.Fatalf("list: %v", err)
+		}
+		return out
+	}
+	if got := list("m1"); len(got) != 0 {
+		t.Fatalf("list(m1) = %+v, want empty", got)
+	}
+	err := s.Write(ctx, func(tx *sql.Tx) error {
+		return statedb.ReplaceMachineHarness(ctx, tx, "m1", []statedb.HarnessInventory{
+			{MachineID: "m1", Harness: "codex", LaunchAllowed: true},
+			{MachineID: "m1", Harness: "claude", LaunchAllowed: false},
+		}, 1000)
+	})
+	if err != nil {
+		t.Fatalf("replace: %v", err)
+	}
+	got := list("m1")
+	if len(got) != 2 || got[0].Harness != "claude" || got[1].Harness != "codex" {
+		t.Fatalf("list(m1) = %+v, want claude then codex", got)
+	}
+	if got[0].LaunchAllowed || !got[1].LaunchAllowed {
+		t.Fatalf("list(m1) = %+v, want claude disallowed and codex allowed", got)
+	}
+}

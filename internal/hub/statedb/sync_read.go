@@ -193,13 +193,15 @@ func UpdateWorkItemClaims(ctx context.Context, s *store.Store, key string, claim
 var ErrWorkItemUnknown = errors.New("statedb: unknown work item")
 
 // WorkItemState is the stored verdict inputs of one mirror row for the
-// claim loop's stage recompute.
+// claim loop's stage recompute. Version is the mirror's update count,
+// which the requeue check compares with the caller's read.
 type WorkItemState struct {
 	ItemJSON     string
 	TrustJSON    string
 	Stage        int32
 	ManualReason int32
 	ClaimsJSON   string
+	Version      int64
 }
 
 // GetWorkItemState reads one mirror row (ErrWorkItemUnknown when missing).
@@ -207,9 +209,9 @@ func GetWorkItemState(ctx context.Context, s *store.Store, key string) (WorkItem
 	var out WorkItemState
 	var stage, reason int64
 	err := s.Read(ctx, func(tx *sql.Tx) error {
-		return tx.QueryRowContext(ctx, `SELECT item_json, trust_json, stage, manual_reason, claims_json
-			FROM work_items WHERE key = ?`, key).Scan(
-			&out.ItemJSON, &out.TrustJSON, &stage, &reason, &out.ClaimsJSON)
+		return tx.QueryRowContext(ctx, `SELECT item_json, trust_json, stage, manual_reason, claims_json,
+			version FROM work_items WHERE key = ?`, NormalizeWorkKey(key)).Scan(
+			&out.ItemJSON, &out.TrustJSON, &stage, &reason, &out.ClaimsJSON, &out.Version)
 	})
 	if errors.Is(err, sql.ErrNoRows) {
 		return WorkItemState{}, ErrWorkItemUnknown

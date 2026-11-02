@@ -81,3 +81,32 @@ func ReadMachineHarnessTx(ctx context.Context, tx *sql.Tx, machineID, harness st
 	inv.LaunchAllowed = allowed != 0
 	return inv, true, nil
 }
+
+// ListMachineHarnessTx reads every reported harness of one machine in
+// the caller's transaction, in harness order. The row-23 scheduler
+// ranks machines on the launch-allowed set; a machine with no rows
+// launches nothing.
+func ListMachineHarnessTx(ctx context.Context, tx *sql.Tx, machineID string) ([]HarnessInventory, error) {
+	rows, err := tx.QueryContext(ctx, `SELECT machine_id, harness, profile, version,
+		catalog_hash, goal_control_json, launch_allowed, update_ms FROM machine_harness
+		WHERE machine_id = ? ORDER BY harness, profile`, machineID)
+	if err != nil {
+		return nil, fmt.Errorf("statedb: list machine harness: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []HarnessInventory
+	for rows.Next() {
+		var inv HarnessInventory
+		var allowed int64
+		if err := rows.Scan(&inv.MachineID, &inv.Harness, &inv.Profile, &inv.Version,
+			&inv.CatalogHash, &inv.GoalControlJSON, &allowed, &inv.UpdateMs); err != nil {
+			return nil, fmt.Errorf("statedb: scan machine harness: %w", err)
+		}
+		inv.LaunchAllowed = allowed != 0
+		out = append(out, inv)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
