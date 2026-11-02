@@ -41,6 +41,10 @@ func Migrations() []store.Migration {
 		Version: 9,
 		Name:    "native_journal",
 		SQL:     nativeJournalSQL,
+	}, {
+		Version: 10,
+		Name:    "native_wire_kinds",
+		SQL:     nativeWireKindsSQL,
 	}}
 }
 

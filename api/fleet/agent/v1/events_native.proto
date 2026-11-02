@@ -1,0 +1,143 @@
+// fleet.agent.v1 native session events (N2): structured output, tool
+// activity, approval requests, usage, turn end, process exit and the
+// unknown-event record for fleet-managed native sessions (02n). The arms
+// live on Event in events.proto (80-86); the shapes live here so that file
+// stays under its line cap.
+syntax = "proto3";
+
+package fleet.agent.v1;
+
+import "fleet/type/v1/ids.proto";
+import "fleet/type/v1/native.proto";
+
+// ---------------------------------------------------------------------------
+// Native session events (N2)
+// ---------------------------------------------------------------------------
+
+// NativeStream is which stream an output chunk came from.
+enum NativeStream {
+  NATIVE_STREAM_UNSPECIFIED = 0;
+  NATIVE_STREAM_STDOUT = 1;
+  NATIVE_STREAM_STDERR = 2;
+}
+
+// NativeTurnOutcome is how one turn of a managed session ended. COMPLETED
+// means only that the harness finished the turn: the issue ends after the
+// code-host verifier confirms it (ADR 0033). INTERRUPTED is an accepted
+// interrupt, FAILED a harness or provider error, UNCERTAIN a lost
+// acknowledgement or a crash the journal holds for reconciliation.
+enum NativeTurnOutcome {
+  NATIVE_TURN_OUTCOME_UNSPECIFIED = 0;
+  NATIVE_TURN_OUTCOME_COMPLETED = 1;
+  NATIVE_TURN_OUTCOME_INTERRUPTED = 2;
+  NATIVE_TURN_OUTCOME_FAILED = 3;
+  NATIVE_TURN_OUTCOME_UNCERTAIN = 4;
+}
+
+// NativeToolPhase is where one tool call stands.
+enum NativeToolPhase {
+  NATIVE_TOOL_PHASE_UNSPECIFIED = 0;
+  NATIVE_TOOL_PHASE_STARTED = 1;
+  NATIVE_TOOL_PHASE_FINISHED = 2;
+  NATIVE_TOOL_PHASE_FAILED = 3;
+}
+
+// [CAP N2]
+// NativeOutput: one scrubbed output chunk of a managed native session.
+// At most 4 KiB of text; longer harness output is cut with dropped_bytes
+// counting the gap, so a slow consumer drops chunks instead of blocking
+// approvals, interrupt or heartbeat. Never carries secrets (scrubbed) or a
+// completion claim: output is data, and only NativeTurnEnded ends a turn.
+message NativeOutput {
+  fleet.type.v1.SessionId session = 1;
+  // The turn's admission order (SendNativeTurnResult.admission_order).
+  uint64 turn = 2;
+  NativeStream stream = 3;
+  // Scrubbed harness text, at most 4 KiB. Untrusted text.
+  string text = 4;
+  // Harness bytes shed before this chunk (buffer cap, SHED delivery).
+  uint64 dropped_bytes = 5;
+}
+
+// [CAP N2]
+// NativeToolActivity: one tool call started, finished or failed. A SHED
+// sample of what the turn is doing; the durable anchors are the turn end
+// and the usage reading below.
+message NativeToolActivity {
+  fleet.type.v1.SessionId session = 1;
+  uint64 turn = 2;
+  // Tool name as the harness reports it. Untrusted text, 128 bytes.
+  string tool = 3;
+  NativeToolPhase phase = 4;
+  // Scrubbed one-line note (arguments summary, error). 1 KiB.
+  string detail = 5;
+}
+
+// [CAP N2]
+// NativeApprovalRequest: the harness asks the operator to approve an
+// action. NEVER_DROP: it must reach Triage and be retired like a prompt,
+// and the turn waits for its answer.
+message NativeApprovalRequest {
+  fleet.type.v1.SessionId session = 1;
+  uint64 turn = 2;
+  // Provider's approval identity for answering. Untrusted text, 128 bytes.
+  string approval_id = 3;
+  // Tool asking, as the harness names it. Untrusted text, 128 bytes.
+  string tool = 4;
+  // What the harness wants to do, scrubbed. Untrusted text, 1 KiB.
+  string prompt = 5;
+}
+
+// [CAP N2]
+// NativeUsage: provider-metered tokens of one turn. COALESCE per session:
+// the burn-down reads the latest, and the hub keeps every reading it
+// receives. An unknown reading stays unknown, never zero (04 Q6).
+message NativeUsage {
+  fleet.type.v1.SessionId session = 1;
+  uint64 turn = 2;
+  fleet.type.v1.AccountId account = 3;
+  uint64 input_tokens = 4;
+  uint64 output_tokens = 5;
+}
+
+// [CAP N2]
+// NativeTurnEnded: the harness finished one turn. Ends the turn only: not
+// goal completion (the verifier decides that), not process exit, not
+// cleanup. FAILED carries the scrubbed error; UNCERTAIN carries no claim
+// and the journal holds the session for reconciliation.
+message NativeTurnEnded {
+  fleet.type.v1.SessionId session = 1;
+  uint64 turn = 2;
+  NativeTurnOutcome outcome = 3;
+  // Scrubbed error for FAILED. Untrusted text, 1 KiB.
+  string error = 4;
+}
+
+// [CAP N2]
+// NativeProcessExited: the native process of a managed session exited.
+// Distinct from turn end (a turn can end with the process alive) and from
+// cleanup (StopNativeSessionResult.cleanup_complete). Exit status unset
+// means the status could not be read, never success.
+message NativeProcessExited {
+  fleet.type.v1.SessionId session = 1;
+  // Exit status when read; unset when unreadable.
+  optional int32 exit_status = 2;
+  // Signal that ended the process, empty when none. 32 bytes.
+  string signal = 3;
+  // True when this exit was expected (a stop the hub asked for).
+  bool expected = 4;
+}
+
+// [CAP N2]
+// NativeUnknownEvent: an SDK event with no known kind arrived. Recorded as
+// identity only (backend, raw kind, digest of the raw payload): it never
+// ends a turn, never completes a goal and never changes control state.
+// Classification without forging.
+message NativeUnknownEvent {
+  fleet.type.v1.SessionId session = 1;
+  fleet.type.v1.NativeBackend backend = 2;
+  // Raw SDK event kind. Untrusted text, 128 bytes.
+  string raw_kind = 3;
+  // SHA-256 hex of the raw payload, for later classification.
+  string digest = 4;
+}

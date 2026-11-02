@@ -6,12 +6,10 @@
   [0006](../adr/0006-tmux-sessions.md), [0009](../adr/0009-machine-groups-and-layered-settings.md),
   [0010](../adr/0010-session-logs.md)
 
-This spec lists everything `fleet-agent` can observe and do on a machine. Sections A to E
-are here; sections F to M (control, goals, repositories, preflight, attach, logs, policy,
-self-management) and the closing sections are in
-[01f-agent-control-goals-and-policy.md](01f-agent-control-goals-and-policy.md). It is
-the input to the contracts (step 2): each capability becomes a command, an
-event, a snapshot field or a stream.
+This spec lists everything `fleet-agent` can observe and do on a machine. Sections A to E are here;
+sections F to M (control, goals, repositories, preflight, attach, logs, policy, self-management)
+and the closing sections are in [01f-agent-control-goals-and-policy.md](01f-agent-control-goals-and-policy.md).
+It is the input to the contracts (step 2): each capability becomes a command, an event, a snapshot field or a stream.
 
 ## Principles
 
@@ -127,6 +125,8 @@ Phase: **v1** the whole local product (watching, dispatch, sessions, logs), **v3
 | M2 | Telemetry (OTEL) | L | v1 |
 | M3 | Doctor | L | v1 |
 | M4 | Drain and undrain | C, L, S | v1 |
+| N1 | Native session control: start, send-turn, resume, interrupt, stop (typed commands; one advertised capability `native.<backend>` per qualified backend, 02n) | C | v1 |
+| N2 | Native session events: structured output, tool activity, approval requests, usage, turn end, process exit, unknown-event record (02n) | E | v1 |
 
 Not in v1: Tailscale lookup (v3), raw exec (string reserved, not in the
 contract), moving a goal between machines (in v1 the owner stops the goal here

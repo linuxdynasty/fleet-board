@@ -29,7 +29,7 @@ func nativeSession() ring.NativeSessionRecord {
 func nativeCommand(t *testing.T, db *ring.DB, id string, body []byte) {
 	t.Helper()
 	_, duplicate, err := db.LogCommand(context.Background(), ring.Command{
-		ID: id, Kind: "native.send_turn", Epoch: 1, Seq: 1,
+		ID: id, Kind: "SendNativeTurn", Epoch: 1, Seq: 1,
 		Received: time.Unix(100, 0), NotAfter: time.Unix(200, 0), Body: body,
 	})
 	if err != nil || duplicate {

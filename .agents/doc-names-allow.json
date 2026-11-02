@@ -201,7 +201,6 @@
   {"token": "REQUESTED", "kind": "store-state", "reason": "probes table state in state.db, not a proto enum (03b, 03f)", "files": ["docs/specs/03b-usage-and-sync.md", "docs/specs/03f-hub-internals.md"]},
   {"token": "FAILED_OVER", "kind": "store-state", "reason": "probes table state in state.db, not a proto enum (03b)", "files": ["docs/specs/03b-usage-and-sync.md"]},
   {"token": "FINAL", "kind": "store-state", "reason": "log stream state in logs.db, not a proto enum (03d, 04)", "files": ["docs/specs/03d-triage-sessions-logs.md", "docs/specs/04-technology-review.md"]},
-  {"token": "HELD", "kind": "spec-term", "reason": "phase class of 03c, not a GoalPhase value (03h)", "files": ["docs/specs/03h-goal-phases-in-depth.md"]},
   {"token": "LABELED_EVENT", "kind": "github", "reason": "GitHub GraphQL timeline item type (03m, 03j)", "files": ["docs/specs/03j-provider-sync-and-trust.md", "docs/specs/03m-work-source-and-code-host-sync.md"]},
   {"token": "REVIEW_REQUIRED", "kind": "github", "reason": "GitHub reviewDecision value (03j)", "files": ["docs/specs/03j-provider-sync-and-trust.md"]},
   {"token": "HEAD", "kind": "git", "reason": "git ref", "files": ["docs/development/agent-guide.md", "docs/development/hooks.md", "docs/specs/02e-contract-rules.md", "docs/specs/02m-hub-api-actions-and-audit.md"]},

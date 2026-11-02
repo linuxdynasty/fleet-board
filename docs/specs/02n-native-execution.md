@@ -1,11 +1,12 @@
-# Native execution journal and later runtime
+# Native execution journal and disabled runtime
 
-This page covers the disabled machine-side journal introduced for #266. Native
-execution stays off under [ADR 0033](../adr/0033-native-sessions-and-handoff.md)
-until an exact interface, version, account and billing mode, approval behavior,
-deployment, and real machine-side caller are qualified. The journal stores no
-prompt, output, secret, process handle, or permission to launch a harness by
-itself. Terminal sessions keep their current behavior.
+This page covers the machine-side journal and the disabled runtime host for
+#266. Native execution stays off under
+[ADR 0033](../adr/0033-native-sessions-and-handoff.md) until an exact
+interface, version, account and billing mode, approval behavior, deployment,
+and real machine-side caller are qualified. The journal stores no prompt,
+output, secret, process handle, or permission to launch a harness by itself.
+Terminal sessions keep their current behavior.
 
 ## One session identity
 
@@ -18,8 +19,10 @@ evidence, and confirmed control state. `SessionStatus.owner` names a principal;
 it does not prove that a machine-side controller owns a live native process.
 Goal attempt, turn, command, session, account, and provider IDs remain distinct.
 Future hub native details belong in an extension row keyed by the existing
-`hub_sessions.session_id`. This slice adds no hub table, public resource, wire
-arm, event, capability, adapter, or runtime handler.
+`hub_sessions.session_id`. This slice adds no hub table and no hub RPC: the
+agent wire (N1 commands, N2 events, 700s reasons), the host, the adapter
+boundary and the five executor handlers are the delivery. Hub reads, Watch
+topics, outbox constructors and per-backend adapters belong to later slices.
 
 ## Agent-owned records
 
@@ -58,12 +61,15 @@ duplicate after pruning.
 `CreateNativeSession`, `AdmitNativeEffect`, `ClaimNativeEffect`,
 `ResolveNativeEffect`, `RecoverNativeEffects`, `ReadNativeSession`,
 `ReadNativeEffect`, and paged `ListUnresolvedNativeEffects` are storage seams.
-They have no production caller yet. Admission requires an existing logged
-command whose kind and saved body match the effect kind and digest. The digest
+The host (`internal/agent/native`) is their production caller. Admission
+requires an existing logged command whose kind and saved body match the effect
+kind and digest; the logged kind is the Command.kind arm's message name
+(`StartNativeSession`, migration 10, NativeWireKind in code). The digest
 is verified against `command_log.command`; it does not prove two native effect
 inputs are canonically equivalent. The same effect ID and content returns its
 existing row; changed content or a new effect ID for the same command
-conflicts. A retry after `NO_EFFECT` needs a fresh effect and command ID linked
+conflicts. The effect ID is always the command ID: one external effect per
+command. A retry after `NO_EFFECT` needs a fresh effect and command ID linked
 to the first effect in the same session, kind and
 generation. Only one direct successor may link to each `NO_EFFECT` row; any
 further retry links to the next proven `NO_EFFECT`. This link records lineage,
@@ -157,18 +163,35 @@ forgets unresolved ownership or makes a duplicate input runnable. At capacity,
 new admission must fail rather than discard unresolved rows. There is no
 unmeasured time or row cap in this storage slice.
 
-The later runtime adds typed start, send-turn, resume, interrupt, and stop
-commands, structured output/tool/approval/usage events, a qualified adapter
-and a real hub→outbox→agent→adapter caller together. Unknown interfaces and
-event kinds fail closed. The current `internal/proc` helper is a bounded
-one-shot process call with empty stdin; it needs a separate measured streaming
-design before it can host a native session. Native capabilities remain
-unadvertised until the real caller and all contract checks pass.
+The runtime host (`internal/agent/native`) runs the five typed commands
+through the existing executor, command log, outbox, event ring and hub
+writer, and classifies the seven structured event arms. The Adapter
+interface is the only boundary a backend crosses; per-backend adapters land
+with qualification (#267-#269). Unknown interfaces and event kinds fail
+closed. Process launch goes through `internal/proc` with a measured caller:
+the one-shot helper stays the only spawn path, so a native session process
+needs a separate measured streaming design before any adapter may host one.
+Native capabilities remain unadvertised until a qualified adapter registers.
 
-No-Observability-Change: this dormant store uses `store.opened`,
-`store.migrated`, `fleet_agent_writer_*`, and `fleet_agent_store_*` with
-`db="agent"`. The native gate's cost must be measured before runtime
-activation. The runtime producer must add admission, claim, reconciliation,
-and capacity signals before enabling native execution. Tests with synthetic
-external-call counts prove only the journal protocol; they do not prove
-provider qualification, process cleanup, or the full acceptance of #266.
+Bounds: turn input at most 32 KiB; output samples emit at most 64 chunks of
+4 KiB (256 KiB), larger bursts cut with the gap counted; an ordinary effect
+waits at most 30 s for earlier unresolved effects of its session before it
+gives up its own admission; interrupt and stop never wait. Journal rows are
+still retained: before a runtime producer is enabled, admission capacity,
+bounded recovery scans and a retention rule that never forgets unresolved
+ownership still need measurement (at capacity, admission fails rather than
+discarding).
+
+Telemetry: `fleet_agent_native_effects_total{kind,state}` counts terminal
+resolutions (confirmed, no_effect, unknown_outcome), by journal kind;
+`fleet_agent_native_buffer_dropped_bytes_total{kind}` counts shed output;
+`fleet_agent_native_events_total{kind}` counts emitted arms (the emitter also
+counts every arm in `fleet_agent_events_total`). Log lines
+`native.effect_resolved`, `native.effect_abandon_failed`,
+`native.recovery_completed` and `native.event_emitted` name ids, kinds and
+enum outcomes only, never text.
+Unqualified commands are refused by the executor's own `command.refused`
+line, which names the missing `native.<backend>` capability. Tests with
+synthetic external-call counts prove only the journal protocol and the
+host's ordering; they do not prove provider qualification, process cleanup,
+or the full acceptance of #266.

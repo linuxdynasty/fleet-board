@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"path/filepath"
 	"sync"
 
@@ -15,6 +16,7 @@ import (
 	"github.com/linuxdynasty/fleet-board/internal/agent/conn"
 	"github.com/linuxdynasty/fleet-board/internal/agent/events"
 	"github.com/linuxdynasty/fleet-board/internal/agent/exec"
+	"github.com/linuxdynasty/fleet-board/internal/agent/native"
 	"github.com/linuxdynasty/fleet-board/internal/agent/policy"
 	"github.com/linuxdynasty/fleet-board/internal/agent/ring"
 	"github.com/linuxdynasty/fleet-board/internal/agent/settings"
@@ -246,6 +248,28 @@ func runAgentWithDeps(ctx context.Context, dir, cfgDir, version, boot string, te
 			handlers = append(handlers, h)
 		}
 		wg.Go(func() { observed.runSpool(wctx) })
+	}
+	// The native session host (#266, N1/N2): journal-backed admission and
+	// the adapter boundary behind the five native handlers. No backend
+	// passes ADR 0033 qualification yet, so the adapter set is empty: the
+	// handlers register, advertise nothing, and the executor answers every
+	// native command STATUS_UNSUPPORTED naming its per-backend capability.
+	// Per-backend qualification (#267-#269) registers adapters here.
+	home, _ := os.UserHomeDir()
+	nativeHost, err := native.New(native.Options{
+		DB: db, MachineID: id.MachineID, Home: home, Emitter: em,
+		Telemetry: tel,
+		Logger:    tel.Logger.With("component", "native", "machine_id", id.MachineID),
+	})
+	if err != nil {
+		return failed("native", err)
+	}
+	handlers = append(handlers, nativeHost.Handlers()...)
+	// Startup recovery first: dead PREPARED attempts resolve NO_EFFECT and
+	// MAY_HAVE_RUN effects become RECONCILE_REQUIRED with the session held,
+	// before the executor's resume pass or any new dispatch.
+	if err := nativeHost.Recover(wctx); err != nil {
+		return failed("native", err)
 	}
 	ex, err = exec.New(exec.Options{
 		DB: db, Sender: loop, Clock: loop.HubClock(), Policy: sm,

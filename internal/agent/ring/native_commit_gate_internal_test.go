@@ -57,7 +57,7 @@ func nativeBatchFixture(t *testing.T) (*DB, *telemetry.Telemetry, string, Native
 		t.Fatal(err)
 	}
 	body := []byte("encoded command")
-	if _, dup, err := d.LogCommand(ctx, Command{ID: "command-a", Kind: "native.send_turn", Body: body}); err != nil || dup {
+	if _, dup, err := d.LogCommand(ctx, Command{ID: "command-a", Kind: "SendNativeTurn", Body: body}); err != nil || dup {
 		t.Fatalf("log command: duplicate=%v err=%v", dup, err)
 	}
 	digest := sha256.Sum256(body)

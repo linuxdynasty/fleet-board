@@ -110,11 +110,22 @@ func newRegistry(hs []Handler) (registry, error) {
 	return r, nil
 }
 
-// capabilities are what every registered handler advertises.
+// capabilities are what every registered handler advertises, each named
+// once: several handlers may share one backend's capability (the five
+// native kinds share their host's list), and Hello names no capability
+// twice. supports is existential, so the dedupe changes no decision.
 func (r registry) capabilities() []*typev1.Capability {
 	var out []*typev1.Capability
+	seen := map[string]bool{}
 	for _, h := range r {
-		out = append(out, h.Capabilities()...)
+		for _, c := range h.Capabilities() {
+			key := fmt.Sprintf("%s/%d", c.GetName(), c.GetVersion())
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			out = append(out, c)
+		}
 	}
 	return out
 }

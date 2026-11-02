@@ -28,7 +28,7 @@ func nativeFixture(t *testing.T) (*ring.DB, string, ring.NativeSessionRecord) {
 func admitNative(t *testing.T, db *ring.DB, session ring.NativeSessionRecord, effectID, commandID string, kind ring.NativeEffectKind) ring.NativeEffectRecord {
 	t.Helper()
 	body := []byte("encoded " + commandID)
-	nativeCommandKind(t, db, commandID, "native."+string(kind), body)
+	nativeCommandKind(t, db, commandID, ring.NativeWireKind(kind), body)
 	e, dup, err := db.AdmitNativeEffect(context.Background(), ring.NativeEffectRecord{
 		EffectID: effectID, CommandID: commandID, SessionID: session.SessionID,
 		Generation: session.Generation, Kind: kind, CommandBodyDigest: nativeDigest(body),
@@ -77,7 +77,7 @@ func TestNativeAdmissionBindsIdentityAndLoggedInput(t *testing.T) {
 			}
 		})
 	}
-	nativeCommandKind(t, db, "command-b", "native.send_turn", []byte("actual"))
+	nativeCommandKind(t, db, "command-b", "SendNativeTurn", []byte("actual"))
 	if _, _, err := db.AdmitNativeEffect(ctx, ring.NativeEffectRecord{
 		EffectID: "effect-b", CommandID: "command-b", SessionID: session.SessionID,
 		Generation: 1, Kind: ring.NativeEffectSendTurn, CommandBodyDigest: nativeDigest([]byte("altered")),
@@ -147,7 +147,7 @@ func TestNativeConcurrentDuplicateAdmissionHasOneOrder(t *testing.T) {
 	db, _, session := nativeFixture(t)
 	ctx := context.Background()
 	body := []byte("one input")
-	nativeCommandKind(t, db, "command-a", "native.start", body)
+	nativeCommandKind(t, db, "command-a", "StartNativeSession", body)
 	input := ring.NativeEffectRecord{
 		EffectID: "effect-a", CommandID: "command-a",
 		SessionID: session.SessionID, Generation: 1, Kind: ring.NativeEffectStart,

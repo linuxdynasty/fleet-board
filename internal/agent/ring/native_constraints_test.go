@@ -51,7 +51,7 @@ func TestNativeSchemaGuardsIdentityAndStateAgainstDirectSQL(t *testing.T) {
 	ctx := context.Background()
 	e := admitNative(t, db, session, "effect-a", "command-a", ring.NativeEffectStart)
 	file := raw(t, dir)
-	nativeCommandKind(t, db, "command-b", "native.start", []byte("other input"))
+	nativeCommandKind(t, db, "command-b", "StartNativeSession", []byte("other input"))
 	for _, statement := range []string{
 		`UPDATE native_sessions SET generation = 2 WHERE session_id = 'session-a'`,
 		`UPDATE native_sessions SET controller_id = 'other' WHERE session_id = 'session-a'`,
@@ -167,8 +167,8 @@ func TestNativeMetadataBoundsAndPreviousSchemaMigration(t *testing.T) {
 		t.Fatal(err)
 	}
 	upgraded := open(t, dir)
-	if got := upgraded.SchemaVersion(); got != 9 {
-		t.Fatalf("schema version %d, want 9", got)
+	if got, want := upgraded.SchemaVersion(), len(ring.Migrations()); got != want {
+		t.Fatalf("schema version %d, want %d", got, want)
 	}
 	state, err := upgraded.State(ctx)
 	if err != nil || state.InstallID != "prior-install" {
@@ -178,8 +178,8 @@ func TestNativeMetadataBoundsAndPreviousSchemaMigration(t *testing.T) {
 		t.Fatal(err)
 	}
 	upgraded = open(t, dir)
-	if got := upgraded.SchemaVersion(); got != 9 {
-		t.Fatalf("reopen schema version %d, want 9", got)
+	if got, want := upgraded.SchemaVersion(), len(ring.Migrations()); got != want {
+		t.Fatalf("reopen schema version %d, want %d", got, want)
 	}
 }
 

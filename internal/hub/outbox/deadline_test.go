@@ -17,12 +17,13 @@ func TestDefaultDeadlineFollowsTheContractTable(t *testing.T) {
 	t.Parallel()
 	for kind, want := range map[string]time.Duration{
 		"send_keys": 2 * time.Minute, "interrupt": 2 * time.Minute, "run_harness_command": 2 * time.Minute,
-		"capture_pane": 2 * time.Minute, "open_attach": 2 * time.Minute,
+		"capture_pane": 2 * time.Minute, "open_attach": 2 * time.Minute, "interrupt_native_session": 2 * time.Minute,
 		"start_goal": 30 * time.Minute, "ensure_worktree": 30 * time.Minute, "prune_worktree": 30 * time.Minute,
-		"ensure_goal_hooks": 30 * time.Minute,
-		"stop_probe":        24 * time.Hour,
-		"ensure_probe":      10 * time.Minute, "drain": 10 * time.Minute, "kill_window": 10 * time.Minute,
-		"register_goal": 10 * time.Minute,
+		"ensure_goal_hooks":    30 * time.Minute,
+		"start_native_session": 30 * time.Minute, "send_native_turn": 30 * time.Minute, "resume_native_session": 30 * time.Minute,
+		"stop_probe":   24 * time.Hour,
+		"ensure_probe": 10 * time.Minute, "drain": 10 * time.Minute, "kill_window": 10 * time.Minute,
+		"register_goal": 10 * time.Minute, "stop_native_session": 10 * time.Minute,
 	} {
 		if got := outbox.DefaultDeadline(kind); got != want {
 			t.Errorf("DefaultDeadline(%q) = %v, want %v", kind, got, want)

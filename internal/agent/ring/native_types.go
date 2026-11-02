@@ -47,6 +47,47 @@ const (
 	NativeEffectStop      NativeEffectKind = "stop"
 )
 
+// NativeWireKind maps an effect kind to the executor's logged command kind:
+// the Command.kind arm's message name, as the executor's kindOf reports it
+// and the command log stores it. The journal's own kind vocabulary stays
+// short ("start"); this mapping is the one place that names the wire arms,
+// so AdmitNativeEffect checks the input the production command path logged.
+func NativeWireKind(k NativeEffectKind) string {
+	switch k {
+	case NativeEffectStart:
+		return "StartNativeSession"
+	case NativeEffectSendTurn:
+		return "SendNativeTurn"
+	case NativeEffectResume:
+		return "ResumeNativeSession"
+	case NativeEffectInterrupt:
+		return "InterruptNativeSession"
+	case NativeEffectStop:
+		return "StopNativeSession"
+	default:
+		return ""
+	}
+}
+
+// NativeEffectKindForWire is the inverse of NativeWireKind: the journal kind
+// for a logged command kind, or false when the command is not a native one.
+func NativeEffectKindForWire(wire string) (NativeEffectKind, bool) {
+	switch wire {
+	case "StartNativeSession":
+		return NativeEffectStart, true
+	case "SendNativeTurn":
+		return NativeEffectSendTurn, true
+	case "ResumeNativeSession":
+		return NativeEffectResume, true
+	case "InterruptNativeSession":
+		return NativeEffectInterrupt, true
+	case "StopNativeSession":
+		return NativeEffectStop, true
+	default:
+		return "", false
+	}
+}
+
 type NativeEffectState string
 
 const (

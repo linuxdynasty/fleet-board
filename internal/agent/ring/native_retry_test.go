@@ -25,7 +25,7 @@ func TestNativeRetryNeedsOneProvenPredecessor(t *testing.T) {
 		t.Fatal(err)
 	}
 	body := []byte("different command envelope for the retry")
-	nativeCommandKind(t, db, "command-b", "native.start", body)
+	nativeCommandKind(t, db, "command-b", "StartNativeSession", body)
 	retry := ring.NativeEffectRecord{
 		EffectID: "effect-b", CommandID: "command-b",
 		SessionID: session.SessionID, Generation: 1, Kind: ring.NativeEffectStart,
@@ -35,7 +35,7 @@ func TestNativeRetryNeedsOneProvenPredecessor(t *testing.T) {
 	if err != nil || dup || got.RetryOfEffectID != first.EffectID || got.CommandBodyDigest == first.CommandBodyDigest {
 		t.Fatalf("linked retry: %+v dup=%v err=%v", got, dup, err)
 	}
-	nativeCommandKind(t, db, "command-c", "native.start", []byte("sibling retry"))
+	nativeCommandKind(t, db, "command-c", "StartNativeSession", []byte("sibling retry"))
 	sibling := retry
 	sibling.EffectID, sibling.CommandID = "effect-c", "command-c"
 	sibling.CommandBodyDigest = nativeDigest([]byte("sibling retry"))
@@ -60,7 +60,7 @@ func TestNativeConcurrentSiblingRetriesHaveOneWinner(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, id := range []string{"b", "c"} {
-		nativeCommandKind(t, db, "command-"+id, "native.start", []byte(id))
+		nativeCommandKind(t, db, "command-"+id, "StartNativeSession", []byte(id))
 	}
 	var wg sync.WaitGroup
 	start := make(chan struct{})
@@ -129,7 +129,7 @@ func TestNativeRetryRejectsWrongLineage(t *testing.T) {
 			}
 			body := []byte("a new command")
 			attempt.CommandBodyDigest = nativeDigest(body)
-			nativeCommandKind(t, db, attempt.CommandID, "native."+string(attempt.Kind), body)
+			nativeCommandKind(t, db, attempt.CommandID, ring.NativeWireKind(attempt.Kind), body)
 			if _, _, err := db.AdmitNativeEffect(ctx, attempt); err == nil {
 				t.Fatal("invalid retry lineage was admitted")
 			}
