@@ -100,13 +100,18 @@ func (h *Host) runStart(ctx context.Context, cmd *agentv1.Command, digest string
 	if !validRef(receipt.ProviderSessionID, 256) {
 		return h.callFailed(ctx, claimed, &CallError{Reason: typev1.ReasonCode_REASON_CODE_INTERNAL, Msg: "native: the provider identity is invalid"})
 	}
+	// Bind before resolving, like resume: a crash between the two commits
+	// leaves a bound-but-unconfirmed session (recovered without a second
+	// provider call), never a confirmed session with no provider id.
+	if _, err := h.db.BindNativeProviderSession(ctx, sessionID, h.machine, 1, claimed.EffectID, receipt.ProviderSessionID); err != nil {
+		h.abandon(ctx, claimed)
+		return h.resolveFailed(ctx, claimed, err)
+	}
 	resolved, resErr := h.resolveConfirmed(ctx, claimed, receipt.ProviderSessionID, receipt.Model+"/"+receipt.Effort)
 	if resErr != nil {
 		return resErr
 	}
-	if _, err := h.db.BindNativeProviderSession(ctx, sessionID, h.machine, 1, claimed.EffectID, receipt.ProviderSessionID); err != nil {
-		return h.resolveFailed(ctx, resolved, err)
-	}
+	_ = resolved
 	h.metrics.resolved(string(claimed.Kind), string(ring.NativeEffectConfirmed))
 	logResolvedLine(h.log, string(claimed.Kind), string(ring.NativeEffectConfirmed),
 		claimed.CommandID, sessionID, claimed.EffectID, "start bound")

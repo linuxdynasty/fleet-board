@@ -97,11 +97,11 @@ message SendNativeTurnResult {
 }
 
 // [CAP N1]
-// ResumeNativeSession: continue a managed session after its process ended
-// or its turn stream broke, keeping the same provider identity where the
-// backend allows it. A session whose process is still alive is refused with
-// NATIVE_TURN_BUSY; an exited one that cannot resume binds a fresh process
-// and reports it.
+// ResumeNativeSession: continue a managed session after its turn stream
+// broke, keeping the same provider identity where the backend allows it.
+// A session with an unresolved turn is refused with NATIVE_TURN_BUSY; an
+// unresumable one binds a fresh process and reports it. Process-liveness
+// refusal is owned by the adapter slices.
 message ResumeNativeSession {
   fleet.type.v1.SessionId session = 1;
   uint64 ownership_generation = 2;

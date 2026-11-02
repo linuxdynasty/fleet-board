@@ -429,8 +429,10 @@ enum ReasonCode {
   // at a time in admission order.
   REASON_CODE_NATIVE_TURN_BUSY = 705;
   // [CAP N1]
-  // The session's native process already exited; start or send on a dead
-  // session is refused instead of silently reviving it.
+  // Reserved for the adapter slices: no code emits this reason yet.
+  // Process exit is event-only in this slice; once a backend records
+  // liveness, start or send on a dead session is refused instead of
+  // silently reviving it.
   REASON_CODE_NATIVE_EXITED = 706;
 }
 
