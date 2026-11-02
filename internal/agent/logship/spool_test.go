@@ -2,6 +2,7 @@ package logship_test
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -162,6 +163,63 @@ func TestSpoolCapKeepsNewest(t *testing.T) {
 		if len(e.Name()) < 4 || e.Name()[len(e.Name())-4:] != ".chk" {
 			t.Fatalf("stray file %q in the spool dir", e.Name())
 		}
+	}
+}
+
+func TestOpenSpoolRefusesStartEscape(t *testing.T) {
+	t.Parallel()
+	starts := []string{"../..", "..", ".", "", "a/b", "a/"}
+	for i, start := range starts {
+		i, start := i, start
+		t.Run(fmt.Sprintf("case%d", i), func(t *testing.T) {
+			t.Parallel()
+			if _, err := logship.OpenSpool(filepath.Join(t.TempDir(), "spool"), "default", start, "%3",
+				logship.TerminalStream, 1<<30); err == nil {
+				t.Fatalf("OpenSpool(start %q) succeeded, want refusal", start)
+			}
+		})
+	}
+}
+
+func TestSpoolIgnoresTornAckWriteOnRestart(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	open := func() *logship.Spool {
+		sp, err := logship.OpenSpool(dir, "default", "s1", "%3", logship.TerminalStream, 1<<30)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return sp
+	}
+	sp := open()
+	if _, err := sp.Append(storedAt(0, "first\n", false)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := sp.Append(storedAt(6, "second\n", true)); err != nil {
+		t.Fatal(err)
+	}
+	if err := sp.SetAcked(6); err != nil {
+		t.Fatal(err)
+	}
+	// A crash between the acked tmp write and its rename leaves a stray
+	// tmp: reopening must clean it and keep serving the acked end.
+	if err := os.WriteFile(filepath.Join(sp.Dir(), "acked.acked.tmp"), []byte("torn"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	sp2 := open()
+	pending, err := sp2.Pending()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pending) != 1 || pending[0].Offset != 6 {
+		t.Fatalf("pending %+v, want one chunk at 6", pending)
+	}
+	floor, err := sp2.Floor()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if floor != 6 {
+		t.Fatalf("floor %d, want 6", floor)
 	}
 }
 

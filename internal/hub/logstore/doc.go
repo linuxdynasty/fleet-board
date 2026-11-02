@@ -15,7 +15,7 @@
 // before calling [Store.Ingest]. [Resolver] is that mapping, injected so
 // this package never reads state.db.
 //
-// All five reads (Read, List, Get, Delete, Search) and Status serve the
+// The four reads (Read, List, Get, Search), plus Stat and Delete, serve the
 // FleetService calls of the same names; those calls enforce the LOGS scope
 // and audit the delete, this package does neither.
 package logstore

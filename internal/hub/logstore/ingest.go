@@ -22,6 +22,10 @@ const maxChunkBytes = 960 * 1024
 //   - offset == end + gap_before: STORED, the row records gap_before.
 //   - anything else: HOLE with the hub's end, nothing stored.
 //   - the pane maps to no session: UNKNOWN_STREAM, nothing stored.
+//
+// Ingest files one chunk and reports where the stream ends. On a non-nil
+// error the verdict and end carry no meaning: the caller must not act on
+// them (invalid input returns Hole with a zero end only as a placeholder).
 func (s *Store) Ingest(ctx context.Context, c Chunk) (end uint64, v Verdict, err error) {
 	session, machine := c.Session, c.Machine
 	if session == "" {

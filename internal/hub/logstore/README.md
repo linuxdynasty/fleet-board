@@ -17,6 +17,6 @@ wire's `(pane, stream)` to the session before calling `Ingest`; the
 `Resolver` seam is that map, injected so this package never reads
 `state.db`.
 
-The five reads (`Read`, `List`, `Get`, `Delete`, `Search`) and `Stat`
-serve the `FleetService` calls of the same names; those calls enforce the
-`LOGS` scope and audit the delete, this package does neither.
+The four reads (`Read`, `List`, `Get`, `Search`), plus `Stat` and
+`Delete`, serve the `FleetService` calls of the same names; those calls
+enforce the `LOGS` scope and audit the delete, this package does neither.

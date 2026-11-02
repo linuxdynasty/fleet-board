@@ -127,7 +127,9 @@ func (c *Chunker) Flush(now time.Time) ([]OutChunk, error) {
 
 // Finalize flushes the rest and closes the frame: the stream ended. A
 // stream that ends with nothing pending still emits the frame epilogue,
-// so the frame decodes whole from its chunks.
+// so the frame decodes whole from its chunks. At the exact frame
+// boundary the closing chunk carries no new bytes, so ingest files it as
+// DUPLICATE and drops it; the earlier chunks already decode whole.
 func (c *Chunker) Finalize(now time.Time) ([]OutChunk, error) {
 	if c.pending == 0 && !c.started {
 		return nil, nil
@@ -204,6 +206,10 @@ func (c *Chunker) flush(now time.Time, closeFrame bool) ([]OutChunk, error) {
 		FirstTime:      c.firstTime,
 		LastTime:       now,
 	}
+	// Unreachable in practice: 256 KiB of raw bytes cannot compress
+	// past 960 KiB, so this fires only on a bug above. It stays as a
+	// backstop because a silent giant chunk would break the spool cap
+	// math.
 	if len(data) > maxChunkData {
 		return nil, fmt.Errorf("logship: chunk %d bytes is above %d", len(data), maxChunkData)
 	}

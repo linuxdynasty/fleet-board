@@ -64,11 +64,15 @@ type Spool struct {
 
 // OpenSpool opens (creating) the spool for one stream. root is the agent
 // state directory; the layout is spool/<server>/<start>/<pane>/<stream>/.
-// Pane ids are %N only and server names are charset-checked, so no hub or
-// tmux text reaches the filesystem.
+// Pane ids are %N only, server names are charset-checked, and start must be
+// a single path element, so no hub or tmux text reaches the filesystem
+// outside the spool directory.
 func OpenSpool(root, server, start, pane string, stream int, capBytes int64) (*Spool, error) {
 	if !serverRE.MatchString(server) {
 		return nil, fmt.Errorf("logship: server %q is not a server name", server)
+	}
+	if start == "" || start == "." || start == ".." || filepath.Base(start) != start {
+		return nil, fmt.Errorf("logship: start %q is not a single path element", start)
 	}
 	if !paneRE.MatchString(pane) {
 		return nil, fmt.Errorf("logship: pane %q is not a pane id", pane)
@@ -214,8 +218,34 @@ func (s *Spool) SetAcked(end uint64) error {
 	}
 	raw := make([]byte, 8)
 	binary.LittleEndian.PutUint64(raw, end)
-	if err := os.WriteFile(filepath.Join(s.dir, "acked"+ackedExt), raw, 0o600); err != nil {
-		return fmt.Errorf("logship: write acked: %w", err)
+	if err := s.writeFileSync("acked"+ackedExt, raw); err != nil {
+		return err
+	}
+	return nil
+}
+
+// writeFileSync durables one small file the way Append durables a chunk:
+// tmp write, fsync, rename, dir sync. A crash leaves a .tmp behind (cleaned
+// on open, so it can never become the file) and never a torn file.
+func (s *Spool) writeFileSync(name string, data []byte) error {
+	tmp, err := os.OpenFile(filepath.Join(s.dir, name+tmpExt), //nolint:gosec // G304: name is the fixed acked file in the spool dir
+		os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
+	if err != nil {
+		return fmt.Errorf("logship: write %s: %w", name, err)
+	}
+	if _, err := tmp.Write(data); err != nil {
+		_ = tmp.Close()
+		return fmt.Errorf("logship: write %s: %w", name, err)
+	}
+	if err := tmp.Sync(); err != nil {
+		_ = tmp.Close()
+		return fmt.Errorf("logship: sync %s: %w", name, err)
+	}
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("logship: write %s: %w", name, err)
+	}
+	if err := os.Rename(filepath.Join(s.dir, name+tmpExt), filepath.Join(s.dir, name)); err != nil {
+		return fmt.Errorf("logship: commit %s: %w", name, err)
 	}
 	return syncDir(s.dir)
 }
