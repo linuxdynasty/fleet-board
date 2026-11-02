@@ -15,10 +15,11 @@ import (
 // parts of the agent. A nil one reads 0 (machine.Hooks). run wires the
 // executor's refusal count and the configured observer clients' down count.
 type healthSeams struct {
-	Unacked     func() int
-	Reconnects  func() uint64
-	Refused     func() uint64
-	ControlDown func() uint32
+	Unacked      func() int
+	Reconnects   func() uint64
+	Refused      func() uint64
+	ControlDown  func() uint32
+	OpenAttaches func() int
 }
 
 // machineHooks starts the B2 sampler on wg (it stops with ctx) and returns
@@ -56,6 +57,7 @@ func machineHooks(ctx context.Context, wg *sync.WaitGroup, tel *telemetry.Teleme
 	h := machine.Hooks{
 		Collector: collector, Sampler: sampler,
 		Unacked: seams.Unacked, Reconnects: seams.Reconnects, Refused: seams.Refused, ControlDown: seams.ControlDown,
+		OpenAttaches: seams.OpenAttaches,
 	}
 	return h.Snapshot, h.Heartbeat, nil
 }

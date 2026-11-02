@@ -159,14 +159,23 @@ func runAgentWithDeps(ctx context.Context, dir, cfgDir, version, boot string, te
 	wg.Go(func() { nw.Run(wctx, netEvents) })
 
 	// The heartbeat hook reads the loop's reconnect count; the loop exists only
-	// after the hook, and the hook runs only inside loop.Run.
+	// after the hook, and the hook runs only inside loop.Run. The attach
+	// wiring likewise exists only after the loop; its seam closes over the
+	// variable, nil-safe until then.
 	var loop *conn.Loop
 	var ex *exec.Executor
 	var tmx tmuxRun
+	var att *attachRun
 	snapshot, heartbeat, err := machineHooks(wctx, &wg, tel, dir, nil, healthSeams{
 		Unacked: db.UnackedCount, Reconnects: func() uint64 { return loop.Reconnects() },
 		Refused:     func() uint64 { return ex.RefusedTotal() },
 		ControlDown: func() uint32 { return tmx.controlDown() },
+		OpenAttaches: func() int {
+			if att == nil {
+				return 0
+			}
+			return att.openCount()
+		},
 	}, em)
 	if err != nil {
 		return failed("machine", err)
@@ -215,10 +224,19 @@ func runAgentWithDeps(ctx context.Context, dir, cfgDir, version, boot string, te
 	if err != nil {
 		return failed("interrupt", err)
 	}
+	// Terminal attach (01f J1): OpenAttach and CloseAttach through grouped
+	// views; nil without tmux. The streams open on the loop above; the
+	// shutdown sweep below kills every PTY and view with the run.
+	att, err = startAttach(wctx, tmx, loop, tel)
+	if err != nil {
+		return failed("attach", err)
+	}
+	defer att.dropAll()
 	var handlers []exec.Handler
 	if h != nil {
 		handlers = append(handlers, h)
 	}
+	handlers = append(handlers, att.handlers()...)
 	// The goal registry (row 20 lane 3): RegisterGoal and ReleaseGoal
 	// bind it; nil without tmux. The pane-checkout seam is wired in
 	// startGoals (row 21).

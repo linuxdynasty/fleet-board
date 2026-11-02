@@ -161,8 +161,10 @@ func TestClientCertificatesAreOptionalButMustBeTheHubCAs(t *testing.T) {
 	}
 }
 
-// Terminal and SessionLog come with their plan rows; Connect is row 5.
-func TestTerminalAndSessionLogAreUnimplemented(t *testing.T) {
+// Terminal landed with row 26 (browser attach): without a client
+// certificate the gateway refuses it unauthenticated, never anonymously.
+// SessionLog comes with a later plan row and stays unimplemented.
+func TestTerminalNeedsACertificateSessionLogUnimplemented(t *testing.T) {
 	t.Parallel()
 	h := startHub(t)
 	f, addr := h.fixture, h.addr
@@ -178,13 +180,16 @@ func TestTerminalAndSessionLogAreUnimplemented(t *testing.T) {
 	for _, p := range protocols {
 		client := agentv1connect.NewAgentServiceClient(httpClient, "https://"+addr, p.opts...)
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		calls := map[string]func() error{
-			"Terminal":   func() error { return bidi(client.Terminal(ctx)) },
-			"SessionLog": func() error { return bidi(client.SessionLog(ctx)) },
+		calls := map[string]struct {
+			call func() error
+			want connect.Code
+		}{
+			"Terminal":   {func() error { return bidi(client.Terminal(ctx)) }, connect.CodeUnauthenticated},
+			"SessionLog": {func() error { return bidi(client.SessionLog(ctx)) }, connect.CodeUnimplemented},
 		}
-		for name, call := range calls {
-			if code := connect.CodeOf(call()); code != connect.CodeUnimplemented {
-				t.Errorf("%s %s: code %v, want unimplemented", p.name, name, code)
+		for name, c := range calls {
+			if code := connect.CodeOf(c.call()); code != c.want {
+				t.Errorf("%s %s: code %v, want %v", p.name, name, code, c.want)
 			}
 		}
 		cancel()
