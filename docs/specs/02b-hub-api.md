@@ -274,7 +274,10 @@ on their own resources (a new window on the `Session`, the goal's `phase`).
 `StartGoalRequest` carries `acknowledged_warnings` (WARN reasons the caller
 saw and accepts; a WARN that is not listed fails the call, 03h "the
 unacknowledged-warning rule") and `skip_preflight` (reuse the hub's own
-preflight result when it is under a minute old).
+preflight result when it is under a minute old). An empty `input.goal_text`
+starts with the hub's default text when the repo has no hooks, and is
+refused on repos with hooks (03c "Default goal text for repos without
+eshu's hooks").
 
 Served so far (row 12 slices): `CapturePane` sends the visible screen
 (`last_lines` 0, `READ`) or scrollback (`last_lines` above 0, `LOGS`) as one
