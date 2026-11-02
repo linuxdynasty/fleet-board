@@ -44,9 +44,10 @@ const staleAfter = 30 * time.Minute
 // "Size limits"): the work item and repo name what to work on, the goal
 // text fits the 4 KiB contract cap with control characters stripped but
 // newlines and tabs kept (02b strips the same way), and the placement
-// names well-formed ids. An empty goal text stays for the caller: until
-// issue #63 approves the 0.18 default text, StartGoal refuses it (03c
-// DRAFT gates the first StartGoal in such a repo).
+// names well-formed ids. An empty goal text passes the boundary: the
+// dispatch transaction fills the approved default for a hook-less repo
+// and refuses it for an ESHU repo (fillDefaultGoalText, 03c "Default
+// goal text").
 func checkGoalInput(in *hubv1.GoalSpecInput) error {
 	if in == nil {
 		return apiError(connect.CodeInvalidArgument, typev1.ReasonCode_REASON_CODE_INVALID_ARGUMENT,
@@ -78,16 +79,6 @@ func checkGoalInput(in *hubv1.GoalSpecInput) error {
 		return apiError(connect.CodeInvalidArgument, typev1.ReasonCode_REASON_CODE_FIELD_TOO_LARGE,
 			"input.dispatch_reason is over 512 bytes", nil,
 			[]*typev1.FieldViolation{{Field: "input.dispatch_reason", Description: "at most 512 bytes"}})
-	}
-	if in.GetGoalText() == "" {
-		// An explicit objective rides the wire: the #63-approved 0.18
-		// default text is what callers send for a repo without hooks
-		// (DefaultGoalText, 03c "Default goal text"), never a hub-side
-		// fill. Automatic substitution when the repo lacks hooks is
-		// follow-up work: the dispatch path has no hook-presence read.
-		return apiError(connect.CodeInvalidArgument, typev1.ReasonCode_REASON_CODE_INVALID_ARGUMENT,
-			"input.goal_text is required; send DefaultGoalText for a repo without hooks", nil,
-			[]*typev1.FieldViolation{{Field: "input.goal_text", Description: "an objective is required"}})
 	}
 	place := in.GetPlacement()
 	if id := place.GetMachine().GetValue(); id != "" && !hubID.MatchString(id) {
@@ -213,6 +204,9 @@ func (f *Fleet) gatherDispatchFacts(ctx context.Context, tx *sql.Tx, who *typev1
 		return nil, err
 	}
 	fx.fillSpecFacts(in)
+	if err := fx.fillDefaultGoalText(in, &spec); err != nil {
+		return nil, err
+	}
 	fx.sessionID, err = ulid.New(now, f.random)
 	if err != nil {
 		return nil, fmt.Errorf("dispatch: mint session id: %w", err)
