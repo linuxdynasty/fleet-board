@@ -10,25 +10,25 @@ const inDays = d => new Date(T0 + d * 86400e3);
 // `sess` lists the developer's own tmux sessions (E1); fleet-started windows live in `sessions` (fleet-data-work.js).
 const machines = [
   { id: "mbp", name: "macbook", short: "mbp", user: "dev", os: "macOS 27 · arm64", ram: 64, hub: true,
-    harnesses: ["claude", "codex", "muse", "opencode"], versions: { claude: "2.1.286", codex: "0.159.2", muse: "1.4.2", opencode: "1.18.34" },
+    harnesses: ["claude", "codex", "muse", "cursor", "opencode"], versions: { claude: "2.1.286", codex: "0.159.2", muse: "1.4.2", cursor: "2026.10.01", opencode: "1.18.34" },
     maxActive: 2, maxTotal: 4, repoRoot: "~/repos", tmuxVersion: "tmux 3.5a", defaultServer: "control", labels: ["laptop", "hub"],
     forge: [{ tool: "gh", host: "github.com", user: "dev", access: [["eshu-hq/eshu", "ADMIN"], ["example-org/example-app", "WRITE"]] }],
     certExpires: inDays(61), policyHash: "a91f3c", policyChanged: false, agentVersion: "0.3.1", beat: ago(2), drained: false,
     sources: { max_active: "machine", max_total: "group laptop", default_server: "fleet default", cert_lifetime: "fleet default", local_approval: "local ceiling", idle_threshold: "fleet default" } },
   { id: "linux", name: "linux-box", short: "linux", user: "dev", os: "Linux 7.2 · x86_64", ram: 62,
-    harnesses: ["claude", "codex", "muse", "opencode"], versions: { claude: "2.1.285", codex: "0.159.2", muse: "1.4.1", opencode: "1.18.30" },
+    harnesses: ["claude", "codex", "muse", "cursor", "opencode"], versions: { claude: "2.1.285", codex: "0.159.2", muse: "1.4.1", cursor: "2026.10.01", opencode: "1.18.30" },
     maxActive: 2, maxTotal: 4, repoRoot: "~/repos", tmuxVersion: "tmux 3.4", defaultServer: "control", labels: ["always-on", "linux"],
     forge: [{ tool: "gh", host: "github.com", user: "dev", access: [["eshu-hq/eshu", "ADMIN"]] }, { tool: "glab", host: "gitlab.com", user: "dev", access: [["acme/infra", "Maintainer"]] }],
     certExpires: inDays(12), policyHash: "7be210", policyChanged: true, agentVersion: "0.3.1", beat: ago(4), drained: false,
     sources: { max_active: "group always-on", max_total: "group always-on", default_server: "local ceiling", cert_lifetime: "machine", local_approval: "fleet default", idle_threshold: "machine" } },
   { id: "mbp2", name: "work-macbook", short: "mbp2", user: "dev", os: "macOS 25.6 · arm64", ram: 128,
-    harnesses: ["claude", "codex", "muse", "opencode"], versions: { claude: "2.1.286", codex: "0.159.2", muse: "1.4.2", opencode: "1.18.34" },
+    harnesses: ["claude", "codex", "muse", "cursor", "opencode"], versions: { claude: "2.1.286", codex: "0.159.2", muse: "1.4.2", cursor: "2026.10.01", opencode: "1.18.34" },
     maxActive: 4, maxTotal: 8, repoRoot: "~/repos", tmuxVersion: "tmux 3.5a", defaultServer: "control", labels: ["always-on", "big"],
     forge: [{ tool: "gh", host: "github.com", user: "dev", access: [["eshu-hq/eshu", "ADMIN"], ["example-org/example-app", "WRITE"]] }],
     certExpires: inDays(88), policyHash: "a91f3c", policyChanged: false, agentVersion: "0.3.1", beat: ago(3), drained: false,
     sources: { max_active: "machine", max_total: "machine", default_server: "fleet default", cert_lifetime: "fleet default", local_approval: "fleet default", idle_threshold: "fleet default" } },
   { id: "mini", name: "mac-mini", short: "mini", user: "dev", os: "macOS 27 · arm64", ram: 64,
-    harnesses: ["claude", "codex", "muse", "opencode"], versions: { claude: "2.1.286", codex: "0.157.1", muse: "1.4.2", opencode: "1.18.32" },
+    harnesses: ["claude", "codex", "muse", "cursor", "opencode"], versions: { claude: "2.1.286", codex: "0.157.1", muse: "1.4.2", cursor: "2026.10.01", opencode: "1.18.32" },
     maxActive: 2, maxTotal: 4, repoRoot: "~/repos", tmuxVersion: "tmux 3.2a", defaultServer: "observe", labels: ["laptop"],
     forge: [{ tool: "gh", host: "github.com", user: "dev", access: [["eshu-hq/eshu", "ADMIN"]] }],
     certExpires: inDays(4), policyHash: "c0ffee", policyChanged: false, agentVersion: "0.3.0", beat: ago(6), drained: false,
@@ -38,14 +38,14 @@ const machines = [
 // G1 GoalHooksState per machine and harness (01d: user-level hooks, inert outside fleet goals). Sample.
 // Fields use the proto names so the "details" toggle can show them as they are; `why` is mock-only explanation.
 const hk = o => ({ installed: true, verified: true, trust: "TRUSTED", repo_ships_own: false, hook_version: "0.3.1", hook_hash: "5d2e9a", ...o });
-const CLAUDE_HOOKS = "~/.claude/settings.json", CODEX_HOOKS = "~/.codex/hooks.json", MUSE_HOOKS = "muse plugin fleet-goal-hooks";
+const CLAUDE_HOOKS = "~/.claude/settings.json", CODEX_HOOKS = "~/.codex/hooks.json", MUSE_HOOKS = "muse plugin fleet-goal-hooks", CURSOR_HOOKS = "~/.cursor/hooks.json";
 // GoalHooksState.trust_approve_command (harness.proto): what the owner types to approve a pending hook definition.
 const TRUST_APPROVE = { codex: "/hooks", muse: "muse plugins approve fleet-goal-hooks" };
 const goalHooks = {
-  mbp: { claude: hk({ trust: "NOT_REQUIRED", config_path: CLAUDE_HOOKS }), codex: hk({ config_path: CODEX_HOOKS, hook_hash: "b41c07", trust: "PENDING" }), muse: hk({ config_path: MUSE_HOOKS, hook_hash: "b41c07", trust: "PENDING" }) },
-  linux: { claude: hk({ trust: "NOT_REQUIRED", config_path: CLAUDE_HOOKS, repo_ships_own: true }), codex: hk({ config_path: CODEX_HOOKS, hook_hash: "b41c07" }), muse: hk({ config_path: MUSE_HOOKS, hook_hash: "b41c07" }) },
-  mbp2: { claude: hk({ trust: "NOT_REQUIRED", config_path: CLAUDE_HOOKS }), codex: hk({ config_path: CODEX_HOOKS, hook_hash: "b41c07", trust: "PENDING" }), muse: hk({ config_path: MUSE_HOOKS, hook_hash: "b41c07", trust: "PENDING" }) },
-  mini: { claude: hk({ trust: "NOT_REQUIRED", config_path: CLAUDE_HOOKS }), codex: hk({ installed: false, verified: false, hook_version: "", hook_hash: "", config_path: CODEX_HOOKS, why: "codex 0.157.1 is older than the supported versions; update Codex" }), muse: hk({ config_path: MUSE_HOOKS, hook_hash: "b41c07" }) },
+  mbp: { claude: hk({ trust: "NOT_REQUIRED", config_path: CLAUDE_HOOKS }), codex: hk({ config_path: CODEX_HOOKS, hook_hash: "b41c07", trust: "PENDING" }), muse: hk({ config_path: MUSE_HOOKS, hook_hash: "b41c07", trust: "PENDING" }), cursor: hk({ trust: "NOT_REQUIRED", config_path: CURSOR_HOOKS }) },
+  linux: { claude: hk({ trust: "NOT_REQUIRED", config_path: CLAUDE_HOOKS, repo_ships_own: true }), codex: hk({ config_path: CODEX_HOOKS, hook_hash: "b41c07" }), muse: hk({ config_path: MUSE_HOOKS, hook_hash: "b41c07" }), cursor: hk({ trust: "NOT_REQUIRED", config_path: CURSOR_HOOKS }) },
+  mbp2: { claude: hk({ trust: "NOT_REQUIRED", config_path: CLAUDE_HOOKS }), codex: hk({ config_path: CODEX_HOOKS, hook_hash: "b41c07", trust: "PENDING" }), muse: hk({ config_path: MUSE_HOOKS, hook_hash: "b41c07", trust: "PENDING" }), cursor: hk({ trust: "NOT_REQUIRED", config_path: CURSOR_HOOKS }) },
+  mini: { claude: hk({ trust: "NOT_REQUIRED", config_path: CLAUDE_HOOKS }), codex: hk({ installed: false, verified: false, hook_version: "", hook_hash: "", config_path: CODEX_HOOKS, why: "codex 0.157.1 is older than the supported versions; update Codex" }), muse: hk({ config_path: MUSE_HOOKS, hook_hash: "b41c07" }), cursor: hk({ trust: "NOT_REQUIRED", config_path: CURSOR_HOOKS }) },
 };
 
 // Subscription accounts (BUDGET_KIND_SUBSCRIPTION_PERCENT). `shown` mirrors the harness's own screen (D2 "as shown");
@@ -67,6 +67,11 @@ const accounts = [
     shown: [["Current", "0% used", "Resets 9:06pm"], ["Weekly", "5% used", "Resets Oct 4 at 8pm"], ["Session", "36.5k in · 9.4k cached · 5.2k out", "14 turns · 1 subagent"]],
     buckets: [{ key: "weekly", label: "weekly", used: 5 }], short: { label: "current", used: 0, resets: at("2026-09-28T21:06:00-04:00") },
     resets: at("2026-10-04T20:00:00-04:00"), windowDays: 7, read: ago(3 * 60), passive: "status line: weekly 5%" },
+  { id: "cursor-acct", harness: "cursor", label: "Cursor", plan: "Pro+", email: "owner@example.com", reserve: 10, source: "/usage", sourceKind: "probe",
+    consent: ["push", "pr-open", "merge"], mode: "fleet",
+    shown: [["Included", "10% used", "Resets Nov 4"], ["Auto", "11% used", ""], ["API", "0% used", ""], ["On-Demand", "Disabled", "on-demand usage is off"]],
+    buckets: [{ key: "monthly_included", label: "Included", used: 10 }, { key: "monthly_auto", label: "Auto", used: 11 }, { key: "monthly_api", label: "API", used: 0 }], short: null,
+    resets: at("2026-11-05T00:00:00-04:00"), windowDays: 31, read: ago(8 * 60) },
 ];
 
 // API-key accounts reached through OpenCode (BUDGET_KIND_DOLLAR_CAP). Manual dispatch only, never auto. Sample.
@@ -108,6 +113,7 @@ const CATALOG = {
     goal: ["/goal"], review: ["/review"], destructive: ["/clear", "/delete", "/archive", "/exit"] },
   muse: { hash: "e15a77", observe: ["/status", "/usage", "/tasks", "/recap", "/hud"], session: ["/compact", "/model", "/effort", "/rename", "/resume", "/stop", "/fork", "/new"],
     goal: ["/goal"], review: ["/code-review"], destructive: ["/clear", "/rewind", "/delete", "/quit"] },
+  cursor: { hash: "c41f09", observe: ["/usage"], session: ["/model"], goal: ["/goal"], destructive: ["/quit"] },
   opencode: { hash: "90ab4e", observe: ["/status", "/diff", "/sessions"], session: ["/models", "/new", "/editor"], goal: [], review: ["/review"], destructive: ["/exit"] },
 };
 const CLASSES = ["observe", "session", "goal", "review", "destructive"];
@@ -120,8 +126,9 @@ const GOAL_CONTROL = {
   claude: { subs: ["set", "clear"], pause: "interrupt", resume: "type_text", resumeText: "continue" },
   codex: { subs: ["set", "clear", "edit", "pause", "resume"], pause: "subcommand", resume: "subcommand" },
   muse: { subs: ["set", "edit", "clear", "pause", "resume"], pause: "subcommand", resume: "subcommand" },
+  cursor: { subs: ["set"], pause: "none", resume: "none" },
   opencode: { subs: [], pause: "none", resume: "none" },
 };
 const GOAL_SUBS = Object.fromEntries(Object.entries(GOAL_CONTROL).map(([h, c]) => [h, c.subs.filter(x => x !== "set")]));
-const GOAL_SYNTAX = { claude: "/goal [<condition> | clear]", codex: "/goal [<objective>|clear|edit|pause|resume]", muse: "/goal [<objective>|edit <objective>|clear|pause|resume]", opencode: "no /goal (needs the generic goal protocol)" };
-const RESUME = { claude: "claude --continue", codex: "codex resume --last", muse: "muse resume --last", opencode: "opencode" };
+const GOAL_SYNTAX = { claude: "/goal [<condition> | clear]", codex: "/goal [<objective>|clear|edit|pause|resume]", muse: "/goal [<objective>|edit <objective>|clear|pause|resume]", cursor: "/goal <objective>", opencode: "no /goal (needs the generic goal protocol)" };
+const RESUME = { claude: "claude --continue", codex: "codex resume --last", muse: "muse resume --last", cursor: "cursor-agent --resume", opencode: "opencode" };

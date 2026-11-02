@@ -22,12 +22,14 @@ rows tagged v1.
 ## What is real and what is sample
 
 Modeled on real readings (collected 2026-09-28 unless noted): the OS, RAM and
-installed tools of each machine, and the shape of the weekly usage screens for
-Claude, Codex and Muse. The machine names, addresses, user names, plan labels
+installed tools of each machine, and the shape of the usage screens (weekly
+for Claude, Codex and Muse; monthly Included/Auto/API for Cursor). The machine
+names, addresses, user names, plan labels
 and usage numbers are made-up sample values. Real: open and merged GitHub PRs
 and open issues of public repos (`gh`);
 the harness command catalogs and `/goal` syntax (probed 2026-09-30 and
-2026-10-01); the credential-embedding permission prompt
+2026-10-01; Cursor's catalog and `/goal <objective>` seen 2026-10-05, fixtures
+2026-10-12 and 2026-10-13); the credential-embedding permission prompt
 (`git fetch https://x-access-token:$(gh auth token)@…`) and the terminal log
 sizes (≈27 MB/h raw, ≈0.23 MB/h zstd-3) measured on a real goal on 2026-10-01.
 
