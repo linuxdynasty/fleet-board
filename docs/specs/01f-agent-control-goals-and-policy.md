@@ -242,8 +242,8 @@ All pass local policy, carry a `command_id`, and are idempotent except F3.
   the pump drops input and the client runs `-f read-only`. The window strip
   forwards the developer's full prefix key, and the pumps read the PTY master
   under lock while Close nils it, so teardown never races a read. The client
-  spawns with a capable `TERM` (`xterm-256color` when the agent has none),
-  since without one it dies at once and the open burns the land wait.
+  spawns with a capable terminal type (`xterm-256color` when the agent has
+  none), since without one it dies at once and the open burns the land wait.
 
 ## K. Session logs
 
