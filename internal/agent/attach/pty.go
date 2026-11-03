@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -71,7 +72,8 @@ func OpenClient(program, socket, view string, cols, rows int, readOnly bool) (*C
 	// typed flag: never a shell string. The client outlives the command
 	// that opened it, so no context may kill it; Manager.Close owns it.
 	cmd := exec.Command(program, args...) //nolint:gosec,noctx // G204: as above; noctx: as above
-	// The child inherits the agent's environment, TERM included: a real
+	cmd.Env = clientEnv()
+	// The child inherits the agent's environment on the slave: a real
 	// tmux client sees the user's terminal the same way.
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = slave, slave, slave
 	if err = cmd.Start(); err != nil {
@@ -80,6 +82,25 @@ func OpenClient(program, socket, view string, cols, rows int, readOnly bool) (*C
 	// The child has its copy of the slave; the parent keeps the master.
 	_ = slave.Close()
 	return &Client{Master: master, cmd: cmd}, nil
+}
+
+// clientEnv is the attach client's environment: the agent's, with a TERM
+// the client can talk to. Without a capable TERM the client dies at once
+// ("open terminal failed") and the open burns the whole land wait; agents
+// run without one (launchd, systemd, CI), so default it instead of
+// inheriting the failure. A capable inherited TERM is kept. Nil keeps
+// os.Environ as is.
+func clientEnv() []string {
+	if term, ok := os.LookupEnv("TERM"); ok && term != "" && term != "dumb" && term != "unknown" {
+		return nil
+	}
+	env := make([]string, 0, len(os.Environ())+1)
+	for _, kv := range os.Environ() {
+		if !strings.HasPrefix(kv, "TERM=") {
+			env = append(env, kv)
+		}
+	}
+	return append(env, "TERM=xterm-256color")
 }
 
 // killGrace is how long a HUP'd client gets to detach before SIGKILL.
