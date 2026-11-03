@@ -206,7 +206,8 @@ op      = "=" | "!=" | "<" | "<=" | ">" | ">=" | ":"
   `create_time > "2026-09-25T00:00:00Z"`.
 - **Ids compare by value.** The filter name of an id field is the `.value`
   string: `machine = "m-12"`. A work item key compares as its canonical
-  string (`WorkItemKey` in `type/v1/work.proto`); a repo as `host/path`.
+  string (`WorkItemKey` in `type/v1/work.proto`); either spelling matches
+  (legacy full-form keys normalize to the short form); a repo as `host/path`.
 - **Limits.** 4 KiB, 32 terms, nesting depth 4, 200 values in one `in` list.
 - `order_by` is AIP-132: `"update_time desc, name"`; only the names in the
   catalogue, at most 3; default order is per List request (the proto comment).

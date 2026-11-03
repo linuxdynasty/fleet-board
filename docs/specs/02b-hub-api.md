@@ -269,7 +269,7 @@ on their own resources (a new window on the `Session`, the goal's `phase`).
 | `EnsureMachineHooks` | `EnsureGoalHooks`, one per `(harness, checkout)` it expands to |
 | `ControlGoal` `NOT_DONE`, `EDIT` on a finished goal | `StartGoal` with `rearm_reason` for the same goal id (03h) |
 | sign-in, user, token and login-session RPCs | none (hub only) |
-| `ProbeAccount` | `EnsureProbe{run_now}` |
+| `ProbeAccount` | `EnsureProbe{run_now}` (at most one `run_now` per account per minute; a repeat is `RATE_LIMITED`, and a repeated `request_id` replays the stored operation) |
 
 `StartGoalRequest` carries `acknowledged_warnings` (WARN reasons the caller
 saw and accepts; a WARN that is not listed fails the call, 03h "the
