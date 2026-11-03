@@ -432,3 +432,20 @@ it, a refused or failed attach is sent as `AttachClosed{reason: ERROR, error}`,
 with the same `ErrorDetail` as an RPC error, and then the socket closes with the
 code in [02f](02f-hub-authentication.md#terminal-attach-over-websocket), which
 also has the endpoint, subprotocol, ticket, framing and ack rules.
+
+**Attach telemetry.** An issued ticket logs `attach.ticket_issued` (`session`,
+`read_only`, `actor`); a refused `CreateAttachTicket` logs `attach.issue_refused`
+(`reason`, `actor`); a ticket writer-job caller error logs `attach.ticket_refused`
+with the same fields; the hub's own ticket failure logs `attach.issue_failed`
+(`step`, `err_kind`, `actor`). An opened session logs `attach.opened` (`attach_id`,
+`machine`, `actor` on the hub; `view`, `target`, `read_only` on the agent) and a
+closed one `attach.closed` (`attach_id`, `reason`, `actor`). A close the audit or
+the agent command did not take logs `attach.close_audit_failed` or
+`attach.close_command_failed` (`step` `submit` or `commit`). The agent drops a
+slow reader with `attach.drop_slow`, kills a dead view with `attach.kill_view`,
+and traces pane picks at debug with `attach.resize_invalid`, `attach.select_server`,
+`attach.select_window`, `attach.select_pane` and `attach.select_unknown`.
+`fleet_hub_attach_tickets_total{result}` counts ticket calls (`issued`, `delivered`,
+`conflict`, `refused`, `failed`) and `fleet_hub_attaches_total{result, reason}`
+counts sessions (`opened`, `refused`, `failed`, `closed`). Never the ticket or the
+terminal bytes.
