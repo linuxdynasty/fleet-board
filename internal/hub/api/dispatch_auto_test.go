@@ -313,3 +313,101 @@ func TestSchedulerPassStaleReadingSkips(t *testing.T) {
 		t.Errorf("skips = %v, want one account_usage_unknown", report.Skips)
 	}
 }
+
+// TestSchedulerPassCommitRefusalSkipsItemButDispatchesRest is the P1-1
+// pass contract: item B reads trusted at plan time but its stored
+// verdict refuses at commit, so the pass dispatches A, records B's skip
+// and returns no error instead of aborting the whole pass.
+func TestSchedulerPassCommitRefusalSkipsItemButDispatchesRest(t *testing.T) {
+	t.Parallel()
+	e := newFleetEnv(t, localUser("alice"))
+	autoSeed(t, e)
+	// A second account and machine: the flood guard spends one of each
+	// per dispatch, so B needs its own pair to reach commit.
+	enrollMachine(t, e, "m2")
+	setMachineState(t, e, "m2", "ONLINE")
+	seedDispatchHarness(t, e, "m2", "claude")
+	seedDispatchAccount(t, e, "a2", "claude")
+	seedUsageOK(t, e, "a2", autoNow)
+	// B's stored verdict is untrusted while the plan-time recompute
+	// trusts it: the plan dispatches both, then B's commit re-check
+	// refuses.
+	_, err := statedb.UpsertWorkItemPage(context.Background(), e.st, "github-1",
+		[]statedb.WorkItemMirror{{
+			Integration: "github-1", Kind: "ISSUE", Project: "acme/web", ItemKey: "7400",
+			ItemJSON:  []byte(`{"title":"second leak"}`),
+			UpdateMs:  11,
+			Stage:     int32(hubv1.WorkStage_WORK_STAGE_READY),
+			TrustJSON: []byte(`{"trusted":false}`),
+		}}, nil, nil, 11, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	report, err := e.fleet.SchedulerPass(context.Background(), autoNow, trustAll, true)
+	if err != nil {
+		t.Fatalf("SchedulerPass: %v", err)
+	}
+	if report.Dispatched != 1 || len(report.Goals) != 1 {
+		t.Fatalf("report = %+v, want the one committable item dispatched", report)
+	}
+	if report.Skips["work_item_untrusted"] != 1 {
+		t.Errorf("skips = %v, want one work_item_untrusted for the refused commit", report.Skips)
+	}
+	if got := pendingCommands(t, e, "m1") + pendingCommands(t, e, "m2"); got != 2 {
+		t.Errorf("outbox holds %d commands, want StartGoal plus EnsureProbe for the one goal", got)
+	}
+}
+
+// TestSchedulerPassGatedPassLeavesTheCadenceAlone proves the 30 s marker
+// moves only on a real pass: two gated passes in between must not push
+// the next pass out, so the pass 31 s after the last real one still runs.
+func TestSchedulerPassGatedPassLeavesTheCadenceAlone(t *testing.T) {
+	t.Parallel()
+	e := newFleetEnv(t, localUser("alice"))
+	autoSeed(t, e)
+
+	if _, err := e.fleet.SchedulerPass(context.Background(), autoNow, trustAll, true); err != nil {
+		t.Fatalf("first SchedulerPass: %v", err)
+	}
+	if _, err := e.fleet.SchedulerPass(context.Background(), autoNow.Add(time.Second), trustAll, true); err != nil {
+		t.Fatalf("second SchedulerPass: %v", err)
+	}
+	if _, err := e.fleet.SchedulerPass(context.Background(), autoNow.Add(29*time.Second), trustAll, true); err != nil {
+		t.Fatalf("third SchedulerPass: %v", err)
+	}
+	report, err := e.fleet.SchedulerPass(context.Background(), autoNow.Add(31*time.Second), trustAll, true)
+	if err != nil {
+		t.Fatalf("fourth SchedulerPass: %v", err)
+	}
+	if report.Gated {
+		t.Errorf("report = %+v, want the pass to run: gated passes must not move the cadence marker", report)
+	}
+}
+
+// TestSchedulerPassFleetDefaultOffDispatchesNothing is the 03c default:
+// with auto_dispatch unset everywhere the pass dispatches nothing and
+// names auto_dispatch_off instead.
+func TestSchedulerPassFleetDefaultOffDispatchesNothing(t *testing.T) {
+	t.Parallel()
+	e := newFleetEnv(t, localUser("alice"))
+	// autoSeed without the switch: the fleet default stays off.
+	enrollMachine(t, e, "m1")
+	setMachineState(t, e, "m1", "ONLINE")
+	seedDispatchHarness(t, e, "m1", "claude")
+	seedDispatchAccount(t, e, "a1", "claude")
+	seedAutoRepoAndIntegration(t, e)
+	seedDispatchItem(t, e)
+	seedUsageOK(t, e, "a1", autoNow)
+
+	report, err := e.fleet.SchedulerPass(context.Background(), autoNow, trustAll, true)
+	if err != nil {
+		t.Fatalf("SchedulerPass: %v", err)
+	}
+	if report.Dispatched != 0 || len(report.Goals) != 0 {
+		t.Errorf("report = %+v, want no dispatch with the fleet default off", report)
+	}
+	if len(report.FleetBlocks) != 1 || report.FleetBlocks[0] != "auto_dispatch_off" {
+		t.Errorf("blocks = %v, want one auto_dispatch_off", report.FleetBlocks)
+	}
+}

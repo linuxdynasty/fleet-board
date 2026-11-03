@@ -245,5 +245,7 @@
 // loop's reads; [EnsureIntegration], [GetIntegration] and
 // [SetIntegrationStatus] own the integration row; [UpsertRepo] keeps the
 // sync-owned repo fields and [ListWatchedRepos] reads them, while the owner
-// writes above own the row once watched.
+// writes above own the row once watched. Row 23 adds the
+// sync_key_short_form migration, which rewrites pre-short-form mirror
+// keys and kinds to the canonical short form; new upserts store short.
 package statedb

@@ -37,8 +37,9 @@ func (f *Fleet) snapshotItems(ctx context.Context, tx *sql.Tx, now time.Time, tr
 	watched := map[string][]statedb.WatchedRepo{}
 	loaded := map[string]bool{}
 	for _, row := range rows {
-		// The stored kind is either spelling (SyncKey normalizes new
-		// writes; older rows keep the syncer's full form).
+		// The stored kind reads short since migration 33 rewrote the
+		// older full-form rows; the match still tolerates either
+		// spelling.
 		if hubv1.WorkStage(row.Stage) != hubv1.WorkStage_WORK_STAGE_READY || workKindShort(row.Kind) != "ISSUE" {
 			continue
 		}

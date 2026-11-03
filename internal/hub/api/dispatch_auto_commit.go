@@ -84,10 +84,18 @@ func (f *Fleet) commitDispatch(ctx context.Context, who *typev1.Principal, d sch
 		f.publishAudits(dispAudits)
 	})
 	if submitErr != nil {
-		return "", "", f.commitSkipOrFail(submitErr)
+		reason, err := f.commitSkipOrFail(submitErr)
+		if err != nil {
+			return "", "", err
+		}
+		return "", reason, nil
 	}
 	if commitErr := <-doneCh; commitErr != nil {
-		return "", "", f.commitSkipOrFail(commitErr)
+		reason, err := f.commitSkipOrFail(commitErr)
+		if err != nil {
+			return "", "", err
+		}
+		return "", reason, nil
 	}
 	if queued.Created && f.onCommandQueued != nil {
 		f.onCommandQueued(queued)
@@ -98,20 +106,29 @@ func (f *Fleet) commitDispatch(ctx context.Context, who *typev1.Principal, d sch
 	return goalID, "", nil
 }
 
-// commitSkipOrFail maps a commit-transaction failure to a skip when the
-// checks refused it (caller error: the world changed between snapshot
-// and commit, so the next pass retries) and to a store failure
-// otherwise. The sentinel skipPass and both busy races skip.
-func (f *Fleet) commitSkipOrFail(err error) error {
+// commitSkipOrFail maps a commit-transaction refusal to its skip reason:
+// a refused check (the world changed between snapshot and commit, so
+// the next pass retries) and the two busy races skip with their reason.
+// Every other failure stays a real error and aborts the pass: only a
+// busy race means "wait for the next pass"; a closed or missing item, a
+// bad write or a dead store must surface, never read as a wait (P3-2).
+func (f *Fleet) commitSkipOrFail(err error) (string, error) {
 	var sp *skipPass
 	if errors.As(err, &sp) {
-		return sp
+		if sp.reason == "" {
+			return "unknown_check", nil
+		}
+		return sp.reason, nil
 	}
 	var ce *connect.Error
 	if errors.As(err, &ce) {
-		return &skipPass{reason: checkCodeName(reasonOf(err))}
+		switch reasonOf(err) {
+		case typev1.ReasonCode_REASON_CODE_WORK_ITEM_BUSY.String(),
+			typev1.ReasonCode_REASON_CODE_BRANCH_BUSY.String():
+			return checkCodeName(reasonOf(err)), nil
+		}
 	}
-	return err
+	return "", err
 }
 
 // insertAutoTx inserts the STARTING goal with its outbox StartGoal and

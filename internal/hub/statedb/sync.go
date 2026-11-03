@@ -248,6 +248,9 @@ type ChangeRequestChange struct {
 // Watch publishes it with its commit position.
 func upsertWorkItem(ctx context.Context, tx *sql.Tx, integration string, it WorkItemMirror, nowMs int64) (*WorkItemChange, error) {
 	key := SyncKey(integration, it.Kind, it.Project, it.ItemKey)
+	// New rows store the short kind beside the short key (migration 33
+	// rewrote the older full-form rows); reads accept either spelling.
+	kind := normalizeWorkKind(it.Kind)
 	item := it.ItemJSON
 	if len(item) == 0 {
 		item = []byte("{}")
@@ -281,7 +284,7 @@ func upsertWorkItem(ctx context.Context, tx *sql.Tx, integration string, it Work
 		_, err = tx.ExecContext(ctx, `INSERT INTO work_items(key, integration, kind, project, item_key, item_json,
 			update_ms, stage, trust_json, manual_reason, version, create_ms, last_sync_ms, hub_seq)
 			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)`,
-			key, integration, it.Kind, it.Project, it.ItemKey, string(item),
+			key, integration, kind, it.Project, it.ItemKey, string(item),
 			it.UpdateMs, it.Stage, string(trust), it.ManualReason, nowMs, nowMs, st.HubSeq)
 		if err != nil {
 			return nil, err
@@ -293,7 +296,7 @@ func upsertWorkItem(ctx context.Context, tx *sql.Tx, integration string, it Work
 		return &WorkItemChange{Key: key, Created: true, HubSeq: st.HubSeq, After: after}, nil
 	}
 	before := stored.stored
-	before.Key, before.Integration, before.Kind = key, integration, it.Kind
+	before.Key, before.Integration, before.Kind = key, integration, kind
 	before.Project, before.ItemKey = it.Project, it.ItemKey
 	if before.Stage, err = int32Range(stored.stage); err != nil {
 		return nil, err

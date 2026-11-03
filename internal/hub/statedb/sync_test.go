@@ -139,6 +139,81 @@ func mirrorTitle(t *testing.T, db *sql.DB, key string) string {
 	return v
 }
 
+// Migration 33 (row-23 review P1-2) canonicalizes legacy mirror keys:
+// rows the syncer wrote with the full-form kind
+// ("WORK_ITEM_KIND_ISSUE") gain the short-form key and kind, so the next
+// sync upserts the same row instead of INSERTing a duplicate and leaving
+// a stale READY phantom behind.
+func TestOpenMigratesLegacyFullFormWorkItemKeys(t *testing.T) {
+	t.Parallel()
+	dir := stateDir(t)
+	path := filepath.Join(dir, statedb.FileName)
+	s, err := store.Open(context.Background(), store.Options{Path: path, Name: "state", Migrations: statedb.Migrations()[:14]})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(path, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// WORK_STAGE_READY is 2; the migration-14 work_items has no hub_seq yet.
+	db := rawDB(t, dir)
+	if _, err := db.ExecContext(t.Context(), `INSERT INTO work_items(key, integration, kind, project, item_key,
+		item_json, update_ms, stage, trust_json, manual_reason, version, create_ms, last_sync_ms)
+		VALUES ('github-1/WORK_ITEM_KIND_ISSUE/acme/web/7398', 'github-1', 'WORK_ITEM_KIND_ISSUE', 'acme/web',
+		'7398', '{"title":"first"}', 100, 2, '{"trusted":true}', 0, 1, 100, 100)`); err != nil {
+		t.Fatal(err)
+	}
+	s = open(t, dir)
+	var key, kind string
+	if err := s.Read(t.Context(), func(tx *sql.Tx) error {
+		return tx.QueryRowContext(t.Context(), `SELECT key, kind FROM work_items`).Scan(&key, &kind)
+	}); err != nil {
+		t.Fatalf("read migrated row: %v", err)
+	}
+	if key != "github-1/ISSUE/acme/web/7398" || kind != "ISSUE" {
+		t.Fatalf("migrated row key %q kind %q, want the short form of both", key, kind)
+	}
+	// The next sync sends the syncer's full-form kind: it must upsert the
+	// migrated row, not duplicate it, and a brand-new row stores short.
+	updated := statedb.WorkItemMirror{
+		Integration: "github-1", Kind: "WORK_ITEM_KIND_ISSUE", Project: "acme/web", ItemKey: "7398",
+		ItemJSON: []byte(`{"title":"second"}`), UpdateMs: 110, Stage: 2, TrustJSON: []byte(`{"trusted":true}`),
+	}
+	fresh := statedb.WorkItemMirror{
+		Integration: "github-1", Kind: "WORK_ITEM_KIND_ISSUE", Project: "acme/web", ItemKey: "7400",
+		ItemJSON: []byte(`{"title":"fresh"}`), UpdateMs: 110, Stage: 2, TrustJSON: []byte(`{"trusted":true}`),
+	}
+	if _, err := statedb.UpsertWorkItemPage(t.Context(), s, "github-1",
+		[]statedb.WorkItemMirror{updated, fresh}, nil, nil, 120, nil); err != nil {
+		t.Fatal(err)
+	}
+	var same, total int
+	if err := db.QueryRowContext(t.Context(),
+		`SELECT count(*) FROM work_items WHERE item_key = '7398'`).Scan(&same); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRowContext(t.Context(), `SELECT count(*) FROM work_items`).Scan(&total); err != nil {
+		t.Fatal(err)
+	}
+	if same != 1 || total != 2 {
+		t.Errorf("rows for 7398 = %d total = %d, want 1 and 2 (upsert, not duplicate)", same, total)
+	}
+	if got := mirrorField(t, db, "github-1/ISSUE/acme/web/7398", "version"); got != 2 {
+		t.Errorf("migrated row version = %d, want 2 (the sync rewrote it)", got)
+	}
+	var freshKind string
+	if err := db.QueryRowContext(t.Context(), `SELECT kind FROM work_items WHERE item_key = '7400'`).
+		Scan(&freshKind); err != nil {
+		t.Fatal(err)
+	}
+	if freshKind != "ISSUE" {
+		t.Errorf("fresh row kind = %q, want ISSUE (new writes store short)", freshKind)
+	}
+}
+
 // A store from migration 11 gains the empty sync tables.
 func TestOpenMigratesAStoreFromTheEventsSchema(t *testing.T) {
 	t.Parallel()

@@ -51,12 +51,17 @@ func (f *Fleet) SchedulerPass(ctx context.Context, now time.Time, trust TrustFun
 	report := PassReport{Skips: map[string]int64{}}
 	f.schedMu.Lock()
 	last := f.schedLastPass
-	f.schedLastPass = now
 	f.schedMu.Unlock()
 	if !scheduler.GatePass(now, last, scheduler.PassEvery) {
+		// A gated pass moves nothing: the marker advances only on a
+		// real pass, so gated calls between passes never push the
+		// next one out (P3-1).
 		report.Gated = true
 		return report, nil
 	}
+	f.schedMu.Lock()
+	f.schedLastPass = now
+	f.schedMu.Unlock()
 	if trust == nil {
 		return report, errors.New("scheduler: no trust function wired")
 	}
