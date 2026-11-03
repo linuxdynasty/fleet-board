@@ -145,6 +145,12 @@ available. Envelope, deadline and local policy checks still run before input.
 An unfinished command uses the same guarded executor when resumed. This does
 not add an EnsureSession handler or complete the session mirror.
 
+`run` also starts the native session host (row 23) behind its five command
+handlers: journal-backed admission and the adapter boundary, with recovery
+(first: dead attempts resolve, effects reconcile) before the executor's resume
+pass. No backend passes qualification yet, so the adapter set is empty and
+every native command answers unsupported naming its per-backend capability.
+
 ## Labels that change behaviour
 
 A label is free text the owner or the local policy adds ([03e](03e-settings-and-drift.md)).
