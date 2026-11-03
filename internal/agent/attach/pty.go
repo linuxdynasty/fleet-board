@@ -91,16 +91,27 @@ func OpenClient(program, socket, view string, cols, rows int, readOnly bool) (*C
 // inheriting the failure. A capable inherited TERM is kept. Nil keeps
 // os.Environ as is.
 func clientEnv() []string {
-	if term, ok := os.LookupEnv("TERM"); ok && term != "" && term != "dumb" && term != "unknown" {
-		return nil
-	}
-	env := make([]string, 0, len(os.Environ())+1)
-	for _, kv := range os.Environ() {
-		if !strings.HasPrefix(kv, "TERM=") {
-			env = append(env, kv)
+	return ensureTerm(os.Environ())
+}
+
+// ensureTerm returns env unchanged (nil) when its TERM names a capable
+// terminal, else a copy with TERM defaulted to xterm-256color.
+func ensureTerm(env []string) []string {
+	for _, kv := range env {
+		if term, ok := strings.CutPrefix(kv, "TERM="); ok {
+			if term != "" && term != "dumb" && term != "unknown" {
+				return nil
+			}
+			break
 		}
 	}
-	return append(env, "TERM=xterm-256color")
+	out := make([]string, 0, len(env)+1)
+	for _, kv := range env {
+		if !strings.HasPrefix(kv, "TERM=") {
+			out = append(out, kv)
+		}
+	}
+	return append(out, "TERM=xterm-256color")
 }
 
 // killGrace is how long a HUP'd client gets to detach before SIGKILL.
