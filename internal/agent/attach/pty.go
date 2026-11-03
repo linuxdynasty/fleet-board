@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"sync"
 	"syscall"
 	"time"
 
@@ -15,8 +16,21 @@ import (
 // slave and dies when the master closes. Wait reaps it; Close hangs up and
 // reaps, and is safe to call twice.
 type Client struct {
+	// mu guards Master and cmd: the pumps read them while Close
+	// nils them, so every access goes through master or under mu.
+	mu     sync.Mutex
 	Master *os.File
 	cmd    *exec.Cmd
+}
+
+// master returns the PTY master, or nil once Close ran.
+func (c *Client) master() *os.File {
+	if c == nil {
+		return nil
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.Master
 }
 
 // OpenClient opens a PTY sized cols×rows and starts
@@ -86,28 +100,32 @@ func (c *Client) Close() {
 	if c == nil {
 		return
 	}
+	c.mu.Lock()
 	if c.Master != nil {
 		_ = c.Master.Close()
 		c.Master = nil
 	}
-	if c.cmd == nil || c.cmd.Process == nil {
+	cmd := c.cmd
+	c.cmd = nil
+	c.mu.Unlock()
+	if cmd == nil || cmd.Process == nil {
 		return
 	}
-	_ = c.cmd.Process.Signal(syscall.SIGHUP)
+	_ = cmd.Process.Signal(syscall.SIGHUP)
 	done := make(chan error, 1)
-	go func() { done <- c.cmd.Wait() }()
+	go func() { done <- cmd.Wait() }()
 	select {
 	case <-done:
 	case <-time.After(killGrace):
-		_ = c.cmd.Process.Kill()
+		_ = cmd.Process.Kill()
 		<-done
 	}
-	c.cmd = nil
 }
 
 // Resize sets the client's terminal size in cells.
 func (c *Client) Resize(cols, rows int) error {
-	if c == nil || c.Master == nil {
+	master := c.master()
+	if master == nil {
 		return fmt.Errorf("attach: resize a closed client")
 	}
 	if !validDims(cols, rows) {
@@ -116,5 +134,5 @@ func (c *Client) Resize(cols, rows int) error {
 	// Cells fit: validDims bounds both to 1..1000.
 	rows16 := uint16(rows) //nolint:gosec // G115: as above
 	cols16 := uint16(cols) //nolint:gosec // G115: as above
-	return pty.Setsize(c.Master, &pty.Winsize{Rows: rows16, Cols: cols16})
+	return pty.Setsize(master, &pty.Winsize{Rows: rows16, Cols: cols16})
 }

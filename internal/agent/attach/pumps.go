@@ -3,7 +3,6 @@ package attach
 import (
 	"errors"
 
-	"github.com/creack/pty"
 	agentv1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/agent/v1"
 	typev1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/type/v1"
 )
@@ -18,10 +17,16 @@ const outReadSize = 32768
 // ends it silently, the hub already knows.
 func (m *Manager) outPump(st *attach) {
 	defer m.wg.Done()
+	// One snapshot: Close nils the master under lock, and a nil master
+	// means finish already ran, so there is nothing left to read.
+	master := st.client.master()
+	if master == nil {
+		return
+	}
 	buf := make([]byte, outReadSize)
 	id := &typev1.AttachId{Value: st.id}
 	for {
-		n, err := st.client.Master.Read(buf)
+		n, err := master.Read(buf)
 		if n > 0 {
 			if clean := st.strip.Strip(buf[:n]); len(clean) > 0 {
 				req := &agentv1.TerminalRequest{Up: &agentv1.TermUp{
@@ -96,7 +101,13 @@ func (m *Manager) handleDown(st *attach, resp *agentv1.TerminalResponse) bool {
 		if len(body.Input) == 0 || st.readOnly {
 			return false
 		}
-		if err := writeFull(st.client.Master, body.Input); err != nil {
+		// A nil master means Close ran: finish already owns the ending.
+		master := st.client.master()
+		if master == nil {
+			m.finish(st.id, typev1.AttachCloseReason_ATTACH_CLOSE_REASON_ERROR, true)
+			return true
+		}
+		if err := writeFull(master, body.Input); err != nil {
 			m.finish(st.id, typev1.AttachCloseReason_ATTACH_CLOSE_REASON_ERROR, true)
 			return true
 		}
@@ -107,10 +118,8 @@ func (m *Manager) handleDown(st *attach, resp *agentv1.TerminalResponse) bool {
 			return false
 		}
 		// A dying client errors here; the out pump reports it.
-		// Cells fit: validDims bounds both to 1..1000.
-		rows16 := uint16(rows) //nolint:gosec // G115: as above
-		cols16 := uint16(cols) //nolint:gosec // G115: as above
-		_ = pty.Setsize(st.client.Master, &pty.Winsize{Rows: rows16, Cols: cols16})
+		// A nil master means Close ran; Resize names it the same way.
+		_ = st.client.Resize(cols, rows)
 	case *agentv1.TermDown_Select:
 		m.selectOn(st, body.Select)
 	case *agentv1.TermDown_Close:
