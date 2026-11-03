@@ -242,7 +242,9 @@ All pass local policy, carry a `command_id`, and are idempotent except F3.
 
 - **K1 Terminal log**: `tmux pipe-pane -o` for goal panes, and for the
   developer's own panes when turned on per session, into a local spool; shipped in compressed chunks with byte offsets; kept until
-  acknowledged, up to a size cap; gaps are marked.
+  acknowledged, up to a size cap; gaps are marked. The spool path's server start
+  id is validated (`.`, `..`, `/` and empty are refused), so a hostile start id
+  cannot escape the spool directory.
 - **K2 Spool status and control**: pending bytes and gap marks in the
   snapshot and heartbeat; the hub can pause and resume shipping (for example
   when its disk is low).

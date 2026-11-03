@@ -360,7 +360,7 @@ recompression) as one `log_chunks` row per chunk, unique on `(session, pane,
 stream, raw_offset)`, with `frame_start` and `frame_raw_offset` beside the data,
 since replay decodes from the chunk at `frame_raw_offset`. There is no file and
 no rotation: a frame spans rows, and pruning deletes whole sessions. `LogAck`
-follows the commit of the batch (≤ 1 s), one sync per batch (ADR 0015).
+follows the batch commit (≤ 1 s, one sync; ADR 0015), and a torn ack file found on restart is ignored, never trusted.
 
 **Stream identity.** The agent names a stream `(pane, stream)`: `PaneKey` is
 unique on the machine, and a developer's own session has no hub `SessionId`
