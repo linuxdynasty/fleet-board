@@ -51,6 +51,8 @@ enum RepoWorktreeMode {
 enum RepoHooksMode {
   REPO_HOOKS_MODE_UNSPECIFIED = 0;
   // Follow what the checkout reports (repo_ships_own). The default.
+  // Empty-goal-text dispatch treats AUTO as hook-less (per 03c): the
+  // dispatch transaction has no checkout state to consult.
   REPO_HOOKS_MODE_AUTO = 1;
   // The repo ships its own hooks (eshu): the fleet's stay off there, and the
   // consent form is `/goal consent <acts> -- <text>`. A checkout that does
