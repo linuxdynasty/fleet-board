@@ -237,6 +237,11 @@ All pass local policy, carry a `command_id`, and are idempotent except F3.
   the plain `ssh -t <user>@<host> tmux attach -t <session>` line is shown for
   the developer's own terminal. Escape sequences that act on the viewer's
   machine (OSC 52 clipboard writes, hyperlinks) are stripped.
+- The view's self-destruct arms only after the client lands on it, so a slow
+  attach never meets an armed-but-empty view. Read-only is enforced twice:
+  the pump drops input and the client runs `-f read-only`. The window strip
+  forwards the developer's full prefix key, and the pumps read the PTY master
+  under lock while Close nils it, so teardown never races a read.
 
 ## K. Session logs
 
