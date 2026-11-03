@@ -186,7 +186,13 @@ func (v *Views) SelectWindow(ctx context.Context, socket, server, startID, view,
 
 // SelectPane moves the view session's active pane to the named id. The
 // key must name this server's generation and a pane of the attached
-// session, so a stale key can never land on a reused pane id.
+// session, so a stale key can never land on a reused pane id: the pane is
+// resolved to its window inside the view and selected there, never
+// server-wide (a bare -t id would yank focus to whatever session holds
+// that pane). Panes live in windows, and grouped sessions share each
+// window's active pane, so a selection inside the attached session stays
+// visible to its operator; the scoping only keeps it from escaping to
+// another session.
 func (v *Views) SelectPane(ctx context.Context, socket, server, startID, view, paneID string) error {
 	if !viewNameRE.MatchString(view) || !paneIDRE.MatchString(paneID) {
 		return fmt.Errorf("attach: bad select-pane key")
@@ -194,20 +200,20 @@ func (v *Views) SelectPane(ctx context.Context, socket, server, startID, view, p
 	if err := v.checkServer(server, startID); err != nil {
 		return err
 	}
-	out, err := v.tmux(ctx, socket, "list-panes", "-s", "-t", view, "-F", "#{pane_id}")
+	out, err := v.tmux(ctx, socket, "list-panes", "-s", "-t", view, "-F", "#{pane_id} #{window_index}")
 	if err != nil {
 		return fmt.Errorf("attach: list view panes: %w: %s", err, out)
 	}
-	found := false
+	index := ""
 	for line := range strings.Lines(strings.TrimSpace(out)) {
-		if strings.TrimSpace(line) == paneID {
-			found = true
+		if id, idx, ok := strings.Cut(strings.TrimSpace(line), " "); ok && id == paneID {
+			index = idx
 		}
 	}
-	if !found {
+	if index == "" {
 		return fmt.Errorf("attach: pane %q is not in the attached session", paneID)
 	}
-	if out, err := v.tmux(ctx, socket, "select-pane", "-t", paneID); err != nil {
+	if out, err := v.tmux(ctx, socket, "select-pane", "-t", view+":"+index+"."+paneID); err != nil {
 		return fmt.Errorf("attach: select view pane: %w: %s", err, out)
 	}
 	return nil

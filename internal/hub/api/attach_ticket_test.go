@@ -71,6 +71,9 @@ func TestCreateAttachTicketRefusals(t *testing.T) {
 	if _, err := e.client.CreateAttachTicket(context.Background(), bad); connect.CodeOf(err) != connect.CodeInvalidArgument {
 		t.Fatalf("empty request_id code = %v, want InvalidArgument", connect.CodeOf(err))
 	}
+	// A developer-created tmux session has no hub_sessions row (only
+	// hub-initiated session create writes one), so it lands here too:
+	// J1 covers hub-started sessions until the session mirror lands.
 	unknown := ticketReq("req-tick-unknown", "nope", false)
 	_, err := e.client.CreateAttachTicket(context.Background(), unknown)
 	if connect.CodeOf(err) != connect.CodeNotFound {

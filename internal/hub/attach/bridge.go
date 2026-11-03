@@ -29,6 +29,11 @@ const (
 // ErrBridgeClosed is PushOutput and TakeInput past Close.
 var ErrBridgeClosed = errors.New("attach: bridge is closed")
 
+// ErrOverAck is an ack past the bytes sent: the client counts bytes it
+// never received (fabricated or double-counted), so the ack is refused
+// and the counter keeps its value.
+var ErrOverAck = errors.New("attach: ack beyond bytes sent")
+
 // BridgeState is where an attach stands: OpenAttach sent, the agent's
 // Terminal stream paired and flowing, or over.
 type BridgeState int
@@ -261,16 +266,19 @@ func (b *Bridge) OutputBytes() int {
 	return b.outBytes
 }
 
-// Ack counts client-written bytes: the AttachAck flow control (02f).
-func (b *Bridge) Ack(n uint64) {
+// Ack counts client-written bytes: the AttachAck flow control (02f). An
+// ack past the bytes sent is refused with ErrOverAck and changes nothing:
+// a correct client only acks bytes the hub pushed, so the excess is
+// fabricated or double-counted and must not zero the counter.
+func (b *Bridge) Ack(n uint64) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	if n > b.unacked {
-		b.unacked = 0
-	} else {
-		b.unacked -= n
+		return ErrOverAck
 	}
+	b.unacked -= n
 	b.broadcastLocked()
+	return nil
 }
 
 // Unacked is the output sent but not yet acked.

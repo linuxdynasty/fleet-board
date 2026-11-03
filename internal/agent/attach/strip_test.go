@@ -37,6 +37,46 @@ func TestStripViewerSequences(t *testing.T) {
 	}
 }
 
+// TestStripOversizedOSCDiscarded: a run past maxOSCHold without a
+// terminator is dropped, never emitted half-open; the drop holds through
+// later chunks until the late terminator, and text after it survives.
+func TestStripOversizedOSCDiscarded(t *testing.T) {
+	t.Parallel()
+	big := "\x1b]52;c;" + strings.Repeat("A", maxOSCHold)
+	var s Stripper
+	if got := string(s.Strip([]byte("pre" + big))); got != "pre" {
+		t.Fatalf("over-cap prefix = %q, want %q", got, "pre")
+	}
+	// A tail with no terminator is still the same sequence: nothing.
+	if got := s.Strip([]byte(strings.Repeat("B", 1000))); len(got) != 0 {
+		t.Fatalf("over-cap tail = %d bytes, want none", len(got))
+	}
+	// The late terminator ends the drop: the fragment goes, later text
+	// survives.
+	if got := string(s.Strip([]byte("tail\x07post"))); got != "post" {
+		t.Fatalf("late terminator = %q, want %q", got, "post")
+	}
+	// An ST terminator split across the chunk boundary still ends it: the
+	// trailing ESC is held for the join, not emitted.
+	var st Stripper
+	if got := string(st.Strip([]byte("pre" + big))); got != "pre" {
+		t.Fatalf("st prefix = %q, want %q", got, "pre")
+	}
+	if got := st.Strip([]byte("mid\x1b")); len(got) != 0 {
+		t.Fatalf("st mid = %q, want nothing", got)
+	}
+	if got := string(st.Strip([]byte("\\after"))); got != "after" {
+		t.Fatalf("st end = %q, want %q", got, "after")
+	}
+	// A complete giant sequence keeps its old fate: stripped when it acts
+	// on the viewer, passed through otherwise.
+	var full Stripper
+	giant52 := "\x1b]52;c;" + strings.Repeat("A", maxOSCHold) + "\x07"
+	if got := full.Strip([]byte("a" + giant52 + "b")); string(got) != "ab" {
+		t.Fatalf("giant complete 52 = %d bytes, want 2", len(got))
+	}
+}
+
 // TestStripSplitSequence: a sequence split across reads at every point
 // still strips once complete, and only once.
 func TestStripSplitSequence(t *testing.T) {

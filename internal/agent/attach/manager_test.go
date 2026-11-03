@@ -108,7 +108,7 @@ func fakeTmux(t *testing.T) (program, argvFile string) {
 		"case \" $* \" in\n" +
 		"*\" display-message \"*) echo \"testgroup\" ;;\n" +
 		"*\" list-windows \"*) echo \"@7 0\" ;;\n" +
-		"*\" list-panes \"*) echo \"%9\" ;;\n" +
+		"*\" list-panes \"*) echo \"%9 0\" ;;\n" +
 		"*\" list-clients \"*) echo \"fakeclient\" ;;\n" +
 		"esac\n" +
 		"exit 0\n")
@@ -307,7 +307,7 @@ func TestManagerOpenRefusals(t *testing.T) {
 	badName := openCmd("ok1", "work", 80, 24, false)
 	badName.Session = &agentv1.SessionTarget{
 		Server: typev1.TmuxServerKind_TMUX_SERVER_KIND_DEFAULT,
-		By:     &agentv1.SessionTarget_TmuxId{TmuxId: "bogus"},
+		By:     &agentv1.SessionTarget_TmuxId{TmuxId: "$3"},
 	}
 	probe := openCmd("ok1", "work", 80, 24, false)
 	probe.Session.Server = typev1.TmuxServerKind_TMUX_SERVER_KIND_PROBE
@@ -321,7 +321,7 @@ func TestManagerOpenRefusals(t *testing.T) {
 		{"zero cols", openCmd("c1", "work", 0, 24, false), ErrInvalid},
 		{"huge rows", openCmd("c1", "work", 80, 1001, false), ErrInvalid},
 		{"nil session", func() *agentv1.OpenAttach { c := openCmd("c1", "work", 80, 24, false); c.Session = nil; return c }(), ErrInvalid},
-		{"bad target arm", badName, ErrInvalid},
+		{"tmux-id target", badName, ErrInvalid},
 		{"unserved server", probe, ErrServerDown},
 		{"missing target", openCmd("c1", "gone", 80, 24, false), ErrNoSession},
 	} {
@@ -371,8 +371,6 @@ func TestManagerOpenTwiceReturnsView(t *testing.T) {
 	}
 }
 
-// TestManagerOpenLandingTimeout: a client that never lands fails the
-// open and leaves nothing behind: a retry starts clean.
 func TestManagerOpenLandingTimeout(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()

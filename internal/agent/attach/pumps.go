@@ -33,7 +33,7 @@ func (m *Manager) outPump(st *attach) {
 					AttachId: id,
 					Body:     &agentv1.TermUp_Output{Output: clean},
 				}}
-				if serr := st.stream.Send(req); serr != nil {
+				if serr := st.send(req); serr != nil {
 					m.finish(st.id, typev1.AttachCloseReason_ATTACH_CLOSE_REASON_UNSPECIFIED, false)
 					return
 				}

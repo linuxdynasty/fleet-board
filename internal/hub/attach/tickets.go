@@ -15,11 +15,13 @@ const TicketTTL = time.Minute
 
 // Ticket errors: ErrInvalid renders as ATTACH_TICKET_INVALID, ErrDelivered
 // as SECRET_ALREADY_DELIVERED (the secret is never re-shown), ErrConflict
-// as REQUEST_ID_CONFLICT.
+// as REQUEST_ID_CONFLICT, ErrReadOnly as INVALID_ARGUMENT (a writable open
+// on a read-only ticket).
 var (
 	ErrInvalid   = errors.New("attach: invalid ticket")
 	ErrDelivered = errors.New("attach: ticket already delivered")
 	ErrConflict  = errors.New("attach: request id used for another request")
+	ErrReadOnly  = errors.New("attach: ticket is read-only")
 )
 
 // MintIn is one ticket mint: who may burn it, for which session, in which
@@ -165,8 +167,10 @@ func (s *Store) Mint(in MintIn) (secret string, expires time.Time, err error) {
 // Burn burns the ticket the first frame carried: it is deleted whether the
 // attach then succeeds or not. An empty session in the open frame matches
 // any ticket session (02f: the open session must equal the ticket's, or be
-// empty); readOnlyWanted may only tighten the ticket's mode, never widen
-// it. Unknown, expired and mis-bound tickets are ErrInvalid.
+// empty); readOnlyWanted may only tighten the ticket's mode. A writable
+// open on a read-only ticket is ErrReadOnly, never a widening: the caller
+// must refuse it, not open writable. Unknown, expired and mis-bound
+// tickets are ErrInvalid.
 func (s *Store) Burn(secret, principalID, sessionID, origin string, readOnlyWanted bool) (*Ticket, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -183,6 +187,9 @@ func (s *Store) Burn(secret, principalID, sessionID, origin string, readOnlyWant
 	}
 	if sessionID != "" && rec.SessionID != sessionID {
 		return nil, ErrInvalid
+	}
+	if !readOnlyWanted && rec.ReadOnly {
+		return nil, ErrReadOnly
 	}
 	out := rec.Ticket
 	if readOnlyWanted {

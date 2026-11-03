@@ -181,7 +181,9 @@ func TestServeAgentSuspendKeepsControl(t *testing.T) {
 		time.Sleep(5 * time.Millisecond)
 	}
 	// Acks resume the intake: the next agent output queues again.
-	b.Ack(HighWater)
+	if err := b.Ack(HighWater); err != nil {
+		t.Fatalf("Ack: %v", err)
+	}
 	if b.Suspended() {
 		t.Fatal("still suspended after the ack")
 	}

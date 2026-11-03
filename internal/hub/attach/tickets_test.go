@@ -83,12 +83,8 @@ func TestTicketBurnTightensReadOnly(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Mint: %v", err)
 	}
-	got, err = s.Burn(ro, "p", "s", "http://localhost:8080", false)
-	if err != nil {
-		t.Fatalf("Burn: %v", err)
-	}
-	if !got.ReadOnly {
-		t.Fatal("read-write open on a read-only ticket widened it, want clamped read-only")
+	if _, err = s.Burn(ro, "p", "s", "http://localhost:8080", false); !errors.Is(err, ErrReadOnly) {
+		t.Fatalf("Burn writable on a read-only ticket = %v, want ErrReadOnly", err)
 	}
 }
 

@@ -159,6 +159,11 @@ func (f *Fleet) serveAttach(ctx context.Context, cc clientConn, transport attach
 		}
 		if _, err := f.attach.BurnTicket(open.GetTicket(), actor,
 			open.GetSession().GetValue(), origin, open.GetReadOnly()); err != nil {
+			if errors.Is(err, attach.ErrReadOnly) {
+				return refuse(apiError(connect.CodeInvalidArgument,
+					typev1.ReasonCode_REASON_CODE_INVALID_ARGUMENT,
+					"the attach ticket is read-only; open read-only or mint a read-write ticket", nil, nil))
+			}
 			return refuse(apiError(connect.CodeUnauthenticated,
 				typev1.ReasonCode_REASON_CODE_ATTACH_TICKET_INVALID,
 				"the attach ticket is unknown, expired or bound to another caller", nil, nil))

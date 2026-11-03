@@ -220,7 +220,10 @@ All pass local policy, carry a `command_id`, and are idempotent except F3.
 
 ## J. Terminal attach
 
-- **J1 Attach** from the browser to any session, existing or new. The browser
+- **J1 Attach** from the browser to any session the hub started, existing
+  or new. Developer-created tmux sessions are not routable yet: the hub
+  only knows session IDs it wrote to `hub_sessions` at session create, so
+  they read `SESSION_NOT_FOUND` until the session mirror lands. The browser
   terminal is a real tmux client (a PTY running `tmux attach`) on the
   developer's own server, so their prefix key and bindings work unchanged:
   `prefix n`/`p`/`1–9` to switch windows, `prefix o` and arrows to switch

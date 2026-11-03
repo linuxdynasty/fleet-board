@@ -1,6 +1,7 @@
 package attach
 
 import (
+	"errors"
 	"testing"
 
 	typev1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/type/v1"
@@ -33,9 +34,46 @@ func TestBridgeFlowControl(t *testing.T) {
 	if !b.Suspended() {
 		t.Fatal("not suspended at 300 KiB unacked, want backpressure past 256 KiB")
 	}
-	b.Ack(300 << 10)
+	if err := b.Ack(300 << 10); err != nil {
+		t.Fatalf("Ack: %v", err)
+	}
 	if b.Suspended() {
 		t.Fatal("still suspended after the browser acked everything")
+	}
+}
+
+// TestBridgeOverAckRefused: an ack past the bytes sent is refused and
+// changes nothing, instead of zeroing the counter and hiding fabricated
+// or double-counted bytes.
+func TestBridgeOverAckRefused(t *testing.T) {
+	t.Parallel()
+	now, _ := testClock()
+	r := New(now, nil)
+	b, err := r.Create("attach-overack", "m1", "sess-1", false)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	b.Ready("fleet-view-attach-overack", 80, 24)
+	if err := b.PushOutput([]byte("12345678")); err != nil {
+		t.Fatalf("PushOutput: %v", err)
+	}
+	if err := b.Ack(4); err != nil {
+		t.Fatalf("Ack: %v", err)
+	}
+	if got := b.Unacked(); got != 4 {
+		t.Fatalf("Unacked = %d, want 4", got)
+	}
+	if err := b.Ack(5); !errors.Is(err, ErrOverAck) {
+		t.Fatalf("Ack(5) past 4 unacked = %v, want ErrOverAck", err)
+	}
+	if got := b.Unacked(); got != 4 {
+		t.Fatalf("Unacked after refused ack = %d, want the counter unchanged at 4", got)
+	}
+	if err := b.Ack(4); err != nil {
+		t.Fatalf("Ack: %v", err)
+	}
+	if got := b.Unacked(); got != 0 {
+		t.Fatalf("Unacked = %d, want 0", got)
 	}
 }
 

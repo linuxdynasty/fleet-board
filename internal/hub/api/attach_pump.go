@@ -150,7 +150,11 @@ func (f *Fleet) pumpAttach(ctx context.Context, cc clientConn, who *typev1.Princ
 				lastActivity = time.Now()
 			case *hubv1.AttachTerminalRequest_Ack:
 				if w := body.Ack.GetBytesWritten(); w > ackedTotal {
-					b.Ack(w - ackedTotal)
+					if err := b.Ack(w - ackedTotal); err != nil {
+						return finish(closedFromError(apiError(connect.CodeInvalidArgument,
+							typev1.ReasonCode_REASON_CODE_INVALID_ARGUMENT,
+							"ack counts bytes the hub never sent", nil, nil)), false)
+					}
 					ackedTotal = w
 				}
 				lastAck = time.Now()
@@ -175,7 +179,10 @@ func (f *Fleet) pumpAttach(ctx context.Context, cc clientConn, who *typev1.Princ
 			if b.Generation() != gen {
 				return nil
 			}
-			if b.OutputBytes() > 0 && now.Sub(lastAck) > attachAckWait {
+			// Sent-but-unacked output arms the wait too: NextOutput pops
+			// the queue on send, so queued-only bytes would never fire
+			// once the client holds everything without acking.
+			if (b.OutputBytes() > 0 || b.Unacked() > 0) && now.Sub(lastAck) > attachAckWait {
 				return finish(&hubv1.AttachClosed{
 					Reason: typev1.AttachCloseReason_ATTACH_CLOSE_REASON_HUB_CLOSED,
 				}, false)

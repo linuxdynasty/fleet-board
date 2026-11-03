@@ -29,9 +29,6 @@ var (
 // view name, so it must fit viewNameRE's tail.
 var attachIDRE = regexp.MustCompile(`^[a-z0-9-]{1,32}$`)
 
-// tmuxIDRE is a server-unique pane/session id like $3.
-var tmuxIDRE = regexp.MustCompile(`^\$[0-9]{1,10}$`)
-
 // dropAllWait bounds DropAll's wait for the pumps to exit after their
 // cancel and PTY close; both unblock promptly, so this is paranoia.
 const dropAllWait = 10 * time.Second
@@ -79,18 +76,37 @@ type Manager struct {
 }
 
 // attach is one open attach. ctx dies on teardown and unblocks both pumps;
-// the stream and the PTY take care of the rest.
+// the stream and the PTY take care of the rest. target/cols/rows pin the
+// command the id opened with, so a re-open that changes them is rejected
+// instead of silently joining the wrong session. client and stream are
+// written once by Open under the manager mutex (a concurrent Close may be
+// reading them); every other field is immutable after creation. sendMu
+// serializes the stream's Sends: the out pump and a racing Close send on
+// different goroutines, and the stream races a slow browser.
 type attach struct {
 	id       string
 	view     string
 	socket   string
 	server   string
+	target   string
+	cols     int
+	rows     int
 	readOnly bool
 	ctx      context.Context
 	cancel   context.CancelFunc
 	client   *Client
 	stream   Stream
 	strip    Stripper
+	sendMu   sync.Mutex
+}
+
+// send is the only way up-messages leave an attach: holding sendMu keeps
+// the out pump's output and a racing Close's closed report from sharing
+// one Send.
+func (st *attach) send(req *agentv1.TerminalRequest) error {
+	st.sendMu.Lock()
+	defer st.sendMu.Unlock()
+	return st.stream.Send(req)
 }
 
 // New validates the options; parent is the agent run context, the pumps'
@@ -159,10 +175,10 @@ func (m *Manager) resolve(cmd *agentv1.OpenAttach) (id, target, socket, server s
 	case *agentv1.SessionTarget_SessionId:
 		target = by.SessionId.GetValue()
 	case *agentv1.SessionTarget_TmuxId:
-		if !tmuxIDRE.MatchString(by.TmuxId) {
-			return "", "", "", "", fmt.Errorf("attach: bad tmux id: %w", ErrInvalid)
-		}
-		target = by.TmuxId
+		// tmux ids ($3) recycle on every server restart, so they never
+		// name a session safely across runs: the caller must resolve one
+		// to a name or session id first. Rejected, not retryable.
+		return "", "", "", "", fmt.Errorf("attach: tmux-id targets are not served: %w", ErrInvalid)
 	default:
 		return "", "", "", "", fmt.Errorf("attach: open names no target: %w", ErrInvalid)
 	}
@@ -179,44 +195,65 @@ func (m *Manager) Open(ctx context.Context, cmd *agentv1.OpenAttach) (string, er
 		return "", err
 	}
 	view := "fleet-view-" + id
+	cols, rows := int(cmd.GetCols()), int(cmd.GetRows())
 	m.mu.Lock()
 	if st, ok := m.live[id]; ok {
+		if st.readOnly != cmd.GetReadOnly() || st.target != target || st.cols != cols || st.rows != rows {
+			m.mu.Unlock()
+			return "", fmt.Errorf("attach: reopen %q changes the command: %w", id, ErrInvalid)
+		}
 		view := st.view
 		m.mu.Unlock()
 		return view, nil
 	}
 	stCtx, cancel := context.WithCancel(m.parent)
-	st := &attach{id: id, view: view, socket: socket, server: server, readOnly: cmd.GetReadOnly(), ctx: stCtx, cancel: cancel}
+	st := &attach{
+		id: id, view: view, socket: socket, server: server, target: target,
+		cols: cols, rows: rows, readOnly: cmd.GetReadOnly(), ctx: stCtx, cancel: cancel,
+	}
 	m.live[id] = st
 	m.mu.Unlock()
-	// From here every failure runs teardown, which forgets the id and
-	// kills what this open made (only what it made: the view name derives
-	// from the id, so it can never be another attach's).
+	// From here every failure cleans up only what this open made. teardown
+	// forgets the id only when it still names this open (a retry may have
+	// reused it), then kills this open's own client, view and context.
+	// KillView, client Close and cancel are idempotent, so running beside
+	// a concurrent finish of the same st is harmless.
 	teardown := func(err error) (string, error) {
-		m.finish(id, typev1.AttachCloseReason_ATTACH_CLOSE_REASON_UNSPECIFIED, false)
+		m.mu.Lock()
+		if cur, ok := m.live[id]; ok && cur == st {
+			delete(m.live, id)
+		}
+		m.mu.Unlock()
+		m.killSt(st, st.client)
 		return "", err
 	}
+	// stale reports a lost race with a close: this open no longer owns
+	// the id (a closer forgot it, or a retry reused it), so the loser
+	// tears down only its own machinery and never calls finish(id),
+	// which would either leak (id already gone) or kill the winner.
 	stale := func(step string) error {
 		m.mu.Lock()
 		cur, ok := m.live[id]
 		m.mu.Unlock()
 		if !ok || cur != st {
-			m.finish(id, typev1.AttachCloseReason_ATTACH_CLOSE_REASON_UNSPECIFIED, false)
+			m.killSt(st, st.client)
 			return fmt.Errorf("attach: %s raced a close: %w", step, ErrServerDown)
 		}
 		return nil
 	}
-	if err := m.views.CreateView(ctx, socket, target, view, int(cmd.GetCols()), int(cmd.GetRows())); err != nil {
+	if err := m.views.CreateView(ctx, socket, target, view, cols, rows); err != nil {
 		if errors.Is(err, ErrNoSession) {
 			return teardown(fmt.Errorf("attach: open %q: %w", id, ErrNoSession))
 		}
 		return teardown(fmt.Errorf("attach: open %q: view: %w: %w", id, err, ErrServerDown))
 	}
-	client, err := OpenClient(m.opts.Program, socket, view, int(cmd.GetCols()), int(cmd.GetRows()), st.readOnly)
+	client, err := OpenClient(m.opts.Program, socket, view, cols, rows, st.readOnly)
 	if err != nil {
 		return teardown(fmt.Errorf("attach: open %q: client: %w: %w", id, err, ErrServerDown))
 	}
+	m.mu.Lock()
 	st.client = client
+	m.mu.Unlock()
 	// The client lands after config load and handshake, well after this
 	// spawn returns: confirm it before pairing or arming, so a slow
 	// attach never meets an armed-but-empty view (reaped) or a paired
@@ -234,7 +271,9 @@ func (m *Manager) Open(ctx context.Context, cmd *agentv1.OpenAttach) (string, er
 	if err != nil {
 		return teardown(fmt.Errorf("attach: open %q: dial: %w: %w", id, err, ErrServerDown))
 	}
+	m.mu.Lock()
 	st.stream = stream
+	m.mu.Unlock()
 	if err := stale("dial"); err != nil {
 		return "", err
 	}
@@ -244,7 +283,8 @@ func (m *Manager) Open(ctx context.Context, cmd *agentv1.OpenAttach) (string, er
 			Cols: cmd.GetCols(), Rows: cmd.GetRows(), ViewSessionName: view,
 		}},
 	}}
-	if err := stream.Send(ready); err != nil {
+	// st.send, not stream.Send: a Close may be sending Closed beside us.
+	if err := st.send(ready); err != nil {
 		return teardown(fmt.Errorf("attach: open %q: ready: %w: %w", id, err, ErrServerDown))
 	}
 	if err := stale("ready"); err != nil {
@@ -311,10 +351,32 @@ func (m *Manager) DropAll() {
 	}
 }
 
+// killSt tears down one open's own machinery: its client, its view, its
+// context. It never touches the live map or another attach. client rides
+// along because the caller read it race-free (its own write, or the copy
+// under the manager mutex). Every step is idempotent (client Close is
+// twice-safe, a missing view is success, cancel repeats freely), so a
+// loser running beside a finish of the same st only repeats done work.
+func (m *Manager) killSt(st *attach, client *Client) {
+	if client != nil {
+		client.Close()
+	}
+	if st.view != "" {
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(m.parent), 5*time.Second)
+		defer cancel()
+		if err := m.views.KillView(ctx, st.socket, st.view); err != nil {
+			m.log.WarnContext(ctx, "attach.kill_view", "attach_id", st.id, "view", st.view, "err", err)
+		}
+	}
+	st.cancel()
+}
+
 // finish forgets exactly one attach and kills its machinery, once: the map
 // delete under the mutex elects the winner, every loser returns without
 // touching anything. sendClosed reports the reason where the stream still
-// takes it; the send races the cancel and never blocks teardown.
+// takes it; the send races the cancel and never blocks teardown. client
+// and stream are copied under the mutex: an Open that lost the entry may
+// still be writing them.
 func (m *Manager) finish(id string, reason typev1.AttachCloseReason, sendClosed bool) {
 	m.mu.Lock()
 	st, ok := m.live[id]
@@ -322,26 +384,17 @@ func (m *Manager) finish(id string, reason typev1.AttachCloseReason, sendClosed 
 		m.mu.Unlock()
 		return
 	}
+	client, stream := st.client, st.stream
 	delete(m.live, id)
 	m.mu.Unlock()
-	if sendClosed && st.stream != nil {
+	if sendClosed && stream != nil {
 		go func() {
-			_ = st.stream.Send(&agentv1.TerminalRequest{Up: &agentv1.TermUp{
+			_ = st.send(&agentv1.TerminalRequest{Up: &agentv1.TermUp{
 				AttachId: &typev1.AttachId{Value: id},
 				Body:     &agentv1.TermUp_Closed{Closed: &agentv1.TermClosed{Reason: reason}},
 			}})
 		}()
 	}
-	st.cancel()
-	if st.client != nil {
-		st.client.Close()
-	}
-	if st.view != "" {
-		ctx, cancel := context.WithTimeout(context.WithoutCancel(m.parent), 5*time.Second)
-		defer cancel()
-		if err := m.views.KillView(ctx, st.socket, st.view); err != nil {
-			m.log.WarnContext(ctx, "attach.kill_view", "attach_id", id, "view", st.view, "err", err)
-		}
-	}
+	m.killSt(st, client)
 	m.log.Info("attach.closed", "attach_id", id, "reason", reason.String())
 }

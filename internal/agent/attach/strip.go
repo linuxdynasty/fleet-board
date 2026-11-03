@@ -1,7 +1,9 @@
 package attach
 
 // maxOSCHold caps a held-back incomplete OSC sequence: a longer run
-// without a terminator is emitted as-is rather than held forever.
+// without a terminator is discarded, never held forever and never emitted
+// half-open (an unterminated dump would swallow the browser's following
+// output as sequence content).
 const maxOSCHold = 64 << 10
 
 // Stripper removes the escape sequences that act on the viewer's machine
@@ -11,6 +13,10 @@ const maxOSCHold = 64 << 10
 // terminator (BEL or ESC backslash) arrives.
 type Stripper struct {
 	hold []byte
+	// droppingOSC discards an over-cap OSC through its terminator: the
+	// prefix is already gone, so the tail goes too, or the browser
+	// prints a fragment of a sequence that never fully arrived.
+	droppingOSC bool
 }
 
 // Strip returns p with the viewer-acting sequences removed.
@@ -21,6 +27,21 @@ func (s *Stripper) Strip(p []byte) []byte {
 		joined = append(joined, p...)
 		s.hold = s.hold[:0]
 		p = joined
+	}
+	if s.droppingOSC {
+		// The prefix is gone: drop through the first terminator and
+		// resume after it.
+		if _, rest, complete := splitDrop(p); complete {
+			s.droppingOSC = false
+			p = rest
+		} else {
+			// A trailing ESC may complete the terminator in the next
+			// chunk; hold that one byte so the join finds it.
+			if len(p) > 0 && p[len(p)-1] == 0x1b {
+				s.hold = append(s.hold, 0x1b)
+			}
+			return nil
+		}
 	}
 	// A trailing ESC may open a sequence in the next chunk; hold it
 	// rather than emitting a lone byte the sequence then misses.
@@ -44,8 +65,11 @@ func (s *Stripper) Strip(p []byte) []byte {
 		seq, rest, complete := splitOSC(p[i:])
 		if !complete {
 			if len(p[i:]) > maxOSCHold {
-				// Pathological: emit rather than hold forever.
-				out = append(out, p[i:]...)
+				// Pathological: discard the run, never hold it forever
+				// and never emit it half-open (no terminator sits later
+				// in this chunk: splitOSC would have completed). Later
+				// chunks drop through the terminator at the top.
+				s.droppingOSC = true
 				break
 			}
 			s.hold = append(s.hold, p[i:]...)
@@ -73,6 +97,21 @@ func indexOSC(p []byte) int {
 // the rest. complete is false when no terminator arrived yet.
 func splitOSC(p []byte) (seq, rest []byte, complete bool) {
 	for i := 2; i < len(p); i++ {
+		if p[i] == 0x07 {
+			return p[:i+1], p[i+1:], true
+		}
+		if p[i] == 0x1b && i+1 < len(p) && p[i+1] == '\\' {
+			return p[:i+2], p[i+2:], true
+		}
+	}
+	return nil, p, false
+}
+
+// splitDrop splits p at its first OSC terminator (BEL or ESC backslash),
+// wherever it sits: the sequence opened in an earlier, already-dropped
+// chunk. complete is false when no terminator arrived yet.
+func splitDrop(p []byte) (drop, rest []byte, complete bool) {
+	for i := 0; i < len(p); i++ {
 		if p[i] == 0x07 {
 			return p[:i+1], p[i+1:], true
 		}
