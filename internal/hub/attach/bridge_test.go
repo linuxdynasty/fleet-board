@@ -55,10 +55,14 @@ func TestBridgeReadOnlyDropsInput(t *testing.T) {
 		t.Fatal("read-only bridge took input, want it dropped")
 	}
 	b.TakeResize(100, 30)
-	b.TakeSelectWindow("w1")
+	b.TakeSelectWindow("default", "start-1", "@1")
 	downs := b.DrainDown()
 	if len(downs) != 2 {
 		t.Fatalf("read-only bridge queued %d TermDowns, want resize + select", len(downs))
+	}
+	if w := downs[1].GetSelect().GetWindow(); w == nil ||
+		w.GetServer() != "default" || w.GetServerStartId() != "start-1" || w.GetWindowId() != "@1" {
+		t.Fatalf("select down = %+v, want the full window key", downs[1].GetSelect())
 	}
 }
 

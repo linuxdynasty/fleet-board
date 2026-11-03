@@ -305,13 +305,16 @@ func (b *Bridge) TakeResize(cols, rows uint32) bool {
 	})
 }
 
-// TakeSelectWindow queues a view-session window switch. The key must
+// TakeSelectWindow queues a view-session window switch. The full key must
 // belong to the attached session; the agent runs it in the view session
-// only, so the developer's own current window never moves.
-func (b *Bridge) TakeSelectWindow(windowID string) bool {
+// only, so the developer's own current window never moves. A short key
+// never reaches tmux: the agent refuses a key outside its own server.
+func (b *Bridge) TakeSelectWindow(server, startID, windowID string) bool {
 	return b.queue(&agentv1.TermDown{
 		Body: &agentv1.TermDown_Select{Select: &agentv1.TermSelect{
-			Target: &agentv1.TermSelect_Window{Window: &typev1.WindowKey{WindowId: windowID}},
+			Target: &agentv1.TermSelect_Window{Window: &typev1.WindowKey{
+				Server: server, ServerStartId: startID, WindowId: windowID,
+			}},
 		}},
 	})
 }

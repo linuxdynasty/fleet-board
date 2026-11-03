@@ -242,10 +242,12 @@ var (
 	errWSFraming = errors.New("api: framing violation")
 )
 
-// wsPeerCode reads the peer's close code, 1005 when absent.
+// wsPeerCode reads the peer's close code. A close with no status is a
+// normal 1000 closure here: 1005 is reserved and must never go back on
+// the wire, so it never leaves this function.
 func wsPeerCode(payload []byte) int {
 	if len(payload) < 2 {
-		return 1005
+		return 1000
 	}
 	return int(payload[0])<<8 | int(payload[1])
 }
@@ -397,7 +399,11 @@ func (c *wsConn) closeSocket(code int) {
 		close(c.closed)
 		// Close codes are uint16 on the wire; the callers map to the
 		// RFC 6455 constants, and anything else fails closed to 1011.
-		if code < 1000 || code > 4999 {
+		// 1005 (no status received) is reserved and never goes on the
+		// wire, so it closes as a normal 1000 instead.
+		if code == 1005 {
+			code = 1000
+		} else if code < 1000 || code > 4999 {
 			code = 1011
 		}
 		hi := byte(code >> 8) //nolint:gosec // G115: ranged above

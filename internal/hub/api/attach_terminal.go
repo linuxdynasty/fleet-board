@@ -102,12 +102,11 @@ func firstReceive(ctx context.Context, cc clientConn, timeout time.Duration) (*h
 // Connect adapter maps ERROR closes to one.
 func (f *Fleet) serveAttach(ctx context.Context, cc clientConn, transport attachTransport, origin string,
 ) (*hubv1.AttachClosed, int) {
-	who := PrincipalFrom(ctx)
-	if who == nil {
-		closed := &hubv1.AttachClosed{
-			Reason: typev1.AttachCloseReason_ATTACH_CLOSE_REASON_ERROR,
-			Error:  &typev1.ErrorDetail{Reason: typev1.ReasonCode_REASON_CODE_CREDENTIALS_INVALID},
-		}
+	// Both transports land here, so the READ scope check lives here too:
+	// the HTTP/2 caller already passed it, the WebSocket upgrader did not.
+	who, aerr := authorizeScope(ctx, "READ")
+	if aerr != nil {
+		closed := closedFromError(aerr)
 		return closed, wsCodeFor(closed)
 	}
 	actor := who.GetId().GetValue()
@@ -222,10 +221,6 @@ func waitBridgeLive(ctx context.Context, b *attach.Bridge, wait time.Duration) b
 	return true
 }
 
-// finishAttach ends one attach: it asks the agent to stand its view down,
-// waits briefly for the confirm, falls back to a CloseAttach command when
-// the agent missed it, then closes the bridge, stamps attach.close and
-// forgets the open record. It returns the terminal AttachClosed.
 // finishAttach ends one attach: it asks the agent to stand its view down,
 // closes the bridge, stamps attach.close and forgets the open record. Only
 // the first finisher runs the end; later pumps only read the terminal

@@ -26,6 +26,9 @@ func (f *Fleet) pumpAttach(ctx context.Context, cc clientConn, who *typev1.Princ
 	}
 	recvCh := make(chan recvRes, 16)
 	sendErr := make(chan error, 1)
+	// sentCh fires after each output handed to the transport, so flowing
+	// output counts as activity even when the client is slow to ack it.
+	sentCh := make(chan struct{}, 1)
 	// The pumps end with the transport: the adapter closes it when
 	// serveAttach returns, which fails the stuck Send or Receive.
 	go func() {
@@ -56,6 +59,10 @@ func (f *Fleet) pumpAttach(ctx context.Context, cc clientConn, who *typev1.Princ
 			}); err != nil {
 				sendErr <- err
 				return
+			}
+			select {
+			case sentCh <- struct{}{}:
+			default:
 			}
 		}
 	}()
@@ -132,7 +139,7 @@ func (f *Fleet) pumpAttach(ctx context.Context, cc clientConn, who *typev1.Princ
 				}
 				sel := body.Select
 				if w := sel.GetWindow(); w != nil {
-					if !b.TakeSelectWindow(w.GetWindowId()) {
+					if !b.TakeSelectWindow(w.GetServer(), w.GetServerStartId(), w.GetWindowId()) {
 						return detached(false)
 					}
 				} else if p := sel.GetPane(); p != nil {
@@ -147,6 +154,9 @@ func (f *Fleet) pumpAttach(ctx context.Context, cc clientConn, who *typev1.Princ
 					ackedTotal = w
 				}
 				lastAck = time.Now()
+				// Acks arrive while output flows, so they prove the
+				// client is alive as much as keystrokes do (02f).
+				lastActivity = time.Now()
 			case *hubv1.AttachTerminalRequest_Close:
 				return detached(true)
 			case *hubv1.AttachTerminalRequest_Open:
@@ -157,6 +167,10 @@ func (f *Fleet) pumpAttach(ctx context.Context, cc clientConn, who *typev1.Princ
 				// An empty message carries nothing; ignore it so a
 				// newer client field never breaks an older hub.
 			}
+		case <-sentCh:
+			// Output reached the transport: the session is producing,
+			// not sitting idle, even before the client acks it.
+			lastActivity = time.Now()
 		case now := <-ticker.C:
 			if b.Generation() != gen {
 				return nil
@@ -184,7 +198,7 @@ func validAttachSelect(sel *hubv1.AttachSelect) bool {
 		return false
 	}
 	if w := sel.GetWindow(); w != nil {
-		return w.GetWindowId() != ""
+		return w.GetServer() != "" && w.GetServerStartId() != "" && w.GetWindowId() != ""
 	}
 	if p := sel.GetPane(); p != nil {
 		return p.GetServer() != "" && p.GetServerStartId() != "" && p.GetPaneId() != ""
