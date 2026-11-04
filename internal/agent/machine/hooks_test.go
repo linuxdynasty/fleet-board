@@ -93,3 +93,28 @@ func TestHeartbeatHookSetsLoad1OnlyFromAFreshSample(t *testing.T) {
 		t.Fatalf("load1 = %v after a failed load reading, want unset", hb.GetLoad1())
 	}
 }
+
+// TestHeartbeatHookReportsOpenAttaches: the attach seam lands in the
+// heartbeat; a nil seam reads 0.
+func TestHeartbeatHookReportsOpenAttaches(t *testing.T) {
+	t.Parallel()
+	h := hooksFor(t, one(t, machine.SamplerOptions{StateDir: "/state", Readers: good()}))
+	h.OpenAttaches = func() int { return 3 }
+	hb := &agentv1.Heartbeat{}
+	h.Heartbeat(context.Background(), hb)
+	if hb.GetOpenAttaches() != 3 {
+		t.Fatalf("open_attaches = %d, want 3", hb.GetOpenAttaches())
+	}
+	h.OpenAttaches = nil
+	hb = &agentv1.Heartbeat{}
+	h.Heartbeat(context.Background(), hb)
+	if hb.GetOpenAttaches() != 0 {
+		t.Fatalf("open_attaches = %d without a seam, want 0", hb.GetOpenAttaches())
+	}
+	h.OpenAttaches = func() int { return -1 }
+	hb = &agentv1.Heartbeat{}
+	h.Heartbeat(context.Background(), hb)
+	if hb.GetOpenAttaches() != 0 {
+		t.Fatalf("open_attaches = %d for a negative count, want 0", hb.GetOpenAttaches())
+	}
+}
