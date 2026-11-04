@@ -19,12 +19,14 @@ type Hooks struct {
 	// memory (the Heartbeat hook runs on the sending goroutine and must not
 	// wait). A nil seam reads 0, which is true while nothing produces it.
 	// Unacked is ring.DB.UnackedCount, Reconnects is conn.Loop.Reconnects,
-	// Refused is the executor's refusal count (row 6e) and ControlDown is the
-	// number of tmux servers whose control connection is down (row 7).
-	Unacked     func() int
-	Reconnects  func() uint64
-	Refused     func() uint64
-	ControlDown func() uint32
+	// Refused is the executor's refusal count (row 6e), ControlDown is the
+	// number of tmux servers whose control connection is down (row 7), and
+	// OpenAttaches is the attach manager's live count (01f J1).
+	Unacked      func() int
+	Reconnects   func() uint64
+	Refused      func() uint64
+	ControlDown  func() uint32
+	OpenAttaches func() int
 }
 
 // Snapshot adds the B1 facts and the latest B2 sample to a Snapshot under
@@ -74,5 +76,8 @@ func (h Hooks) Heartbeat(_ context.Context, hb *agentv1.Heartbeat) {
 	}
 	if h.ControlDown != nil {
 		health.TmuxControlDown = h.ControlDown()
+	}
+	if h.OpenAttaches != nil {
+		hb.OpenAttaches = uint32(min(max(h.OpenAttaches(), 0), math.MaxUint32))
 	}
 }

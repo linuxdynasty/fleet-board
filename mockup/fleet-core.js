@@ -9,7 +9,7 @@ const mById = id => machines.find(m => m.id === id);
 const sById = id => sessions.find(s => s.id === id);
 const pById = id => permissions.find(p => p.id === id);
 const cById = id => conditions.find(c => c.id === id);
-const harnessColor = { claude: "var(--accent)", codex: "var(--ok)", muse: "var(--warn)", opencode: "var(--fg)", shell: "var(--idle)" };
+const harnessColor = { claude: "var(--accent)", codex: "var(--ok)", muse: "var(--warn)", cursor: "var(--muted)", opencode: "var(--fg)", shell: "var(--idle)" };
 const agentChip = h => `<span class="agent" style="color:${harnessColor[h] ?? "var(--fg)"}">${esc(h)}</span>`;
 const provChip = p => p ? `<span class="prov ${esc(p)}" title="${esc(PROVIDER[p] ?? p)}">${esc(PROVIDER[p] ?? p)}</span>` : "";
 const where = s => `${mById(s.m).short} ${s.target}`;

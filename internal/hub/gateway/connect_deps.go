@@ -18,7 +18,9 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	agentv1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/agent/v1"
+	typev1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/type/v1"
 	"github.com/linuxdynasty/fleet-board/internal/buildinfo"
+	"github.com/linuxdynasty/fleet-board/internal/hub/attach"
 	"github.com/linuxdynasty/fleet-board/internal/hub/ingest"
 	"github.com/linuxdynasty/fleet-board/internal/hub/outbox"
 	"github.com/linuxdynasty/fleet-board/internal/hub/statedb"
@@ -80,6 +82,10 @@ type connectDeps struct {
 	// sender runs until stopping ends and closes outboxDone.
 	outbox     *outbox.Service
 	outboxDone chan struct{}
+	// attach is the ticket and bridge registry terminal attach shares
+	// with the FleetService handlers (J1): one fleetd process, one
+	// registry. Nil builds an idle one on the hub clock.
+	attach *attach.Registry
 }
 
 type connectMetrics struct {
@@ -136,13 +142,17 @@ func newConnectDeps(opts ServerOptions) (*connectDeps, error) {
 		now = time.Now
 	}
 	stopping, stop := context.WithCancel(context.Background())
+	att := opts.Attach
+	if att == nil {
+		att = attach.New(now, nil)
+	}
 	return &connectDeps{
 		afterHeartbeat: opts.afterHeartbeat, beforeRowClose: opts.beforeRowClose, started: now().UTC(), skew: newSkews(), sm: sm,
 		snap: snap, appliers: slices.Clone(opts.Appliers), onApplied: opts.OnSnapshotApplied, beforeSnapshot: opts.beforeSnapshot,
 		beforeMark: opts.beforeMark,
 		ev:         ev, eventAppliers: slices.Clone(opts.EventAppliers), acker: acker, lost: newLossLimit(),
 		stopping: stopping, stop: stop, outboxDone: make(chan struct{}),
-		streams: newRegistry(), limit: newHelloLimit(), revoked: opts.Revoked,
+		streams: newRegistry(), limit: newHelloLimit(), revoked: opts.Revoked, attach: att,
 		tracer: opts.Telemetry.Tracer(scope), instanceID: hex.EncodeToString(b[:]), version: buildinfo.Version,
 		helloWait: cmp.Or(opts.HelloWait, HelloWait), afterHello: opts.afterHello, afterRegister: opts.afterRegister, arms: withArms(arms, opts.arms), m: cm,
 	}, nil
@@ -156,11 +166,13 @@ func withArms(product, extra armTable) armTable {
 }
 
 // beginShutdown is the shutdown hook (http.Server.RegisterOnShutdown):
-// streams waiting for a Hello or a Hello job stop waiting, and every live
-// stream ends with Bye{HUB_RESTART}.
+// streams waiting for a Hello or a Hello job stop waiting, every live
+// stream ends with Bye{HUB_RESTART}, and every attach bridge closes
+// HUB_CLOSED so no browser hangs on a dying hub.
 func (d *connectDeps) beginShutdown() {
 	d.stop()
 	d.streams.byeAll()
+	d.attach.CloseAll(typev1.AttachCloseReason_ATTACH_CLOSE_REASON_HUB_CLOSED)
 }
 
 // endedBeforeHello logs reconnect.closed for a stream with a certificate

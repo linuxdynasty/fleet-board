@@ -22,6 +22,7 @@ import (
 	hubv1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/hub/v1"
 	"github.com/linuxdynasty/fleet-board/gen/go/fleet/hub/v1/hubv1connect"
 	typev1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/type/v1"
+	"github.com/linuxdynasty/fleet-board/internal/hub/attach"
 	"github.com/linuxdynasty/fleet-board/internal/hub/ca"
 	"github.com/linuxdynasty/fleet-board/internal/hub/outbox"
 	"github.com/linuxdynasty/fleet-board/internal/hub/statedb"
@@ -88,6 +89,20 @@ type FleetOptions struct {
 	// means the defaults.md value. Tests set a short one to read
 	// checkpoints without waiting out the production interval.
 	WatchCheckpoint time.Duration
+	// MachineLive reports whether a machine holds a live agent stream;
+	// nil treats every machine as offline. The daemon wires the agent
+	// gateway's registry; tests pass a stub.
+	MachineLive func(machineID string) bool
+	// AttachReadyWait bounds the wait for the agent's TermReady after an
+	// open; AttachCloseWait bounds the wait for its TermUp closed after
+	// a client detach. Zero means the documented defaults. Tests set
+	// short ones to fail an opening attach fast.
+	AttachReadyWait time.Duration
+	AttachCloseWait time.Duration
+	// Attach is the ticket and bridge registry terminal attach shares
+	// with the agent gateway (J1). Nil builds an idle one on the
+	// Fleet clock; the daemon passes the shared registry.
+	Attach *attach.Registry
 	// MaxSyncLag is timing.max_sync_lag (how far behind the provider the
 	// mirror may be before dispatch treats claims as stale); zero means
 	// the documented 10-minute default. The daemon passes the configured
@@ -160,6 +175,18 @@ type Fleet struct {
 	// goalMoves counts recorded goal transitions by endpoints (03l).
 	dispatches metric.Int64Counter
 	goalMoves  metric.Int64Counter
+	// attachTickets counts CreateAttachTicket calls by result; attaches
+	// counts AttachTerminal sessions by result and close reason (J1).
+	attachTickets metric.Int64Counter
+	attaches      metric.Int64Counter
+	// attach is the ticket and bridge registry shared with the agent
+	// gateway (J1): one fleetd process, one registry.
+	attach *attach.Registry
+	// machineLive reports whether a machine holds a live agent stream.
+	machineLive func(machineID string) bool
+	// attachReadyWait bounds the wait for TermReady; attachCloseWait
+	// bounds the wait for TermUp closed after a client detach.
+	attachReadyWait, attachCloseWait time.Duration
 	// schedPasses times auto-dispatch passes and schedSkips counts what
 	// each pass skipped by reason (03c "Telemetry").
 	schedPasses metric.Float64Histogram
@@ -201,6 +228,19 @@ func NewFleet(opts FleetOptions) (*Fleet, error) {
 	f.started = f.now()
 	if f.random == nil {
 		f.random = rand.Reader
+	}
+	f.attach = opts.Attach
+	if f.attach == nil {
+		f.attach = attach.New(f.now, f.random)
+	}
+	f.machineLive = opts.MachineLive
+	f.attachReadyWait = opts.AttachReadyWait
+	if f.attachReadyWait <= 0 {
+		f.attachReadyWait = defaultAttachReadyWait
+	}
+	f.attachCloseWait = opts.AttachCloseWait
+	if f.attachCloseWait <= 0 {
+		f.attachCloseWait = defaultAttachCloseWait
 	}
 	f.diskFree = opts.DiskFree
 	if f.diskFree == nil {
@@ -285,6 +325,16 @@ func NewFleet(opts FleetOptions) (*Fleet, error) {
 	if err != nil {
 		return nil, fmt.Errorf("api: goal transition counter: %w", err)
 	}
+	f.attachTickets, err = f.tel.Meter(scope).Int64Counter(f.tel.MetricPrefix()+"_attach_tickets_total",
+		metric.WithDescription("CreateAttachTicket calls by result: issued, delivered, conflict, refused or failed."))
+	if err != nil {
+		return nil, fmt.Errorf("api: attach ticket counter: %w", err)
+	}
+	f.attaches, err = f.tel.Meter(scope).Int64Counter(f.tel.MetricPrefix()+"_attaches_total",
+		metric.WithDescription("AttachTerminal sessions by result and close reason: opened, refused, failed or closed."))
+	if err != nil {
+		return nil, fmt.Errorf("api: attach counter: %w", err)
+	}
 	f.maxLag = opts.MaxSyncLag
 	f.hubHostname = opts.HubHostname
 	f.workItems, err = f.tel.Meter(scope).Int64ObservableGauge(f.tel.MetricPrefix()+"_work_items",
@@ -328,9 +378,19 @@ func workItemStageCounts(ctx context.Context, s *store.Store) []statedb.WorkItem
 	return counts
 }
 
-// Handler is the Connect route of the service, for a mux.
+// Handler is the Connect route of the service, for a mux. A browser
+// attach arrives as a WebSocket upgrade on the AttachTerminal procedure
+// and is served by the attach handshake; every other upgrade-less call,
+// including a CLI's AttachTerminal over HTTP/2, goes to Connect.
 func (f *Fleet) Handler() (string, http.Handler) {
-	return hubv1connect.NewFleetServiceHandler(f, connect.WithReadMaxBytes(MaxMessageBytes))
+	path, h := hubv1connect.NewFleetServiceHandler(f, connect.WithReadMaxBytes(MaxMessageBytes))
+	return path, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if isAttachWSUpgrade(r) {
+			f.serveAttachWS(w, r)
+			return
+		}
+		h.ServeHTTP(w, r)
+	})
 }
 
 // CreateEnrollmentToken mints an `fbe1_` token for the stored CA and stores

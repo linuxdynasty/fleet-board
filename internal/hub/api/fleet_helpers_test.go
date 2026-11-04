@@ -21,6 +21,7 @@ import (
 	"github.com/linuxdynasty/fleet-board/gen/go/fleet/hub/v1/hubv1connect"
 	typev1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/type/v1"
 	"github.com/linuxdynasty/fleet-board/internal/hub/api"
+	"github.com/linuxdynasty/fleet-board/internal/hub/attach"
 	"github.com/linuxdynasty/fleet-board/internal/hub/ca"
 	"github.com/linuxdynasty/fleet-board/internal/hub/outbox"
 	"github.com/linuxdynasty/fleet-board/internal/hub/secret"
@@ -77,6 +78,8 @@ type fleetEnv struct {
 	fleet   *api.Fleet
 	client  hubv1connect.FleetServiceClient
 	sysLoop *system.Loop
+	// wsURL is the test server's WebSocket origin (ws:// or wss:// host).
+	wsURL string
 }
 
 func localUser(name string) *typev1.Principal {
@@ -97,7 +100,37 @@ type envOpt struct {
 	instanceID   string
 	watchLogCap  int
 	checkpoint   time.Duration
+	// attachReg, when set, is the ticket and bridge registry the test
+	// Fleet shares, so the test can play the agent's side of a bridge
+	// (TermReady, output, TermDowns) through it.
+	attachReg *attach.Registry
+	// machineLive, when set, decides MachineLive for attach opens.
+	machineLive func(string) bool
+	// h2 serves the test hub over TLS with HTTP/2, so bidi streams
+	// (AttachTerminal) open like a CLI's.
+	h2 bool
+	// readyWait shortens the wait for the agent's TermReady.
+	readyWait time.Duration
+	// closeWait shortens the wait for the agent's TermUp closed. Tests
+	// with no agent sim always elapse it fully.
+	closeWait time.Duration
 }
+
+// withAttach shares reg with the test hub: the test drives the agent
+// side of each attach through it.
+func withAttach(reg *attach.Registry) envOpt { return envOpt{attachReg: reg} }
+
+// withMachineLive stubs which machines hold a live agent stream.
+func withMachineLive(fn func(string) bool) envOpt { return envOpt{machineLive: fn} }
+
+// withH2 serves the test hub over TLS HTTP/2 for bidi streams.
+func withH2() envOpt { return envOpt{h2: true} }
+
+// withAttachReadyWait shortens the TermReady wait.
+func withAttachReadyWait(d time.Duration) envOpt { return envOpt{readyWait: d} }
+
+// withAttachCloseWait shortens the TermUp closed wait.
+func withAttachCloseWait(d time.Duration) envOpt { return envOpt{closeWait: d} }
 
 // withInstanceID runs the test hub under another hub_instance_id, so a
 // resume token from elsewhere reads HUB_RESTARTED.
@@ -166,6 +199,10 @@ func newFleetEnv(t *testing.T, who *typev1.Principal, opts ...envOpt) *fleetEnv 
 	var onQueued func(outbox.Op)
 	watchLogCap := 0
 	var checkpoint time.Duration
+	var attachReg *attach.Registry
+	var machineLive func(string) bool
+	h2 := false
+	var readyWait, closeWait time.Duration
 	for _, o := range opts {
 		if o.now != nil {
 			now = o.now
@@ -187,6 +224,21 @@ func newFleetEnv(t *testing.T, who *typev1.Principal, opts ...envOpt) *fleetEnv 
 		}
 		if o.checkpoint != 0 {
 			checkpoint = o.checkpoint
+		}
+		if o.attachReg != nil {
+			attachReg = o.attachReg
+		}
+		if o.machineLive != nil {
+			machineLive = o.machineLive
+		}
+		if o.h2 {
+			h2 = true
+		}
+		if o.readyWait != 0 {
+			readyWait = o.readyWait
+		}
+		if o.closeWait != 0 {
+			closeWait = o.closeWait
 		}
 	}
 	if err := statedb.EnsureDir(e.dir); err != nil {
@@ -225,7 +277,8 @@ func newFleetEnv(t *testing.T, who *typev1.Principal, opts ...envOpt) *fleetEnv 
 		Store: e.st, CACert: e.caDER, Telemetry: e.tel, Now: now,
 		StateDir: e.dir, LocalTrusted: local, HubInstanceID: instanceID,
 		SystemLoop: sysLoop, OnCommandQueued: onQueued, WatchLogCap: watchLogCap,
-		WatchCheckpoint: checkpoint,
+		WatchCheckpoint: checkpoint, Attach: attachReg, MachineLive: machineLive,
+		AttachReadyWait: readyWait, AttachCloseWait: closeWait,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -239,9 +292,19 @@ func newFleetEnv(t *testing.T, who *typev1.Principal, opts ...envOpt) *fleetEnv 
 		}
 		h.ServeHTTP(w, r)
 	}))
+	if h2 {
+		unstarted := httptest.NewUnstartedServer(mux)
+		unstarted.EnableHTTP2 = true
+		unstarted.StartTLS()
+		t.Cleanup(unstarted.Close)
+		e.client = hubv1connect.NewFleetServiceClient(unstarted.Client(), unstarted.URL)
+		e.wsURL = "wss://" + strings.TrimPrefix(unstarted.URL, "https://")
+		return e
+	}
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	e.client = hubv1connect.NewFleetServiceClient(srv.Client(), srv.URL)
+	e.wsURL = "ws://" + strings.TrimPrefix(srv.URL, "http://")
 	return e
 }
 

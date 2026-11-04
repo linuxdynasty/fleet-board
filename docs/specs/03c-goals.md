@@ -213,10 +213,18 @@ keeps it generic — learnings from eshu and this project rebuilt for any
 repo, no eshu-specific paths or assumptions. Row 22 no longer gates the
 first `StartGoal` in such a repo.
 
-When the checkout does not ship eshu's hooks, the hub builds
+When the repo does not ship eshu's hooks, the hub builds
 `GoalSpec.goal_text` from this template (`<...>` is filled per goal; the
 consent list is rendered by the adapter as in "Consent form" above, never
-typed by the hub):
+typed by the hub). "No hooks" is the watched repo's `hooks_mode`
+(`repo.proto`): every convention except `ESHU` reads hook-less. An empty
+`GoalSpecInput.goal_text` on a hook-less repo fills from this template
+(the work item must be an issue with a numeric key; #423); an empty text
+on an `ESHU` repo is still refused, and an explicit text is never
+rewritten. Snapshot `GoalHooksState` presence is not consulted: a
+reported empty state and a never-reported repo read the same at dispatch
+time, while `hooks_mode` is durable and already in the dispatch
+transaction.
 
 > Work issue <owner/repo#n> on branch <branch>: <one-line summary>.
 > Your goal file is `.fleet-board/goal-<goal_id>` at the top of this checkout.

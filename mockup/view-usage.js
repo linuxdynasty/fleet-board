@@ -4,11 +4,11 @@
 function renderUsageView() {
   $("view").innerHTML = `
     <section class="waste" aria-label="Is any subscription going to waste?">
-      <div class="section-head"><h2>Will any subscription go to waste?</h2><span class="hint">Projected from this week's burn rate so far. Your reserve is not counted as waste.</span></div>
+      <div class="section-head"><h2>Will any subscription go to waste?</h2><span class="hint">Projected from the burn rate so far in each account's window. Your reserve is not counted as waste.</span></div>
       <ul class="waste-list">${accounts.map(wasteItem).join("")}${apiAccounts.map(spendItem).join("")}</ul>
     </section>
 
-    <div class="section-head"><h2>Accounts · this week</h2><span class="hint">Shared by every machine signed in. Dashed line = even pace down to your reserve. The table is the tool's own screen.</span></div>
+    <div class="section-head"><h2>Accounts · current period</h2><span class="hint">Shared by every machine signed in. Dashed line = even pace down to your reserve. The table is the tool's own screen.</span></div>
     <div class="caps">${accounts.map(burnCard).join("")}${apiAccounts.map(capCard).join("")}<div class="cap add"><div class="cap-name">OpenCode</div>
       <div class="win empty">A router, not an account: each session spends from the provider of its model (Anthropic, OpenAI, Google and Copilot by sign-in; DeepSeek and Moonshot by API key). Never started on an Anthropic subscription automatically. No usage screen and no /goal yet.</div></div></div>`;
 }

@@ -15,6 +15,7 @@ const outcomes = [
   { harness: "claude", ran: 21, merged: 17, cleared: 4, cancelled: 2, neverRan: 1, stuck: 5, p50: 2.4, p90: 6.1, nudges: 31, restarts: 6, reviews: 29, pts: 112, ptsUnmerged: 14 },
   { harness: "codex", ran: 24, merged: 21, cleared: 3, cancelled: 1, neverRan: 4, stuck: 4, p50: 1.7, p90: 4.2, nudges: 19, restarts: 3, reviews: 22, pts: 96, ptsUnmerged: 9 },
   { harness: "muse", ran: 7, merged: 5, cleared: 2, cancelled: 0, neverRan: 0, stuck: 2, p50: 3.4, p90: 7.8, nudges: 12, restarts: 2, reviews: 9, pts: 21, ptsUnmerged: 6 },
+  { harness: "cursor", ran: 4, merged: 3, cleared: 1, cancelled: 0, neverRan: 0, stuck: 1, p50: 2.9, p90: 5.2, nudges: 5, restarts: 1, reviews: 4, pts: 9, ptsUnmerged: 2 },
   { harness: "opencode", ran: 3, merged: 2, cleared: 1, cancelled: 0, neverRan: 0, stuck: 1, p50: 4.0, p90: 4.0, nudges: 4, restarts: 0, reviews: 3, pts: 0, ptsUnmerged: 0 },
 ];
 

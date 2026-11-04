@@ -87,10 +87,18 @@ func localServer(tel *telemetry.Telemetry, listener string, port int, mux *http.
 		next: admit, tel: tel, hosts: allowed(port, ""),
 		origins: allowed(port, "http://"), errors: errs,
 	}
+	// h2c alongside HTTP/1.1: the dashboard's WebSocket upgrade rides h1
+	// while a CLI's AttachTerminal bidi stream needs HTTP/2 (Connect and
+	// gRPC bidi have no h1 mapping). h2c falls back to h1 for clients
+	// without prior knowledge, so unary calls are unchanged.
+	protocols := new(http.Protocols)
+	protocols.SetHTTP1(true)
+	protocols.SetUnencryptedHTTP2(true)
 	return &http.Server{
 		Handler: h, ReadHeaderTimeout: ReadHeaderTimeout,
 		MaxHeaderBytes: 1 << 20, // bounds raw Cookie scanning without treating unrelated cookies as credentials
 		IdleTimeout:    IdleTimeout, ErrorLog: tel.HTTPErrorLog(listener),
+		Protocols: protocols,
 	}
 }
 

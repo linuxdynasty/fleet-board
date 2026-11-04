@@ -379,6 +379,9 @@ attacker's page cannot read) holds one.
 then succeeds. The agent opens the `Terminal` stream (the agent is the client of every RPC)
 and the hub pairs it with the WebSocket by `attach_id`. The view session is grouped
 (`new-session -t`), so the browser switching windows never moves the developer's own window.
+One fleetd process holds one shared ticket and bridge registry. On revoke the hub ends the
+machine's attaches `HUB_CLOSED` before the stream cut lands, so the browser sees the close
+reason instead of a dead socket.
 
 ```mermaid
 sequenceDiagram

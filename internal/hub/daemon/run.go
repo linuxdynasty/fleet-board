@@ -16,12 +16,8 @@ import (
 	"github.com/linuxdynasty/fleet-board/internal/hub/config"
 	"github.com/linuxdynasty/fleet-board/internal/hub/discovery"
 	"github.com/linuxdynasty/fleet-board/internal/hub/gateway"
-	"github.com/linuxdynasty/fleet-board/internal/hub/hookreconcile"
 	"github.com/linuxdynasty/fleet-board/internal/hub/housekeeping"
-	"github.com/linuxdynasty/fleet-board/internal/hub/ingest"
 	"github.com/linuxdynasty/fleet-board/internal/hub/lock"
-	"github.com/linuxdynasty/fleet-board/internal/hub/observed"
-	"github.com/linuxdynasty/fleet-board/internal/hub/outbox"
 	"github.com/linuxdynasty/fleet-board/internal/hub/revocation"
 	"github.com/linuxdynasty/fleet-board/internal/hub/rollup"
 	"github.com/linuxdynasty/fleet-board/internal/hub/statedb"
@@ -398,26 +394,7 @@ func bind(ctx context.Context, cfg *config.Config, opts Options, d hubDeps, sysL
 	if opts.Now != nil {
 		now = opts.Now
 	}
-	agent, err := gateway.NewServer(gateway.ServerOptions{
-		Certs: d.certs, Store: d.st, Identity: d.id, Revoked: d.revoked, Telemetry: s.tel, Now: opts.Now,
-		Appliers:      []ingest.Applier{observed.Applier{Now: now}, hookreconcile.Applier{Now: now, Expected: hookreconcile.ExpectedVersions()}},
-		EventAppliers: []ingest.EventApplier{observed.Applier{Now: now}},
-	})
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	fleet, err := api.NewFleet(api.FleetOptions{
-		Store: d.st, CACert: d.id.CACert, Telemetry: s.tel, Now: opts.Now,
-		StateDir: cfg.StateDir, LocalTrusted: cfg.Mode == "local_trusted",
-		Revoker: d.revoked, ByeMachine: agent.ByeMachine, OnCommandsClosed: agent.Outbox().Closed,
-		OnCommandQueued: func(op outbox.Op) { agent.Outbox().Notify(op) },
-		HubInstanceID:   agent.InstanceID(), SystemLoop: sysLoop,
-		HubHostname: d.hostname,
-	})
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	quotas, err := api.NewQuotas(cfg.RateLimits, s.tel, opts.Now)
+	agent, fleet, quotas, err := services(now, cfg, opts, d, sysLoop, s)
 	if err != nil {
 		return nil, nil, nil, err
 	}
