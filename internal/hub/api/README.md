@@ -227,8 +227,8 @@ evaluation loop lands; the open triage item, `hub_start_time`, exporters and
 `watch_subscribers` stay unset until their slice.
 
 `CreateEnrollmentToken` needs `ADMIN` (02d) and the local approval secret.
-A missing caller is `UNAUTHENTICATED`/`CREDENTIALS_INVALID`; a caller without
-scope is `PERMISSION_DENIED`/`SCOPE_MISSING`. Then, in 02b's order:
+A missing caller is `UNAUTHENTICATED`/`CREDENTIALS_INVALID`; a caller without scope is
+`PERMISSION_DENIED`/`SCOPE_MISSING`. Then, in 02b's order:
 
 | Check | Refusal |
 |---|---|
@@ -284,9 +284,8 @@ Signals: `fleet_hub_repo_writes_total{op, outcome}` (`ok`, `replayed`,
 `actor`) and `repo.write_failed` (`step` `encode`/`decode`/`store`,
 `err_kind`, `op`, `actor`).
 
-`UpdateMachine` needs `SETTINGS`; `RevokeMachine` and `DeleteMachine` need `ADMIN` (02d). All three need the local approval secret. Then, in
-02b's order, the caller, the local approval secret in `local_trusted`
-mode, the fields, and the `request_id` replay inside the writer
+`UpdateMachine` needs `SETTINGS`; `RevokeMachine` and `DeleteMachine` need `ADMIN` (02d). All three need the local approval secret. Then, in 02b's order,
+the caller, the local approval secret in `local_trusted` mode, the fields, and the `request_id` replay inside the writer
 transaction (same principal, id, body and RPC kind replays the stored
 response for 24 h; anything else under the key is `REQUEST_ID_CONFLICT`).
 
@@ -298,6 +297,8 @@ response for 24 h; anything else under the key is `REQUEST_ID_CONFLICT`).
 | `DeleteMachine` on a machine that is not `REVOKED` | `FAILED_PRECONDITION` / `MACHINE_NOT_REVOKED` |
 
 `EnsureMachineHooks` needs `SETTINGS` plus the local approval secret: it fans out to one `EnsureGoalHooks` per (harness, enabled repo), replayed per command and audited as `machine.ensure_hooks`; live goals and ESHU repos guard.
+
+`StartGoal` and `PreflightGoal` fill an empty `goal_text` from the approved default text (03c) on repos whose hooks mode is not ESHU, so the stored definition and the agent spec carry the same text. An explicit text is never rewritten; an empty text on an ESHU repo, a non-issue work item, or a key with no issue number stays refused (`INVALID_ARGUMENT`).
 
 `RevokeMachine` decides replay, refusal or commit on the read pool
 (`statedb.PrecheckRevoke`) before staging any serial, so a retried or
@@ -347,8 +348,7 @@ the log lines `config.exported` (`repos`, `accounts`, `integrations`,
 `config.export_failed` (`step`, `err_kind`).
 
 `ListTriageItems` and `GetTriageItem` need `READ|APPROVALS` (02d).
-The store holds the hub-state items the raise
-path wrote: `ListTriageItems` serves the 02c TriageItem filter
+The store holds the hub-state items the raise path wrote: `ListTriageItems` serves the 02c TriageItem filter
 (`id`, `state`, `kind`, `severity` with `>=`, `machine`, `session`,
 `goal`, `account`, `create_time`, `update_time`); `order_by` takes
 `severity` and `ct` and defaults to most severe first, then oldest
@@ -367,8 +367,7 @@ read time and `received_time` breaks equal-time ties; readings have no
 `id`, `create_time` or `update_time`.
 
 `ListIntegrations` needs `READ` (02d). The store holds the configured
-integrations the `github:`
-keys of fleetd.yaml created (no `CreateIntegration` call):
+integrations the `github:` keys of fleetd.yaml created (no `CreateIntegration` call):
 `ListIntegrations` serves the 02c Integration filter (`id`, `health`,
 `provider`, `create_time`, `update_time`); `order_by` takes `name`
 (the id) and `ct` and defaults to `name`; pages are 50 by default, 500
@@ -377,8 +376,7 @@ is the boot ensure and `update_time` the last spec or status write, so
 it moves on every sync round; the `status` is the syncer's passthrough
 and stays empty until the sync loop reports.
 
-`GetSettings` and `ListSettings` need `READ` (02d). The store holds one row
-per settings layer
+`GetSettings` and `ListSettings` need `READ` (02d). The store holds one row per settings layer
 the owner wrote (`settings_layers`): the `fleet` defaults with the
 hub's own choices, and each machine's layer the import or the enroll
 stored (no `group/` row exists until the group management row lands).
