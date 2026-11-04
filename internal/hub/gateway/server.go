@@ -14,6 +14,7 @@ import (
 
 	agentv1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/agent/v1"
 	"github.com/linuxdynasty/fleet-board/gen/go/fleet/agent/v1/agentv1connect"
+	"github.com/linuxdynasty/fleet-board/internal/hub/attach"
 	"github.com/linuxdynasty/fleet-board/internal/hub/ingest"
 	"github.com/linuxdynasty/fleet-board/internal/hub/outbox"
 	"github.com/linuxdynasty/fleet-board/internal/hub/statedb"
@@ -86,6 +87,11 @@ type ServerOptions struct {
 	// beforeMark, set only by tests, runs in housekeeping after it judged a
 	// machine and before its MarkState job.
 	beforeMark func(machineID string)
+	// Attach is the ticket and bridge registry terminal attach shares
+	// with the FleetService handlers (J1): one fleetd process, one
+	// registry. Nil builds an idle one on the hub clock; the daemon
+	// passes the shared registry.
+	Attach *attach.Registry
 }
 
 // NewServer is the agent listener (listen.agent): TLS 1.3 only, the
@@ -93,8 +99,8 @@ type ServerOptions struct {
 // optional client certificate that must chain to the hub CA with client-auth
 // usage and whose serial is not in Revoked, checked on fresh and resumed
 // handshakes. It serves AgentService with requests capped at
-// [MaxMessageBytes]: Enroll, RenewCert and Connect; Terminal and
-// SessionLog answer Unimplemented until their rows land. Shutdown sends
+// [MaxMessageBytes]: Enroll, RenewCert, Connect and Terminal; SessionLog
+// answers Unimplemented until its row lands. Shutdown sends
 // Bye{HUB_RESTART} on every live Connect stream. Start it with ServeTLS(ln, "", ""), which also offers HTTP/2 for
 // gRPC. net/http's own error lines (a failed handshake, a handler panic) go
 // to Telemetry as http.server_error events, never to stderr. To stop it,
@@ -170,6 +176,13 @@ type Server struct {
 // own teardown closes the connection row with EndRevoked.
 func (s *Server) ByeMachine(machineID string) bool {
 	return s.connect.streams.cancel(machineID, agentv1.ByeReason_BYE_REASON_REVOKED, statedb.EndRevoked)
+}
+
+// Live reports whether the machine holds a live Connect stream: the
+// daemon wires it to the FleetService MachineLive check, so an attach
+// open to an offline agent refuses fast instead of hanging.
+func (s *Server) Live(machineID string) bool {
+	return s.connect.streams.get(machineID) != nil
 }
 
 // SetWatchSink wires committed gateway changes to Watch subscribers (the

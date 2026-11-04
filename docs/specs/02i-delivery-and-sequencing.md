@@ -401,6 +401,18 @@ every machine ([03f](03f-hub-internals.md#the-command-path)). A result that arri
 already closed (expired, or closed by a revoke) is answered with `ResultAck`, so the agent
 stops re-sending it, stored nowhere, and logged `outbox.late_result`.
 
+## The Terminal stream
+
+Terminal attach rides a bidi `Terminal` stream outside the command lifecycle:
+the agent dials one per open attach on the Connected session, and the stream
+hangs off the session's context, so it dies with the session and never
+outlives it — the next session publishes its own opener, and an open on a dead
+session is refused instead of dialing. The hub checks the agent's
+identity from its client certificate exactly like `Connect`, then pairs the
+stream with the browser's `AttachTerminal` by `attach_id` (02f). Output flows
+under HTTP/2 flow control with the 256 KiB unacked cap; the close handshake is
+`CloseAttach`/`DETACHED` or the stream dying first.
+
 ## Clocks
 
 Time is the hub's. An agent's clock is used to say when something happened on

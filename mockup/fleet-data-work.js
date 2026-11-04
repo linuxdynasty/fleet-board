@@ -59,6 +59,8 @@ const sessions = [
     line: "Drive eshu-hq/eshu#7398 to merged", last: ago(60), started: ago(62 * 60), perm: "p2",
     pane: [["", "> Bash: git fetch https://x-access-token:$(gh auth token)@github.com/eshu-hq/eshu"], ["", ""], ["bad", " Allow this command?"], ["", " ❯ 1. Allow once"], ["", "   2. Allow for this session"], ["", "   3. Deny"]] },
   { id: "s5", m: "mbp", harness: "shell", yours: true, sess: "main", idx: 0, win: "zsh", paneId: "%5", repo: "", line: null, last: ago(120), started: ago(86400), pane: [["dim", "dev@mbp ~/repos/fleet-board %"]] },
+  { id: "s12", m: "mbp", harness: "cursor", yours: true, sess: "main", idx: 1, win: "cursor", paneId: "%33", repo: "eshu-hq/eshu", line: null, last: ago(3 * 3600), started: ago(8 * 3600), idle: true, available: false,
+    pane: [["dim", "cursor-agent 2026.10.01 · ~/repos/eshu"], ["", ""], ["", "→ Plan, search, build anything"], ["dim", "  idle 3h · no goal · not marked available"]] },
   // mac-mini: fleet session + "dev"
   { id: "g6", m: "mini", harness: "codex", sess: "fleet", idx: 0, win: "codex eshu#7411", paneId: "%41", repo: "eshu-hq/eshu", provider: "github", issue: null, pr: 7411, display: "eshu#7411", branch: "codex-agent-spawn-guard",
     line: "BLOCKED: waiting for review on #7411 WATCH=9120", watchAlive: true, last: ago(18 * 60), started: ago(6 * 3600),

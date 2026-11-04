@@ -2,8 +2,10 @@ package api
 
 import (
 	"context"
+	"strconv"
 	"time"
 
+	"connectrpc.com/connect"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 	"google.golang.org/protobuf/types/known/durationpb"
@@ -11,6 +13,7 @@ import (
 	agentv1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/agent/v1"
 	hubv1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/hub/v1"
 	typev1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/type/v1"
+	"github.com/linuxdynasty/fleet-board/internal/hub/goals"
 )
 
 // Dispatch timeouts (02j "Timing", defaults.md): the hub never invents
@@ -93,6 +96,49 @@ func (f *Fleet) countGoalMove(ctx context.Context, from, to, reason string) {
 	f.goalMoves.Add(ctx, 1, metric.WithAttributes(
 		attribute.String("from", from), attribute.String("to", to),
 		attribute.String("reason", reason)))
+}
+
+// hooklessRepo reports whether the hub fills an empty goal_text for the
+// repo (issue #423): every hooks convention except ESHU ships no
+// repo-owned hooks, so the approved default stands in for the missing
+// objective. ESHU repos keep the hard requirement. Snapshot
+// GoalHooksState presence is deliberately not consulted: a reported
+// empty state (Present, nothing installed) and a never-reported repo
+// (absent) read the same at dispatch time, while the owner's hooks_mode
+// is durable and already in this transaction.
+func hooklessRepo(spec *hubv1.RepoSpec) bool {
+	return spec.GetHooksMode() != hubv1.RepoHooksMode_REPO_HOOKS_MODE_ESHU
+}
+
+// fillDefaultGoalText fills an empty goal text from the approved default
+// (03c "Default goal text") for a hook-less repo. The issue number comes
+// from the work item key, the branch from the already-rendered facts, so
+// the stored definition and the agent spec carry the same text. An
+// explicit text is never rewritten; an empty text on an ESHU repo, a
+// non-issue work item, or a key with no issue number stays refused, as
+// before.
+func (fx *dispatchFacts) fillDefaultGoalText(in *hubv1.GoalSpecInput, spec *hubv1.RepoSpec) error {
+	if fx.goalText != "" {
+		return nil
+	}
+	missing := func() error {
+		return apiError(connect.CodeInvalidArgument, typev1.ReasonCode_REASON_CODE_INVALID_ARGUMENT,
+			"input.goal_text is required; send DefaultGoalText for a repo without hooks", nil,
+			[]*typev1.FieldViolation{{Field: "input.goal_text", Description: "an objective is required"}})
+	}
+	if !hooklessRepo(spec) {
+		return missing()
+	}
+	if in.GetWorkItem().GetKind() != typev1.WorkItemKind_WORK_ITEM_KIND_ISSUE {
+		return missing()
+	}
+	n, err := strconv.ParseUint(in.GetWorkItem().GetKey(), 10, 64)
+	if err != nil {
+		return missing()
+	}
+	text, _ := goals.DefaultGoalText(in.GetRepo().GetPath(), n, fx.branch)
+	fx.goalText = text
+	return nil
 }
 
 // fillSpecFacts assembles the GoalSpec fields that only the assembler

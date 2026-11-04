@@ -26,7 +26,10 @@ import (
 // run 1 and transition 1, the work item to DISPATCHED, the StartGoal
 // command in the outbox, and the goal.start audit. The attempt chains
 // the work item's latest goal, so every retry is a new goal with
-// attempt + 1 and previous_goal set (03h "Attempts").
+// attempt + 1 and previous_goal set (03h "Attempts"). The definition and
+// the agent spec both carry the filled text (fx.goalText, #423), never
+// the raw input: the replay hash still covers the raw request, so an
+// identical retry reads back instead of dispatching twice.
 func (f *Fleet) insertDispatchTx(ctx context.Context, tx *sql.Tx, who *typev1.Principal,
 	m *hubv1.StartGoalRequest, fx *dispatchFacts, goalID string, now time.Time,
 ) (statedb.GoalRow, *hubv1.Operation, outbox.Op, error) {
@@ -129,9 +132,10 @@ func (f *Fleet) insertDispatchTx(ctx context.Context, tx *sql.Tx, who *typev1.Pr
 
 // dispatchGoalProto assembles the GoalDefinition and the STARTING
 // GoalStatus of one manual dispatch (02b: the definition is what was
-// decided, the status what the hub concluded). The status carries the
-// volatile goal-file fields unset: the agent reports them, the hub never
-// invents them.
+// decided, the status what the hub concluded). The definition carries
+// the filled goal text (fx.goalText, #423), so storage and the agent
+// spec agree. The status carries the volatile goal-file fields unset:
+// the agent reports them, the hub never invents them.
 func dispatchGoalProto(in *hubv1.GoalSpecInput, fx *dispatchFacts, goalID string,
 	attempt uint32, previous, actor string, now time.Time,
 ) (*hubv1.GoalDefinition, *hubv1.GoalStatus) {
@@ -150,7 +154,7 @@ func dispatchGoalProto(in *hubv1.GoalSpecInput, fx *dispatchFacts, goalID string
 		Model:          in.GetModel(),
 		Effort:         in.GetEffort(),
 		Consent:        fx.consent,
-		GoalText:       in.GetGoalText(),
+		GoalText:       fx.goalText,
 		DispatchReason: dispatchReasonOf(in, actor),
 		FreshContext:   in.GetFreshContext(),
 		Attempt:        attempt,

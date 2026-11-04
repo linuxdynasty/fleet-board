@@ -220,7 +220,10 @@ All pass local policy, carry a `command_id`, and are idempotent except F3.
 
 ## J. Terminal attach
 
-- **J1 Attach** from the browser to any session, existing or new. The browser
+- **J1 Attach** from the browser to any session the hub started, existing
+  or new. Developer-created tmux sessions are not routable yet: the hub
+  only knows session IDs it wrote to `hub_sessions` at session create, so
+  they read `SESSION_NOT_FOUND` until the session mirror lands. The browser
   terminal is a real tmux client (a PTY running `tmux attach`) on the
   developer's own server, so their prefix key and bindings work unchanged:
   `prefix n`/`p`/`1–9` to switch windows, `prefix o` and arrows to switch
@@ -237,6 +240,13 @@ All pass local policy, carry a `command_id`, and are idempotent except F3.
   the plain `ssh -t <user>@<host> tmux attach -t <session>` line is shown for
   the developer's own terminal. Escape sequences that act on the viewer's
   machine (OSC 52 clipboard writes, hyperlinks) are stripped.
+- The view's self-destruct arms only after the client lands on it, so a slow
+  attach never meets an armed-but-empty view. Read-only is enforced twice:
+  the pump drops input and the client runs `-f read-only`. The window strip
+  forwards the developer's full prefix key, and the pumps read the PTY master
+  under lock while Close nils it, so teardown never races a read. The client
+  spawns with a capable terminal type (`xterm-256color` when the agent has
+  none), since without one it dies at once and the open burns the land wait.
 
 ## K. Session logs
 
