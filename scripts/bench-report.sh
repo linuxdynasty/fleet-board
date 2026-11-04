@@ -16,9 +16,10 @@
 #    go run) compares them; scripts/bench-review.py marks REVIEW rows.
 #
 # Exit 0 with the report, REVIEW rows or not. A base that will not build or run
-# is reported as missing (head only). Exit 1 when a head benchmark fails or a
-# tool breaks; exit 2 on a bad BENCH_COUNT or BENCH_TIME. Both are data, never
-# shell text. Portable to the macOS system bash 3.2.
+# is reported as missing (head only); selected benchmarks that skip every
+# sample leave no table and report "nothing to compare". Exit 1 when a head
+# benchmark fails or a tool breaks; exit 2 on a bad BENCH_COUNT or BENCH_TIME.
+# Both are data, never shell text. Portable to the macOS system bash 3.2.
 set -euo pipefail
 
 # -P: go list prints physical directories, and they are cut against this.
@@ -167,7 +168,23 @@ benchstat() {
 }
 benchstat -format csv base="$work/base.txt" head="$work/head.txt" > "$work/stat.csv"
 benchstat base="$work/base.txt" head="$work/head.txt" > "$work/stat.txt"
-python3 scripts/bench-review.py < "$work/stat.csv" || exit 1
+# A benchmark that skips in every sample (a wall-clock benchmark without its
+# opt-in variable, as BenchmarkEventBurst) leaves no table: the samples
+# exited 0, so there is nothing to compare, and the report exits 0. Any
+# other review failure still fails the step with its message in the log.
+review_err="$work/review-err.txt"
+if ! python3 scripts/bench-review.py < "$work/stat.csv" 2> "$review_err"; then
+  if grep -q "no benchstat table found" "$review_err"; then
+    echo "### Benchmarks: base vs head"
+    echo
+    echo "The selected benchmarks produced no results (they skip in this setup); nothing to compare."
+    echo
+    echo "Packages:$bench_pkgs. Base $base_ref, BENCH_COUNT=$count, BENCH_TIME=$benchtime."
+    exit 0
+  fi
+  cat "$review_err" >&2
+  exit 1
+fi
 echo
 if [ -n "$base_note" ]; then
   echo "$base_note"

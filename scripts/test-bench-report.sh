@@ -10,6 +10,7 @@
 #   same code, a comment changed  no allocs/op REVIEW, exit 0     (A/A)
 #   one more allocation per op    the allocs/op row is REVIEW, exit 0
 #   a package with no benchmark   "nothing to compare", exit 0
+#   a benchmark skipped in both   "nothing to compare", exit 0
 #   a benchmark new in head       "new" rows and the head-only note, exit 0
 #   a base that does not build    the head-only note, exit 0
 #   base and head samples         alternate, first side swapped each round,
@@ -257,6 +258,14 @@ for v in "BENCH_COUNT=0" "BENCH_COUNT=3; touch $marker" "BENCH_COUNT=" "BENCH_TI
     ok
   fi
 done
+
+# A benchmark that skips in both trees (a wall-clock benchmark that needs an
+# opt-in variable, as BenchmarkEventBurst does): nothing to compare, exit 0.
+fresh
+printf 'package b\n\nimport "testing"\n\nfunc BenchmarkWork(b *testing.B) { b.Skip("wall-clock; opt in") }\n' > "$repo/b/b_test.go"
+commit "skipping benchmark"
+report
+if [ "$rc" -eq 0 ] && printf '%s' "$out" | grep -q "nothing to compare"; then ok; else bad "skipping benchmark: exit $rc or no 'nothing to compare'"; fi
 
 printf 'test-bench-report: %d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]
