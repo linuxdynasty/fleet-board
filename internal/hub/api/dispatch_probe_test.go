@@ -45,10 +45,16 @@ func probeAccount(t *testing.T, e *fleetEnv, id, requestID string) (*connect.Res
 	}))
 }
 
-// TestProbeAccountQueuesRunNow is the 02b probe path: the account's
-// probe runs now on an ONLINE machine with a launch-allowed harness,
-// and the response carries the PENDING operation for it.
-func TestProbeAccountQueuesRunNow(t *testing.T) {
+// TestProbeAccountQueuesRunNow stood for the 02b probe path while the
+// hub queued keyless probes the agent refuses; it is superseded by
+// TestProbeAccountRefusesWithoutStoredKey, which pins the honest
+// refusal on the same seed.
+
+// TestProbeAccountRefusesWithoutStoredKey: the hub stores no account
+// keys, so it cannot build a probe the agent accepts (the agent refuses
+// an empty key). It refuses NO_FIT_MACHINE and queues nothing instead
+// of a doomed command.
+func TestProbeAccountRefusesWithoutStoredKey(t *testing.T) {
 	t.Parallel()
 	e := newFleetEnv(t, localUser("alice"))
 	enrollMachine(t, e, "m1")
@@ -56,18 +62,13 @@ func TestProbeAccountQueuesRunNow(t *testing.T) {
 	seedDispatchHarness(t, e, "m1", "claude")
 	seedDispatchAccount(t, e, "a1", "claude")
 
-	res, err := probeAccount(t, e, "a1", "req-probe-1")
-	if err != nil {
-		t.Fatalf("ProbeAccount: %v", err)
+	_, err := probeAccount(t, e, "a1", "req-probe-1")
+	if code, why, _ := detail(t, err); code != connect.CodeFailedPrecondition ||
+		why != typev1.ReasonCode_REASON_CODE_NO_FIT_MACHINE {
+		t.Errorf("probe no key: %v %v, want FAILED_PRECONDITION NO_FIT_MACHINE", code, why)
 	}
-	if got := res.Msg.GetOperation().GetMachine().GetValue(); got != "m1" {
-		t.Errorf("operation machine = %q, want m1", got)
-	}
-	if got := res.Msg.GetOperation().GetState(); got != hubv1.OperationState_OPERATION_STATE_PENDING {
-		t.Errorf("operation state = %v, want PENDING", got)
-	}
-	if kinds := probeKinds(t, e, "m1"); len(kinds) != 1 || kinds[0] != "ensure_probe" {
-		t.Errorf("outbox kinds = %v, want one ensure_probe", kinds)
+	if kinds := probeKinds(t, e, "m1"); len(kinds) != 0 {
+		t.Errorf("outbox kinds = %v, want nothing queued", kinds)
 	}
 }
 
@@ -100,10 +101,11 @@ func TestProbeAccountNeedsAFitMachine(t *testing.T) {
 	}
 }
 
-// TestProbeAccountReplaysRequestId proves idempotency: repeating the
-// same request_id returns the stored operation instead of queueing a
-// second probe.
-func TestProbeAccountReplaysRequestId(t *testing.T) {
+// TestProbeAccountRepeatedRefusalQueuesNothing: with no stored keys,
+// every call is refused alike and nothing queues, so a stuck caller
+// cannot pile up doomed probes. (Replay of a past success still works
+// through checkProbeReplay; no success is reachable until keys land.)
+func TestProbeAccountRepeatedRefusalQueuesNothing(t *testing.T) {
 	t.Parallel()
 	e := newFleetEnv(t, localUser("alice"))
 	enrollMachine(t, e, "m1")
@@ -111,26 +113,22 @@ func TestProbeAccountReplaysRequestId(t *testing.T) {
 	seedDispatchHarness(t, e, "m1", "claude")
 	seedDispatchAccount(t, e, "a1", "claude")
 
-	first, err := probeAccount(t, e, "a1", "req-probe-same")
-	if err != nil {
-		t.Fatalf("first ProbeAccount: %v", err)
+	for _, id := range []string{"req-probe-same", "req-probe-same"} {
+		_, err := probeAccount(t, e, "a1", id)
+		if code, why, _ := detail(t, err); code != connect.CodeFailedPrecondition ||
+			why != typev1.ReasonCode_REASON_CODE_NO_FIT_MACHINE {
+			t.Fatalf("probe %s: %v %v, want FAILED_PRECONDITION NO_FIT_MACHINE", id, code, why)
+		}
 	}
-	second, err := probeAccount(t, e, "a1", "req-probe-same")
-	if err != nil {
-		t.Fatalf("second ProbeAccount: %v", err)
-	}
-	if first.Msg.GetOperation().GetId().GetValue() != second.Msg.GetOperation().GetId().GetValue() {
-		t.Error("replay returned a different operation, want the stored one")
-	}
-	if kinds := probeKinds(t, e, "m1"); len(kinds) != 1 {
-		t.Errorf("outbox kinds = %v, want one ensure_probe: no duplicate", kinds)
+	if kinds := probeKinds(t, e, "m1"); len(kinds) != 0 {
+		t.Errorf("outbox kinds = %v, want nothing queued", kinds)
 	}
 }
 
-// TestProbeAccountRunNowLimited proves the one-a-minute gate: a second
-// probe inside the minute is refused, so a stuck caller cannot flood
-// the machine with probes.
-func TestProbeAccountRunNowLimited(t *testing.T) {
+// TestProbeAccountRefusedBeforeRateLimit: the missing-key refusal comes
+// before the one-a-minute gate, so rapid repeats stay NO_FIT_MACHINE
+// and never reach RATE_LIMITED.
+func TestProbeAccountRefusedBeforeRateLimit(t *testing.T) {
 	t.Parallel()
 	e := newFleetEnv(t, localUser("alice"))
 	enrollMachine(t, e, "m1")
@@ -138,16 +136,15 @@ func TestProbeAccountRunNowLimited(t *testing.T) {
 	seedDispatchHarness(t, e, "m1", "claude")
 	seedDispatchAccount(t, e, "a1", "claude")
 
-	if _, err := probeAccount(t, e, "a1", "req-probe-1"); err != nil {
-		t.Fatalf("first ProbeAccount: %v", err)
+	for _, id := range []string{"req-probe-1", "req-probe-2"} {
+		_, err := probeAccount(t, e, "a1", id)
+		if code, why, _ := detail(t, err); code != connect.CodeFailedPrecondition ||
+			why != typev1.ReasonCode_REASON_CODE_NO_FIT_MACHINE {
+			t.Fatalf("probe %s: %v %v, want FAILED_PRECONDITION NO_FIT_MACHINE", id, code, why)
+		}
 	}
-	_, err := probeAccount(t, e, "a1", "req-probe-2")
-	if code, why, _ := detail(t, err); code != connect.CodeFailedPrecondition ||
-		why != typev1.ReasonCode_REASON_CODE_RATE_LIMITED {
-		t.Errorf("second probe: %v %v, want FAILED_PRECONDITION RATE_LIMITED", code, why)
-	}
-	if kinds := probeKinds(t, e, "m1"); len(kinds) != 1 {
-		t.Errorf("outbox kinds = %v, want still one ensure_probe", kinds)
+	if kinds := probeKinds(t, e, "m1"); len(kinds) != 0 {
+		t.Errorf("outbox kinds = %v, want nothing queued", kinds)
 	}
 }
 

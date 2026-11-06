@@ -86,13 +86,18 @@ func (f *Fleet) ProbeAccount(ctx context.Context, req *connect.Request[hubv1.Pro
 		if err != nil {
 			return err
 		}
+		key, err := f.probeAccountKey(ctx, tx, m.GetId().GetValue(), machineID)
+		if err != nil {
+			return err
+		}
 		cmd := &agentv1.Command{
 			Kind: &agentv1.Command_EnsureProbe{EnsureProbe: &agentv1.EnsureProbe{
-				ProbeId:   &typev1.ProbeId{Value: probeID},
-				AccountId: m.GetId(),
-				Harness:   &typev1.Harness{Name: stored.Harness},
-				Interval:  durationpb.New(probeInterval),
-				RunNow:    true,
+				ProbeId:    &typev1.ProbeId{Value: probeID},
+				AccountId:  m.GetId(),
+				AccountKey: &typev1.AccountKey{Value: key},
+				Harness:    &typev1.Harness{Name: stored.Harness},
+				Interval:   durationpb.New(probeInterval),
+				RunNow:     true,
 			}},
 		}
 		cmd.RequestedBy = who
@@ -139,6 +144,19 @@ func (f *Fleet) ProbeAccount(ctx context.Context, req *connect.Request[hubv1.Pro
 	f.tel.Logger.InfoContext(ctx, "dispatch.planned", "actor", actor,
 		"account", m.GetId().GetValue(), "machine", out.GetMachine().GetValue(), "mode", "probe")
 	return connect.NewResponse(&hubv1.ProbeAccountResponse{Operation: out}), nil
+}
+
+// probeAccountKey resolves the expected account identity key for an
+// EnsureProbe (command_tmux.proto): the agent refuses a probe whose key
+// is empty or mismatched. It returns the key, or empty (with the
+// NO_FIT_MACHINE refusal) while unresolvable: the hub stores no account
+// keys yet. A later row that stores observed keys fills this in and
+// scopes the machine to one with that identity signed in; both
+// EnsureProbe constructors already carry the resolved key.
+func (f *Fleet) probeAccountKey(ctx context.Context, tx *sql.Tx, accountID, machineID string) (string, error) {
+	return "", apiError(connect.CodeFailedPrecondition,
+		typev1.ReasonCode_REASON_CODE_NO_FIT_MACHINE,
+		"the hub does not store account keys yet, so it cannot build a probe the agent accepts", nil, nil)
 }
 
 // probeMachine picks the probe's machine (03b probe assignment, 03c

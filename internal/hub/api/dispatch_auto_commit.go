@@ -145,17 +145,25 @@ func (f *Fleet) insertAutoTx(ctx context.Context, tx *sql.Tx, who *typev1.Princi
 	// The run_now gate is peeked here and claimed in the commit hook, so
 	// a failed commit leaves the next pass free to probe.
 	if f.peekProbeRunNow(d.AccountID, now) {
+		// probeAccountKey is empty while the hub stores no keys: the
+		// goal still dispatches, without the probe the agent would
+		// refuse.
+		key, _ := f.probeAccountKey(ctx, tx, d.AccountID, d.MachineID)
+		if key == "" {
+			return after, operation, op, nil
+		}
 		probeID, err := ulid.New(now, f.random)
 		if err != nil {
 			return statedb.GoalRow{}, nil, outbox.Op{}, fmt.Errorf("scheduler: mint probe id: %w", err)
 		}
 		cmd := &agentv1.Command{
 			Kind: &agentv1.Command_EnsureProbe{EnsureProbe: &agentv1.EnsureProbe{
-				ProbeId:   &typev1.ProbeId{Value: probeID},
-				AccountId: &typev1.AccountId{Value: d.AccountID},
-				Harness:   &typev1.Harness{Name: d.Harness},
-				Interval:  durationpb.New(probeInterval),
-				RunNow:    true,
+				ProbeId:    &typev1.ProbeId{Value: probeID},
+				AccountId:  &typev1.AccountId{Value: d.AccountID},
+				AccountKey: &typev1.AccountKey{Value: key},
+				Harness:    &typev1.Harness{Name: d.Harness},
+				Interval:   durationpb.New(probeInterval),
+				RunNow:     true,
 			}},
 		}
 		cmd.RequestedBy = who
