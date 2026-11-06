@@ -166,15 +166,34 @@ func TestOpenMigratesLegacyFullFormWorkItemKeys(t *testing.T) {
 		'7398', '{"title":"first"}', 100, 2, '{"trusted":true}', 0, 1, 100, 100)`); err != nil {
 		t.Fatal(err)
 	}
+	// A legacy row whose project path itself holds the kind prefix: the
+	// migration must rewrite only the kind segment, exactly like
+	// NormalizeWorkKey.
+	if _, err := db.ExecContext(t.Context(), `INSERT INTO work_items(key, integration, kind, project, item_key,
+		item_json, update_ms, stage, trust_json, manual_reason, version, create_ms, last_sync_ms)
+		VALUES ('github-1/WORK_ITEM_KIND_ISSUE/acme/WORK_ITEM_KIND_tools/7399', 'github-1',
+		'WORK_ITEM_KIND_ISSUE', 'acme/WORK_ITEM_KIND_tools',
+		'7399', '{"title":"pathed"}', 100, 2, '{"trusted":true}', 0, 1, 100, 100)`); err != nil {
+		t.Fatal(err)
+	}
 	s = open(t, dir)
 	var key, kind string
 	if err := s.Read(t.Context(), func(tx *sql.Tx) error {
-		return tx.QueryRowContext(t.Context(), `SELECT key, kind FROM work_items`).Scan(&key, &kind)
+		return tx.QueryRowContext(t.Context(), `SELECT key, kind FROM work_items WHERE item_key = '7398'`).Scan(&key, &kind)
 	}); err != nil {
 		t.Fatalf("read migrated row: %v", err)
 	}
 	if key != "github-1/ISSUE/acme/web/7398" || kind != "ISSUE" {
 		t.Fatalf("migrated row key %q kind %q, want the short form of both", key, kind)
+	}
+	var pathKey, pathKind string
+	if err := s.Read(t.Context(), func(tx *sql.Tx) error {
+		return tx.QueryRowContext(t.Context(), `SELECT key, kind FROM work_items WHERE item_key = '7399'`).Scan(&pathKey, &pathKind)
+	}); err != nil {
+		t.Fatalf("read migrated pathed row: %v", err)
+	}
+	if pathKey != "github-1/ISSUE/acme/WORK_ITEM_KIND_tools/7399" || pathKind != "ISSUE" {
+		t.Fatalf("migrated pathed row key %q kind %q, want only the kind segment rewritten", pathKey, pathKind)
 	}
 	// The next sync sends the syncer's full-form kind: it must upsert the
 	// migrated row, not duplicate it, and a brand-new row stores short.
@@ -198,8 +217,8 @@ func TestOpenMigratesLegacyFullFormWorkItemKeys(t *testing.T) {
 	if err := db.QueryRowContext(t.Context(), `SELECT count(*) FROM work_items`).Scan(&total); err != nil {
 		t.Fatal(err)
 	}
-	if same != 1 || total != 2 {
-		t.Errorf("rows for 7398 = %d total = %d, want 1 and 2 (upsert, not duplicate)", same, total)
+	if same != 1 || total != 3 {
+		t.Errorf("rows for 7398 = %d total = %d, want 1 and 3 (upsert, not duplicate)", same, total)
 	}
 	if got := mirrorField(t, db, "github-1/ISSUE/acme/web/7398", "version"); got != 2 {
 		t.Errorf("migrated row version = %d, want 2 (the sync rewrote it)", got)
