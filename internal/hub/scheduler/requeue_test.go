@@ -28,6 +28,7 @@ func TestCheckRequeue(t *testing.T) {
 		{"untrusted gate holds", manual, untrusted, 7, 7, RequeueGateBlocked},
 		{"edited-after-trust gate holds", manual, edited, 7, 7, RequeueGateBlocked},
 		{"stale version refused", manual, cleared, 8, 7, RequeueVersionMismatch},
+		{"zero expected skips the check", manual, cleared, 8, 0, RequeueOK},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

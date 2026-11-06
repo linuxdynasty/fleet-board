@@ -23,7 +23,8 @@ const (
 
 // CheckRequeue validates a RequeueWorkItem request against the stored
 // item: only a MANUAL_ONLY item requeues, never past the trusted-issues
-// gate, and only on a fresh version read.
+// gate, and only on a fresh version read. An expected version of zero
+// skips the check (02b "Versions and ETags").
 func CheckRequeue(stage hubv1.WorkStage, reason hubv1.WorkManualReason, version, expected uint64) RequeueOutcome {
 	if stage != hubv1.WorkStage_WORK_STAGE_MANUAL_ONLY {
 		return RequeueNotManual
@@ -36,7 +37,7 @@ func CheckRequeue(stage hubv1.WorkStage, reason hubv1.WorkManualReason, version,
 		// Any other stored reason requeues: the gate holds only the
 		// two trust manual reasons.
 	}
-	if version != expected {
+	if expected != 0 && version != expected {
 		return RequeueVersionMismatch
 	}
 	return RequeueOK

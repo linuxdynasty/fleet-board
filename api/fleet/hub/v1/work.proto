@@ -301,6 +301,8 @@ message UpdateIntegrationResponse {
 // is not MANUAL_ONLY or whose manual_reason is UNTRUSTED or
 // EDITED_AFTER_TRUST: a gate is not
 // bypassed by a click; dispatch it manually instead (a CONFIRM check).
+// expected_version skips the version check when zero (02b "Versions and
+// ETags").
 message RequeueWorkItemRequest {
   string request_id = 1;
   fleet.type.v1.WorkItemKey id = 2;
