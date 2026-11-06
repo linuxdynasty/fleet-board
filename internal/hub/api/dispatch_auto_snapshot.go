@@ -69,7 +69,7 @@ func (f *Fleet) snapshotItems(ctx context.Context, tx *sql.Tx, now time.Time, tr
 		}
 		snap.Items = append(snap.Items, scheduler.Item{
 			Key: row.Key, Integration: row.Integration, Repo: repoName,
-			Project: row.Project, Number: number,
+			Project: row.Project, Number: number, CreateMs: row.CreateMs,
 			Stage:   hubv1.WorkStage_WORK_STAGE_READY,
 			Trusted: verdict.GetTrusted(), Denial: verdict.GetDenial(),
 			Claimed: foreignClaim(st.ClaimsJSON), LiveGoal: live,

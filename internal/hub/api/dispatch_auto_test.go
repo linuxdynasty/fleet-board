@@ -3,6 +3,7 @@ package api_test
 import (
 	"context"
 	"database/sql"
+	"strings"
 	"testing"
 	"time"
 
@@ -162,14 +163,81 @@ func TestSchedulerPassDispatchesReadyItem(t *testing.T) {
 	if got := autoGoalPhaseOf(t, e, report.Goals[0]); got != "GOAL_PHASE_STARTING" {
 		t.Errorf("goal phase = %q, want GOAL_PHASE_STARTING", got)
 	}
-	if got := pendingCommands(t, e, "m1"); got != 2 {
-		t.Errorf("outbox holds %d commands for m1, want StartGoal plus EnsureProbe", got)
+	if got := pendingCommands(t, e, "m1"); got != 1 {
+		t.Errorf("outbox holds %d commands for m1, want only StartGoal: the probe is skipped without a stored account key", got)
 	}
 	if got := auditActionsFor(t, e, "goals/"+report.Goals[0]); len(got) == 0 {
 		t.Error("no audit for the goal, want the scheduler's goal.start")
 	}
 	if len(report.Skips) != 0 {
 		t.Errorf("skips = %v, want none on the happy path", report.Skips)
+	}
+}
+
+// seedTwoReadyItems stores two READY trusted items whose key order and
+// age disagree: the key-first item is newer, so oldest-first dispatches
+// the key-last item first (03c rule 1).
+func seedTwoReadyItems(t *testing.T, e *fleetEnv) {
+	t.Helper()
+	ctx := context.Background()
+	for _, seed := range []struct {
+		key   string
+		nowMs int64
+	}{
+		{key: "7398", nowMs: 200},
+		{key: "7400", nowMs: 100},
+	} {
+		_, err := statedb.UpsertWorkItemPage(ctx, e.st, "github-1",
+			[]statedb.WorkItemMirror{{
+				Integration: "github-1", Kind: "ISSUE", Project: "acme/web", ItemKey: seed.key,
+				ItemJSON:  []byte(`{"title":"item ` + seed.key + `"}`),
+				UpdateMs:  seed.nowMs,
+				Stage:     int32(hubv1.WorkStage_WORK_STAGE_READY),
+				TrustJSON: []byte(`{"trusted":true}`),
+			}}, nil, nil, seed.nowMs, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+// goalWorkItemOf reads the work item a dispatched goal was started for.
+func goalWorkItemOf(t *testing.T, e *fleetEnv, goalID string) string {
+	t.Helper()
+	var item string
+	err := e.st.Read(context.Background(), func(tx *sql.Tx) error {
+		return tx.QueryRowContext(context.Background(), `SELECT work_item FROM goals WHERE id = ?`, goalID).Scan(&item)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return item
+}
+
+// TestSchedulerPassDispatchesOldestFirst is 03c rule 1 through a full
+// pass: of two READY items, the key-first one is newer, so the first
+// dispatched goal works the older key-last item.
+func TestSchedulerPassDispatchesOldestFirst(t *testing.T) {
+	t.Parallel()
+	e := newFleetEnv(t, localUser("alice"))
+	enrollMachine(t, e, "m1")
+	setMachineState(t, e, "m1", "ONLINE")
+	seedDispatchHarness(t, e, "m1", "claude")
+	seedDispatchAccount(t, e, "a1", "claude")
+	seedAutoRepoAndIntegration(t, e)
+	seedTwoReadyItems(t, e)
+	seedUsageOK(t, e, "a1", autoNow)
+	seedAutoDispatchOn(t, e)
+
+	report, err := e.fleet.SchedulerPass(context.Background(), autoNow, trustAll, true)
+	if err != nil {
+		t.Fatalf("SchedulerPass: %v", err)
+	}
+	if len(report.Goals) == 0 {
+		t.Fatalf("report = %+v, want at least one dispatched goal", report)
+	}
+	if got := goalWorkItemOf(t, e, report.Goals[0]); !strings.HasSuffix(got, "/7400") {
+		t.Errorf("first dispatched work item = %q, want the older item ending /7400", got)
 	}
 }
 
@@ -200,8 +268,8 @@ func TestSchedulerPassTwiceNeverDoublesItem(t *testing.T) {
 	if len(second.FleetBlocks) != 1 || second.FleetBlocks[0] != "no_ready_items" {
 		t.Errorf("second blocks = %v, want one no_ready_items", second.FleetBlocks)
 	}
-	if got := pendingCommands(t, e, "m1"); got != 2 {
-		t.Errorf("outbox holds %d commands for m1, want still two: no second start", got)
+	if got := pendingCommands(t, e, "m1"); got != 1 {
+		t.Errorf("outbox holds %d commands for m1, want still one: no second start", got)
 	}
 }
 
@@ -354,8 +422,8 @@ func TestSchedulerPassCommitRefusalSkipsItemButDispatchesRest(t *testing.T) {
 	if report.Skips["work_item_untrusted"] != 1 {
 		t.Errorf("skips = %v, want one work_item_untrusted for the refused commit", report.Skips)
 	}
-	if got := pendingCommands(t, e, "m1") + pendingCommands(t, e, "m2"); got != 2 {
-		t.Errorf("outbox holds %d commands, want StartGoal plus EnsureProbe for the one goal", got)
+	if got := pendingCommands(t, e, "m1") + pendingCommands(t, e, "m2"); got != 1 {
+		t.Errorf("outbox holds %d commands, want only StartGoal for the one goal: the probe is skipped without a stored account key", got)
 	}
 }
 
