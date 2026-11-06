@@ -142,6 +142,62 @@ func TestRequeueWorkItemRefusesStaleVersion(t *testing.T) {
 	}
 }
 
+// TestRequeueWorkItemReplaysSameRequestId is 02b idempotency: retrying
+// a committed requeue with the same request_id returns the item instead
+// of refusing the now-READY item.
+func TestRequeueWorkItemReplaysSameRequestId(t *testing.T) {
+	t.Parallel()
+	e := newFleetEnv(t, localUser("alice"))
+	autoSeed(t, e)
+	version := parkManual(t, e, hubv1.WorkManualReason_WORK_MANUAL_REASON_GOAL_CLEARED)
+
+	first, err := requeue(t, e, version)
+	if err != nil {
+		t.Fatalf("first RequeueWorkItem: %v", err)
+	}
+	second, err := requeue(t, e, version)
+	if err != nil {
+		t.Fatalf("requeue retry: %v, want the stored item", err)
+	}
+	if got := second.Msg.GetWorkItem().GetStage(); got != hubv1.WorkStage_WORK_STAGE_READY {
+		t.Errorf("retry stage = %v, want READY", got)
+	}
+	if first.Msg.GetWorkItem().GetVersion() != second.Msg.GetWorkItem().GetVersion() {
+		t.Errorf("retry version = %v, want the stored %v",
+			second.Msg.GetWorkItem().GetVersion(), first.Msg.GetWorkItem().GetVersion())
+	}
+	if got := auditActionsFor(t, e, "work_items/github-1/ISSUE/acme/web/7398"); len(got) != 1 {
+		t.Errorf("audits = %v, want one work_item.requeue: a replay audits nothing new", got)
+	}
+}
+
+// TestRequeueWorkItemConflictsOnDifferentBody proves the same
+// request_id with a different body is REQUEST_ID_CONFLICT, not a
+// second mutation.
+func TestRequeueWorkItemConflictsOnDifferentBody(t *testing.T) {
+	t.Parallel()
+	e := newFleetEnv(t, localUser("alice"))
+	autoSeed(t, e)
+	version := parkManual(t, e, hubv1.WorkManualReason_WORK_MANUAL_REASON_GOAL_CLEARED)
+
+	if _, err := requeue(t, e, version); err != nil {
+		t.Fatalf("first RequeueWorkItem: %v", err)
+	}
+	_, err := e.client.RequeueWorkItem(context.Background(), connect.NewRequest(&hubv1.RequeueWorkItemRequest{
+		RequestId: "req-requeue-1",
+		Id: &typev1.WorkItemKey{
+			Integration: &typev1.IntegrationId{Value: "github-1"},
+			Kind:        typev1.WorkItemKind_WORK_ITEM_KIND_ISSUE,
+			Project:     "acme/web", Key: "7398",
+		},
+		ExpectedVersion: version + 99,
+	}))
+	if code, why, _ := detail(t, err); code != connect.CodeAlreadyExists ||
+		why != typev1.ReasonCode_REASON_CODE_REQUEST_ID_CONFLICT {
+		t.Errorf("requeue changed body: %v %v, want ALREADY_EXISTS REQUEST_ID_CONFLICT", code, why)
+	}
+}
+
 // TestRequeueWorkItemDenied proves the SESSIONS_WRITE scope: no caller,
 // no requeue.
 func TestRequeueWorkItemDenied(t *testing.T) {
