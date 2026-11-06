@@ -39,6 +39,20 @@ const (
 	SkipAccountNotDispatchable = "account_not_dispatchable"
 	SkipNoFitMachine           = "no_fit_machine"
 	SkipFloodGuard             = "flood_guard"
+	// The rest name commit-time refusals: the decision checks and the
+	// busy races copy their lower-cased ReasonCode into the skip
+	// counter, so each needs its constant here.
+	SkipSlotsFull                 = "slots_full"
+	SkipBranchBusy                = "branch_busy"
+	SkipConsentEmpty              = "consent_empty"
+	SkipMachineUnfit              = "machine_unfit"
+	SkipDraining                  = "draining"
+	SkipMachineOffline            = "machine_offline"
+	SkipHarnessVersionUnsupported = "harness_version_unsupported"
+	SkipIntegrationLag            = "integration_lag"
+	SkipIntegrationDegraded       = "integration_degraded"
+	SkipRoutineNeedsSpareQuota    = "routine_needs_spare_quota"
+	SkipUnknownCheck              = "unknown_check"
 )
 
 // Item is one candidate work item. Stage, trust and claim state are what
