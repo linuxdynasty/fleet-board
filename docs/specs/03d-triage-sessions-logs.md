@@ -378,7 +378,7 @@ chunk with `LogAck{key, acked_offset = its stored end, status}`:
 | Chunk | Hub action | `status` |
 |---|---|---|
 | `offset == stored_end + gap_before` | store the row, ack the new end (the row records `gap_before` as lost bytes) | `STORED` |
-| `offset + raw_length ≤ stored_end` | ignore | `DUPLICATE` (re-ack) |
+| `offset + raw_length ≤ stored_end` | ignore, but a `Final` at the stored end also marks the stream's newest chunk final so the ended stream reads closed | `DUPLICATE` (re-ack) |
 | anything else (a hole, or the hub is ahead) | store nothing, count `log.hole_refused` | `HOLE` with the hub's end |
 | the pane maps to no session yet | store nothing | `UNKNOWN_STREAM` |
 
@@ -399,7 +399,7 @@ the size cap and the optional age limit are hub settings
 limit), the oldest ended sessions are pruned first and a session with an open
 stream never is. Replay: the UI asks for `(session, from_raw_offset | from
 time)`; the hub finds the chunks by `(session, pane, stream, raw_offset)` or time, decompresses frames, streams to
-xterm.js; chunk `first_byte_time/last_byte_time` give time navigation. Harness
+xterm.js; chunk `first_byte_time/last_byte_time` give time navigation. An undecodable frame is skipped and the next span marks the gap, for replay and search alike; `SearchSessionLogs` pages each stream's chunks in 25-row fetches and resumes inside a frame from its head. Harness
 transcripts (K3, v3) reuse the path with `stream=HARNESS_TRANSCRIPT` from
 `PaneHarnessSession.transcript_path`, opt-in per repo or machine.
 
@@ -410,7 +410,7 @@ each of its panes moves from `state.db` to `logs.db` (ADR 0015, amending 0013) a
 finds ended sessions with `ListStoredSessions` (filter machine, goal, harness,
 state, time), which returns each stream's `LogStreamKey`, the sizes and times,
 and the archived summaries, so `ReadSessionLog` and `fleet logs export <session>`
-have an entry point after the window is gone. `DeleteSessionLogs` removes one
+have an entry point after the window is gone; sessions ended before any chunk (NULL `last_time`) sort last and page on a key of 0. `DeleteSessionLogs` removes one
 session's chunks, `log_sessions` row and summaries in one `logs.db` transaction, with one audit row in `state.db`
 (`logs.delete`: bytes, never content) and is refused while a stream still
 captures (`LOG_STREAM_OPEN`). Right after it commits the hub also removes the
