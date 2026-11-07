@@ -7,6 +7,8 @@ The hub's provider sync loop (03m W4) and the trusted-issues gate (03j).
   trust event. Unknown actors and missing edit evidence fail closed.
   `InitialStage` maps the verdict, the provider state and the claim and
   repo flags to the hub's `WorkStage` in the same upsert transaction.
+  The auto-dispatch pass (row 23) reads that stage and the trust verdict
+  as its inputs and only plans trusted, correctly staged items.
 - Polling loops, cursors, rate limits and health arrive in later slices of
   row 11; each names its seams here before it lands.
 
