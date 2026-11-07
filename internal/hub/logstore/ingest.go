@@ -78,7 +78,12 @@ func (s *Store) Ingest(ctx context.Context, c Chunk) (end uint64, v Verdict, err
 			}
 			return nil
 		}
-		if c.Offset != end+c.GapBefore {
+		// The accept check runs on offset-gap, never on end+gap: the
+		// sum wraps mod 2^64, so a crafted gap_before could satisfy an
+		// offset == end+gap_before comparison by wrapping. A resend
+		// repeats its stored gap (gap <= offset always holds past the
+		// duplicate check above), so offset-gap cannot wrap here.
+		if c.GapBefore > c.Offset || c.Offset-c.GapBefore != end {
 			v = Hole
 			return nil
 		}

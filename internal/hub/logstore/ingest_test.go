@@ -154,3 +154,53 @@ func TestDuplicateFinalClosesStream(t *testing.T) {
 		t.Fatalf("Delete after duplicate final: %v", err)
 	}
 }
+
+// TestWrappingGapBeforeIsAHole: the accept rule is integer arithmetic, so
+// a crafted GapBefore that satisfies the check only by wrapping mod 2^64
+// verdicts Hole, leaving the end and the session totals untouched.
+func TestWrappingGapBeforeIsAHole(t *testing.T) {
+	t.Parallel()
+	st, ctx := testStore(t)
+	end := time.Unix(4000, 0).UTC()
+	raw := []byte("hello\n")
+	if _, v, err := st.Ingest(ctx, logstore.Chunk{
+		Session: "s-wrap", Machine: "m-1",
+		Pane: pane, Stream: logstore.TerminalStream, Offset: 0, Data: frame(t, raw),
+		RawLength: uint32(len(raw)), FrameStart: true, //nolint:gosec // G115: test bytes are tens of bytes
+		FirstTime: end.Add(-time.Second), LastTime: end,
+	}); err != nil || v != logstore.Stored {
+		t.Fatalf("ingest v=%v err=%v", v, err)
+	}
+	// The stored end is 6: GapBefore 2^64-2 satisfies 6+gap == 4 only by
+	// wrapping, so the check must refuse it before any comparison wraps.
+	evil := []byte("0123456789")
+	_, v, err := st.Ingest(ctx, logstore.Chunk{
+		Session: "s-wrap", Machine: "m-1",
+		Pane: pane, Stream: logstore.TerminalStream, Offset: 4, Data: frame(t, evil),
+		RawLength: uint32(len(evil)), FrameStart: true, FrameRawOffset: 4, //nolint:gosec // G115: test bytes are tens of bytes
+		GapBefore: ^uint64(0) - 1,
+		FirstTime: end, LastTime: end,
+	})
+	if err != nil || v != logstore.Hole {
+		t.Fatalf("wrapping gap v=%v err=%v, want Hole without error", v, err)
+	}
+	// The end did not move: the honest continuation still stores at 6,
+	// and the totals count only real bytes.
+	more := []byte("world\n")
+	at, v, err := st.Ingest(ctx, logstore.Chunk{
+		Session: "s-wrap", Machine: "m-1",
+		Pane: pane, Stream: logstore.TerminalStream, Offset: 6, Data: frame(t, more),
+		RawLength: uint32(len(more)), FrameStart: true, FrameRawOffset: 6, //nolint:gosec // G115: test bytes are tens of bytes
+		FirstTime: end, LastTime: end, Final: true,
+	})
+	if err != nil || v != logstore.Stored || at != 12 {
+		t.Fatalf("continuation end=%d v=%v err=%v, want Stored at 12", at, v, err)
+	}
+	got, err := st.Get(ctx, "s-wrap")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.RawBytes != 12 {
+		t.Fatalf("raw bytes %d, want 12: the hole inflated nothing", got.RawBytes)
+	}
+}
