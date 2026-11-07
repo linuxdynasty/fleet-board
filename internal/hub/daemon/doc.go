@@ -36,7 +36,9 @@
 // nightly backup (backup.Schedule: a check at start, then every minute),
 // and another the housekeeping jobs every 5 s (machine STALE and OFFLINE
 // marking through gateway.Server.Housekeep, the outbox's command expiry,
-// its hourly prune, and watch_publish, the Fleet publish tick).
+// its hourly prune, and watch_publish, the Fleet publish tick), and
+// another the 30 s auto-dispatch pass (the scheduler job planning READY
+// items through the normal dispatch path).
 //
 // [EnrollToken] asks the running hub over the admin socket for an enroll
 // token; with no hub listening it is [ErrNotRunning] and writes nothing.

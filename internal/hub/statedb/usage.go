@@ -82,6 +82,28 @@ type UsageReadingStored struct {
 	SpendJSON   []byte
 }
 
+// LatestUsageFullTx reads the newest usage reading of one account in the
+// caller's transaction: the read time, the parse state and the buckets
+// the pacing line needs. Found false when the account has no reading.
+// The row-23 scheduler paces from this row at plan time, never from a
+// guess.
+func LatestUsageFullTx(ctx context.Context, tx *sql.Tx, accountID string) (UsageReadingStored, bool, error) {
+	var out UsageReadingStored
+	var buckets string
+	err := tx.QueryRowContext(ctx, `SELECT read_ms, parse, buckets_json FROM usage_readings
+		WHERE account_id = ? ORDER BY received_ms DESC, read_ms DESC LIMIT 1`, accountID).Scan(
+		&out.ReadMs, &out.Parse, &buckets)
+	if errors.Is(err, sql.ErrNoRows) {
+		return UsageReadingStored{}, false, nil
+	}
+	if err != nil {
+		return UsageReadingStored{}, false, fmt.Errorf("statedb: read usage: %w", err)
+	}
+	out.AccountID = accountID
+	out.BucketsJSON = []byte(buckets)
+	return out, true, nil
+}
+
 // InsertUsageReading appends one reading in one writer transaction. It
 // writes no audit row: readings are hub-observed history, like the raise
 // path's triage rows.

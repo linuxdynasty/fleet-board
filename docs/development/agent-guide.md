@@ -239,7 +239,10 @@ minutes against the 55-minute ceiling killed full-scope PR runs mid-report
 row REVIEW when benchstat calls the change significant (p < 0.05) and time per
 op rose more than 10%, or allocations per op rose at all. It is a report, not a
 gate: the step never fails the job, and a REVIEW row asks the reviewer to look.
-A new benchmark shows as "new" (the base has none to compare). On an M4 Pro,
+A new benchmark shows as "new" (the base has none to compare). Benchmarks that
+skip every sample (a wall-clock benchmark without its opt-in variable, as
+`BenchmarkEventBurst` without `FLEET_EVENT_BURST=1`) leave no table and report
+"nothing to compare" with exit 0. On an M4 Pro,
 running all base samples before all head samples made the same code look 8%
 slower with p = 0.002; taking turns, two such runs showed no significant row.
 A shared runner is noisier, so a time REVIEW near 10% may still be noise; an

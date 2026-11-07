@@ -183,7 +183,13 @@ func nodeMatchesWorkItem(n *filterNode, v workItemView) bool {
 func atomMatchesWorkItem(a filterAtom, v workItemView) bool {
 	switch a.field {
 	case "id":
-		return matchStrings(a.op, v.row.Key, a.strs)
+		// Either kind spelling names the row (SyncKey normalizes new
+		// writes; reads normalize both sides).
+		strs := make([]string, 0, len(a.strs))
+		for _, s := range a.strs {
+			strs = append(strs, statedb.NormalizeWorkKey(s))
+		}
+		return matchStrings(a.op, statedb.NormalizeWorkKey(v.row.Key), strs)
 	case "integration":
 		return matchStrings(a.op, v.row.Integration, a.strs)
 	case "kind":

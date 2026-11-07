@@ -229,6 +229,8 @@
   {"token": "BenchmarkHubPassFile", "kind": "go", "reason": "Go benchmark in internal/scrub/hub_corpus_file_test.go (plan row 5l)", "files": ["docs/plan/v1-implementation-plan.md", "docs/specs/04b-hub-scrubber-cost.md"]},
   {"token": "TestHubCorporaKeepTheirPremise", "kind": "go", "reason": "Go test in internal/scrub/hub_pass_test.go (plan row 5l)", "files": ["docs/specs/04b-hub-scrubber-cost.md"]},
   {"token": "FLEET_SCRUB_BENCH_CORPUS", "kind": "env", "reason": "environment variable read by BenchmarkHubPassFile (plan row 5l)", "files": ["docs/specs/04b-hub-scrubber-cost.md"]},
+  {"token": "BenchmarkEventBurst", "kind": "go", "reason": "Go benchmark in internal/hub/ingest/burst_bench_test.go, named in the bench-report skip case", "files": ["docs/development/agent-guide.md"]},
+  {"token": "FLEET_EVENT_BURST", "kind": "env", "reason": "environment variable read by BenchmarkEventBurst", "files": ["docs/development/agent-guide.md"]},
   {"token": "XDG_CONFIG_HOME", "kind": "env", "reason": "environment variable that moves the agent config folder (plan row 6, PR 6b)", "files": ["docs/specs/02k-v1-surface-and-cli.md", "docs/specs/03e-settings-and-drift.md", "docs/specs/04-technology-review.md"]},
   {"token": "O_DIRECTORY", "kind": "syscall-flag", "reason": "POSIX open(2) flag named in the goal-file safe writes (01d2)", "files": ["docs/specs/01d2-goal-file-safe-writes.md"]},
   {"token": "O_NOFOLLOW", "kind": "syscall-flag", "reason": "POSIX open(2) flag named in the goal-file safe writes (01d2)", "files": ["docs/specs/01d2-goal-file-safe-writes.md"]},

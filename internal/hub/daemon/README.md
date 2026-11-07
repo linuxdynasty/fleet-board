@@ -94,7 +94,9 @@ parses flags and calls `Init`, `Run`, `EnrollToken`, `Backup` or `Restore`.
    (every open command whose deadline came is closed `EXPIRED`) and, hourly,
    `outbox_prune` (commands closed more than 30 days ago). `watch_publish`
    runs the Fleet publish tick (the volatile flush and a
-   dirty summary). Later plan rows add their prune jobs to the same list.
+   dirty summary). `scheduler` runs the 30 s auto-dispatch pass (row 23:
+   plan a READY item, rank an account and machine, commit through the
+   normal dispatch path). Later plan rows add their prune jobs to the same list.
 11. Stops: shuts the listeners down at the same time (one 10 s grace for
    all, so the agent listener's handler wait does not eat the others'; then
    closes; closing the admin listener removes `admin.sock`; the agent

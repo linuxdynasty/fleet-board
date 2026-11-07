@@ -89,7 +89,7 @@ func scanWorkItemRows(rows *sql.Rows) (WorkItemRow, error) {
 func readWorkItemRowTx(ctx context.Context, tx *sql.Tx, key string) (WorkItemRow, error) {
 	var w WorkItemRow
 	var stage, reason int64
-	err := tx.QueryRowContext(ctx, `SELECT `+workItemColumns+` FROM work_items WHERE key = ?`, key).
+	err := tx.QueryRowContext(ctx, `SELECT `+workItemColumns+` FROM work_items WHERE key = ?`, NormalizeWorkKey(key)).
 		Scan(&w.Key, &w.Integration, &w.Kind, &w.Project, &w.ItemKey,
 			&w.ItemJSON, &w.UpdateMs, &stage, &w.TrustJSON, &reason,
 			&w.Version, &w.CreateMs, &w.LastSyncMs, &w.HubSeq)
@@ -109,13 +109,14 @@ func readWorkItemRowTx(ctx context.Context, tx *sql.Tx, key string) (WorkItemRow
 }
 
 // ReadWorkItemRow reads one mirror row on the read pool
-// ([ErrWorkItemUnknown] when there is no row).
+// ([ErrWorkItemUnknown] when there is no row). Either kind spelling
+// reads the same row.
 func ReadWorkItemRow(ctx context.Context, s *store.Store, key string) (WorkItemRow, error) {
 	var out WorkItemRow
 	err := s.Read(ctx, func(tx *sql.Tx) error {
 		var err error
 		out, err = scanWorkItemRow(tx.QueryRowContext(ctx,
-			`SELECT `+workItemColumns+` FROM work_items WHERE key = ?`, key))
+			`SELECT `+workItemColumns+` FROM work_items WHERE key = ?`, NormalizeWorkKey(key)))
 		return err
 	})
 	if errors.Is(err, sql.ErrNoRows) {
@@ -173,21 +174,34 @@ func CountWorkItemsByStage(ctx context.Context, s *store.Store) ([]WorkItemStage
 func ListWorkItemRows(ctx context.Context, s *store.Store) ([]WorkItemRow, error) {
 	var out []WorkItemRow
 	err := s.Read(ctx, func(tx *sql.Tx) error {
-		rows, err := tx.QueryContext(ctx, `SELECT `+workItemColumns+` FROM work_items`)
-		if err != nil {
-			return fmt.Errorf("statedb: list work item rows: %w", err)
-		}
-		defer func() { _ = rows.Close() }()
-		for rows.Next() {
-			w, err := scanWorkItemRows(rows)
-			if err != nil {
-				return err
-			}
-			out = append(out, w)
-		}
-		return rows.Err()
+		var err error
+		out, err = ListWorkItemRowsTx(ctx, tx)
+		return err
 	})
 	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// ListWorkItemRowsTx reads every mirror row in the caller's transaction,
+// in key order, so the row-23 scheduler snapshot sees items, stages and
+// trust rows from one consistent state.
+func ListWorkItemRowsTx(ctx context.Context, tx *sql.Tx) ([]WorkItemRow, error) {
+	rows, err := tx.QueryContext(ctx, `SELECT `+workItemColumns+` FROM work_items ORDER BY key`)
+	if err != nil {
+		return nil, fmt.Errorf("statedb: list work item rows: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []WorkItemRow
+	for rows.Next() {
+		w, err := scanWorkItemRows(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, w)
+	}
+	if err := rows.Err(); err != nil {
 		return nil, err
 	}
 	return out, nil

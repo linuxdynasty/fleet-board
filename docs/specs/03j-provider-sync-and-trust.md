@@ -166,7 +166,13 @@ from the mirror (the `update_time` guard keeps an older poll result from
 overwriting it), and again when a manual dispatch or `GetWorkItem` fetches the
 body, on the `item` of **that same response**, so the text an agent gets is
 the text whose editor was checked. The CONFIRM check that bypasses the gate
-(03h) shows the denial.
+(03h) shows the denial. At plan time the scheduler reads through two entry
+points: the rounds-completed count (03c rule 4 — the first pass after a
+restart waits for one error-free sync round) and the plan-time gate input
+(03c rule 1 — the gate is rebuilt from the mirror item, the fleet gate, the
+repo gate and the adapter's evidence capabilities). Mirror keys are stored
+in the canonical short form; migration 33 rewrites rows stored under the
+legacy full-form kind so they keep matching.
 
 ## Failure modes added
 

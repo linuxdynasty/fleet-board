@@ -56,6 +56,8 @@ func roleKindName(k typev1.PrincipalKind) string {
 		return "API_TOKEN"
 	case typev1.PrincipalKind_PRINCIPAL_KIND_DEVICE:
 		return "DEVICE"
+	case typev1.PrincipalKind_PRINCIPAL_KIND_SCHEDULER:
+		return "SCHEDULER"
 	default:
 		return "UNKNOWN"
 	}

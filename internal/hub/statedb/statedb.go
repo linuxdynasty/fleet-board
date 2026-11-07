@@ -183,6 +183,10 @@ func Migrations() []store.Migration {
 		Version: 32,
 		Name:    "dispatch_confirm_reasons",
 		SQL:     dispatchConfirmReasonsSQL,
+	}, {
+		Version: 33,
+		Name:    "sync_key_short_form",
+		SQL:     syncCanonicalSQL,
 	}}
 }
 

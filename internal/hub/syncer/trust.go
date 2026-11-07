@@ -240,6 +240,41 @@ func allowListed(in GateInput, who *integrationv1.Person) bool {
 	return false
 }
 
+// RoundsCompleted reports how many error-free sync rounds in a row the
+// integration finished. The scheduler's first pass waits for one (03c
+// rule 4: after a hub restart the first pass waits for the first sync
+// lap to finish), so a pass never plans from a mirror the hub has not
+// seen yet this run.
+func (s *Syncer) RoundsCompleted(id string) int {
+	st := s.stateFor(id)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return st.consecutiveOK
+}
+
+// GateInputFor builds the trusted-issues gate input for one mirror item
+// at scheduler plan time (03c rule 1). The verdict is recomputed from
+// the mirror, the fleet gate, the repo gate and the adapter's evidence
+// capabilities, so an edit since the last sync demotes the item before
+// it is taken instead of after.
+func (s *Syncer) GateInputFor(item *integrationv1.WorkItem, integration, project string, now time.Time) GateInput {
+	gate := s.repoGate(project)
+	st := s.stateFor(integration)
+	s.mu.Lock()
+	caps := st.capabilities
+	s.mu.Unlock()
+	return GateInput{
+		Item:            item,
+		Gate:            s.Gate,
+		RepoLabel:       repoGateLabel(gate),
+		RepoUsers:       repoGateUsers(gate),
+		Integration:     integration,
+		LabelsWithActor: caps.GetLabelsWithActor(),
+		EditEvidence:    caps.GetEditEvidence(),
+		Now:             now,
+	}
+}
+
 // InitialStage maps the verdict and the provider state to the hub's stage in
 // the same upsert transaction (03m state machine): a disabled repo keeps
 // items SEEN, a foreign claim parks them CLAIMED_ELSEWHERE, closed provider

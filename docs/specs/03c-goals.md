@@ -167,8 +167,13 @@ sequenceDiagram
 7. **Transaction:** insert goal (`STARTING`, `attempt` = previous + 1, with
    `previous_goal`), reserve the session if reusing (`panes.reserved_for_goal`,
    unique), insert the outbox row, audit. Unique violations mean another
-   decision won; the pass moves on. What the pass skipped, and why, is recorded
-   as `DispatchBlock`s (03h, "Scheduler explanations").
+   decision won; the pass moves on. A commit refusal (a claim raced since the
+   snapshot, a cap filled) skips only that item — the pass continues with the
+   rest instead of aborting. What the pass skipped, and why, is recorded
+   as `DispatchBlock`s (03h, "Scheduler explanations"). Mirror keys are the
+   canonical short form; migration 33 rewrites legacy full-form mirror keys
+   and kinds to it, so an old row can never sit beside a duplicate as a
+   stale `READY` phantom.
 
 **Composite steps on the agent** (G3; each persisted `started` and `done`):
 14 steps in a fixed vocabulary, with the restart class and failure reasons of

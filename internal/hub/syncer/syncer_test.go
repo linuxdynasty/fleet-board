@@ -273,8 +273,10 @@ func TestPollOnceNotModifiedKeepsVersions(t *testing.T) {
 	versionOf := func() int64 {
 		var v int64
 		if err := s.Read(ctx, func(tx *sql.Tx) error {
+			// Raw SQL names the stored canonical key: the syncer's
+			// full-form kind canonicalizes to the short form.
 			return tx.QueryRowContext(ctx, `SELECT version FROM work_items WHERE key = ?`,
-				mirrorKey("1")).Scan(&v)
+				statedb.NormalizeWorkKey(mirrorKey("1"))).Scan(&v)
 		}); err != nil {
 			t.Fatal(err)
 		}

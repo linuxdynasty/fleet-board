@@ -84,9 +84,9 @@ func ListUnfit(ctx context.Context, tx *sql.Tx, machineID string) ([]UnfitMark, 
 func GetWorkItemStateTx(ctx context.Context, tx *sql.Tx, key string) (WorkItemState, error) {
 	var out WorkItemState
 	var stage, reason int64
-	err := tx.QueryRowContext(ctx, `SELECT item_json, trust_json, stage, manual_reason, claims_json
-		FROM work_items WHERE key = ?`, key).Scan(
-		&out.ItemJSON, &out.TrustJSON, &stage, &reason, &out.ClaimsJSON)
+	err := tx.QueryRowContext(ctx, `SELECT item_json, trust_json, stage, manual_reason, claims_json,
+		version FROM work_items WHERE key = ?`, NormalizeWorkKey(key)).Scan(
+		&out.ItemJSON, &out.TrustJSON, &stage, &reason, &out.ClaimsJSON, &out.Version)
 	if errors.Is(err, sql.ErrNoRows) {
 		return WorkItemState{}, ErrWorkItemUnknown
 	}

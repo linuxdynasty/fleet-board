@@ -155,25 +155,38 @@ type WatchedRepo struct {
 func ListWatchedRepos(ctx context.Context, s *store.Store, codeHost string) ([]WatchedRepo, error) {
 	var out []WatchedRepo
 	err := s.Read(ctx, func(tx *sql.Tx) error {
-		rows, err := tx.QueryContext(ctx, `SELECT host, path, enabled FROM repos
-			WHERE code_host = ? ORDER BY host, path`, codeHost)
-		if err != nil {
-			return err
-		}
-		defer func() { _ = rows.Close() }()
-		for rows.Next() {
-			var r WatchedRepo
-			var enabled int64
-			if err := rows.Scan(&r.Host, &r.Path, &enabled); err != nil {
-				return err
-			}
-			r.Enabled = enabled == 1
-			out = append(out, r)
-		}
-		return rows.Err()
+		var err error
+		out, err = ListWatchedReposTx(ctx, tx, codeHost)
+		return err
 	})
 	if err != nil {
 		return nil, fmt.Errorf("statedb: list watched repos: %w", err)
+	}
+	return out, nil
+}
+
+// ListWatchedReposTx returns the repos of one code-host integration in
+// the caller's transaction, in host/path order, so the row-23 scheduler
+// snapshot maps items to repos from one consistent state.
+func ListWatchedReposTx(ctx context.Context, tx *sql.Tx, codeHost string) ([]WatchedRepo, error) {
+	rows, err := tx.QueryContext(ctx, `SELECT host, path, enabled FROM repos
+		WHERE code_host = ? ORDER BY host, path`, codeHost)
+	if err != nil {
+		return nil, fmt.Errorf("statedb: list watched repos: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []WatchedRepo
+	for rows.Next() {
+		var r WatchedRepo
+		var enabled int64
+		if err := rows.Scan(&r.Host, &r.Path, &enabled); err != nil {
+			return nil, fmt.Errorf("statedb: scan watched repo: %w", err)
+		}
+		r.Enabled = enabled == 1
+		out = append(out, r)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 	return out, nil
 }

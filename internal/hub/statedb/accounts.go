@@ -163,25 +163,38 @@ type AccountRow struct {
 func ListAccountRows(ctx context.Context, s *store.Store) ([]AccountRow, error) {
 	var out []AccountRow
 	err := s.Read(ctx, func(tx *sql.Tx) error {
-		rows, err := tx.QueryContext(ctx, `SELECT id, harness, provider, display_name, spec_json
-			FROM accounts ORDER BY harness, display_name`)
-		if err != nil {
-			return err
-		}
-		defer func() { _ = rows.Close() }()
-		for rows.Next() {
-			var r AccountRow
-			var spec string
-			if err := rows.Scan(&r.ID, &r.Harness, &r.Provider, &r.DisplayName, &spec); err != nil {
-				return err
-			}
-			r.Spec = []byte(spec)
-			out = append(out, r)
-		}
-		return rows.Err()
+		var err error
+		out, err = ListAccountRowsTx(ctx, tx)
+		return err
 	})
 	if err != nil {
 		return nil, fmt.Errorf("statedb: list accounts: %w", err)
+	}
+	return out, nil
+}
+
+// ListAccountRowsTx reads every account in the caller's transaction, so
+// the row-23 scheduler snapshot sees accounts and their specs from one
+// consistent state.
+func ListAccountRowsTx(ctx context.Context, tx *sql.Tx) ([]AccountRow, error) {
+	rows, err := tx.QueryContext(ctx, `SELECT id, harness, provider, display_name, spec_json
+		FROM accounts ORDER BY harness, display_name`)
+	if err != nil {
+		return nil, fmt.Errorf("statedb: list accounts: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []AccountRow
+	for rows.Next() {
+		var r AccountRow
+		var spec string
+		if err := rows.Scan(&r.ID, &r.Harness, &r.Provider, &r.DisplayName, &spec); err != nil {
+			return nil, fmt.Errorf("statedb: scan account: %w", err)
+		}
+		r.Spec = []byte(spec)
+		out = append(out, r)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 	return out, nil
 }

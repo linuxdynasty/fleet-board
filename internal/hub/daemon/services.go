@@ -35,6 +35,7 @@ func services(now func() time.Time, cfg *config.Config, opts Options, d hubDeps,
 		OnCommandQueued: func(op outbox.Op) { agent.Outbox().Notify(op) },
 		HubInstanceID:   agent.InstanceID(), SystemLoop: sysLoop,
 		Attach: att, MachineLive: agent.Live,
+		HubHostname: d.hostname,
 	})
 	if err != nil {
 		return nil, nil, nil, err

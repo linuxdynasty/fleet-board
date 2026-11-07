@@ -12,14 +12,12 @@ import (
 	"time"
 
 	"github.com/linuxdynasty/fleet-board/internal/hub/api"
-	"github.com/linuxdynasty/fleet-board/internal/hub/approvals"
 	"github.com/linuxdynasty/fleet-board/internal/hub/backup"
 	"github.com/linuxdynasty/fleet-board/internal/hub/config"
 	"github.com/linuxdynasty/fleet-board/internal/hub/discovery"
 	"github.com/linuxdynasty/fleet-board/internal/hub/gateway"
 	"github.com/linuxdynasty/fleet-board/internal/hub/housekeeping"
 	"github.com/linuxdynasty/fleet-board/internal/hub/lock"
-	"github.com/linuxdynasty/fleet-board/internal/hub/outbox"
 	"github.com/linuxdynasty/fleet-board/internal/hub/revocation"
 	"github.com/linuxdynasty/fleet-board/internal/hub/rollup"
 	"github.com/linuxdynasty/fleet-board/internal/hub/statedb"
@@ -228,36 +226,10 @@ func serve(ctx context.Context, cfg *config.Config, opts Options, d hubDeps, s *
 		}
 		return s.fail(ReasonListen, err)
 	}
-	hk, err := housekeeping.New(housekeeping.Options{Now: opts.Now, Telemetry: s.tel}, housekeeping.Job{
-		Name: "machine_state", Every: housekeeping.TickEvery, Run: agent.Housekeep,
-	}, housekeeping.Job{
-		Name: "outbox_expiry", Every: housekeeping.TickEvery, Run: agent.Outbox().ExpireDue,
-	}, housekeeping.Job{
-		Name: "outbox_prune", Every: outbox.PruneEvery, Run: agent.Outbox().Prune,
-	}, housekeeping.Job{
-		Name: "events_prune", Every: gateway.PruneEventsEvery, Run: agent.PruneEvents,
-	}, housekeeping.Job{
-		Name: "system_evaluate", Every: system.EvaluateEvery, Run: sysLoop.Run,
-	}, housekeeping.Job{
-		// The Watch publish tick (plan row 12, slice 2): the volatile
-		// flush and the dirty fleet summary, at most every housekeeping
-		// tick. It never fails: every failure is logged and retried on
-		// the next pass.
-		Name: "watch_publish", Every: housekeeping.TickEvery, Run: func(ctx context.Context, _ time.Time) error {
-			return fleet.PublishTick(ctx)
-		},
-	}, InsightsRollupJob(roller, d.st), InsightsPruneJob(roller, d.st), housekeeping.Job{
-		Name: "approvals_expiry", Every: approvalsExpiryEvery, Run: func(ctx context.Context, now time.Time) error {
-			expired, err := approvals.ExpirePass(ctx, d.st, now)
-			if err != nil {
-				return err
-			}
-			if len(expired) > 0 {
-				s.tel.Logger.InfoContext(ctx, "approval.expired", "count", len(expired), "fallback", "deny")
-			}
-			return nil
-		},
-	})
+	// The scheduler wire carries the provider syncer to the auto-dispatch
+	// job once the sync loop starts below (03c rule 4).
+	sched := &schedulerWire{fleet: fleet}
+	hk, err := newHousekeeping(opts.Now, s.tel, agent, sysLoop, fleet, roller, d.st, sched)
 	if err != nil {
 		for _, l := range ls {
 			_ = l.ln.Close() // the housekeeping error is the one to report
@@ -340,6 +312,7 @@ func serve(ctx context.Context, cfg *config.Config, opts Options, d hubDeps, s *
 		// (the Watch ingest slice), serialized on the Fleet's watchMu.
 		gsync.OnWorkItems = fleet.PublishWorkItems
 		gsync.OnChangeRequests = fleet.PublishChangeRequests
+		sched.attach(gsync)
 		wg.Add(1)
 		go func() { defer wg.Done(); gsync.Loop(ctx, GitHubIntegrationID) }()
 	}

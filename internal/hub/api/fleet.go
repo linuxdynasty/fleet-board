@@ -108,6 +108,9 @@ type FleetOptions struct {
 	// the documented 10-minute default. The daemon passes the configured
 	// value.
 	MaxSyncLag time.Duration
+	// HubHostname is the daemon's hostname for the scheduler's
+	// prefer-non-hub ranking; empty disables the hub match.
+	HubHostname string
 }
 
 // Fleet is the hub's FleetService. The caller comes from [PrincipalFrom],
@@ -184,8 +187,22 @@ type Fleet struct {
 	// attachReadyWait bounds the wait for TermReady; attachCloseWait
 	// bounds the wait for TermUp closed after a client detach.
 	attachReadyWait, attachCloseWait time.Duration
+	// schedPasses times auto-dispatch passes and schedSkips counts what
+	// each pass skipped by reason (03c "Telemetry").
+	schedPasses metric.Float64Histogram
+	schedSkips  metric.Int64Counter
+	// schedMu guards the last auto-dispatch pass time (the 30 s cadence)
+	// and the last EnsureProbe run_now per account (at most one a
+	// minute, 03b).
+	schedMu       sync.Mutex
+	schedLastPass time.Time
+	probeRunNow   map[string]time.Time
 	// maxLag is timing.max_sync_lag for the integration-lag check.
-	maxLag         time.Duration
+	maxLag time.Duration
+	// hubHostname is the daemon's hostname: the scheduler's prefer-non-hub
+	// ranking matches it against the snapshot facts to find the hub
+	// machine. Empty disables the match (no preference either way).
+	hubHostname    string
 	workItems      metric.Int64ObservableGauge
 	sysSignalState metric.Float64ObservableGauge
 	sysSignalValue metric.Float64ObservableGauge
@@ -288,10 +305,21 @@ func NewFleet(opts FleetOptions) (*Fleet, error) {
 		return nil, fmt.Errorf("api: repo counter: %w", err)
 	}
 	f.dispatches, err = f.tel.Meter(scope).Int64Counter(f.tel.MetricPrefix()+"_dispatch_total",
-		metric.WithDescription("Dispatch RPCs by mode and result: preflight or start; ok, blocked, confirm, warn_unacked, sent or refused."))
+		metric.WithDescription("Dispatch RPCs by mode and result: preflight, start, auto, requeue or probe; ok, blocked, confirm, warn_unacked, sent or refused."))
 	if err != nil {
 		return nil, fmt.Errorf("api: dispatch counter: %w", err)
 	}
+	f.schedPasses, err = f.tel.Meter(scope).Float64Histogram(f.tel.MetricPrefix()+"_scheduler_pass_seconds",
+		metric.WithDescription("Auto-dispatch pass latency from snapshot to last commit (03c)."))
+	if err != nil {
+		return nil, fmt.Errorf("api: scheduler pass histogram: %w", err)
+	}
+	f.schedSkips, err = f.tel.Meter(scope).Int64Counter(f.tel.MetricPrefix()+"_scheduler_skips_total",
+		metric.WithDescription("Auto-dispatch pass skips by reason: the lower-cased 540-range ReasonCode short name (03c)."))
+	if err != nil {
+		return nil, fmt.Errorf("api: scheduler skips counter: %w", err)
+	}
+	f.probeRunNow = map[string]time.Time{}
 	f.goalMoves, err = f.tel.Meter(scope).Int64Counter(f.tel.MetricPrefix()+"_goal_transitions_total",
 		metric.WithDescription("Recorded goal transitions by from and to phase and reason."))
 	if err != nil {
@@ -308,6 +336,7 @@ func NewFleet(opts FleetOptions) (*Fleet, error) {
 		return nil, fmt.Errorf("api: attach counter: %w", err)
 	}
 	f.maxLag = opts.MaxSyncLag
+	f.hubHostname = opts.HubHostname
 	f.workItems, err = f.tel.Meter(scope).Int64ObservableGauge(f.tel.MetricPrefix()+"_work_items",
 		metric.WithDescription("Synced work items by integration and hub stage (03m)."))
 	if err != nil {

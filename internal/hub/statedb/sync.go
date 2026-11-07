@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/linuxdynasty/fleet-board/internal/store"
@@ -105,9 +106,38 @@ CREATE TABLE repos(
 ) STRICT;`
 
 // SyncKey is the canonical mirror id
-// "<integration>/<KIND>/<project>/<key>" (type/v1 WorkItemKey).
+// "<integration>/<KIND>/<project>/<key>" (type/v1 WorkItemKey). The kind
+// segment is normalized: callers pass either the short name ("ISSUE")
+// or the full enum name ("WORK_ITEM_KIND_ISSUE"), and both name the
+// same row, so the syncer's full-form keys and the dispatch path's
+// short-form keys meet. Any other kind passes through unchanged.
 func SyncKey(integration, kind, project, key string) string {
-	return integration + "/" + kind + "/" + project + "/" + key
+	return integration + "/" + normalizeWorkKind(kind) + "/" + project + "/" + key
+}
+
+// normalizeWorkKind strips the WORK_ITEM_KIND_ enum prefix, so the two
+// spellings of a kind name the same mirror row.
+func normalizeWorkKind(kind string) string {
+	const prefix = "WORK_ITEM_KIND_"
+	if rest, ok := strings.CutPrefix(kind, prefix); ok && rest != "" {
+		return rest
+	}
+	return kind
+}
+
+// NormalizeWorkKey canonicalizes a full mirror key the same way SyncKey
+// does: the kind is the second segment (the project behind it may hold
+// slashes), and either spelling of it names the same row.
+func NormalizeWorkKey(key string) string {
+	head, rest, ok := strings.Cut(key, "/")
+	if !ok {
+		return key
+	}
+	kind, tail, ok := strings.Cut(rest, "/")
+	if !ok {
+		return key
+	}
+	return head + "/" + normalizeWorkKind(kind) + "/" + tail
 }
 
 // WorkItemMirror is one provider item with the hub's verdicts, all stored
@@ -218,6 +248,9 @@ type ChangeRequestChange struct {
 // Watch publishes it with its commit position.
 func upsertWorkItem(ctx context.Context, tx *sql.Tx, integration string, it WorkItemMirror, nowMs int64) (*WorkItemChange, error) {
 	key := SyncKey(integration, it.Kind, it.Project, it.ItemKey)
+	// New rows store the short kind beside the short key (migration 33
+	// rewrote the older full-form rows); reads accept either spelling.
+	kind := normalizeWorkKind(it.Kind)
 	item := it.ItemJSON
 	if len(item) == 0 {
 		item = []byte("{}")
@@ -251,7 +284,7 @@ func upsertWorkItem(ctx context.Context, tx *sql.Tx, integration string, it Work
 		_, err = tx.ExecContext(ctx, `INSERT INTO work_items(key, integration, kind, project, item_key, item_json,
 			update_ms, stage, trust_json, manual_reason, version, create_ms, last_sync_ms, hub_seq)
 			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)`,
-			key, integration, it.Kind, it.Project, it.ItemKey, string(item),
+			key, integration, kind, it.Project, it.ItemKey, string(item),
 			it.UpdateMs, it.Stage, string(trust), it.ManualReason, nowMs, nowMs, st.HubSeq)
 		if err != nil {
 			return nil, err
@@ -263,7 +296,7 @@ func upsertWorkItem(ctx context.Context, tx *sql.Tx, integration string, it Work
 		return &WorkItemChange{Key: key, Created: true, HubSeq: st.HubSeq, After: after}, nil
 	}
 	before := stored.stored
-	before.Key, before.Integration, before.Kind = key, integration, it.Kind
+	before.Key, before.Integration, before.Kind = key, integration, kind
 	before.Project, before.ItemKey = it.Project, it.ItemKey
 	if before.Stage, err = int32Range(stored.stage); err != nil {
 		return nil, err
