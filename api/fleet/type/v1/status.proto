@@ -71,7 +71,8 @@ enum Status {
 // command failures and policy rejections. Values 1..99 are preflight (I1);
 // 100..199 command execution; 200..299 envelope and policy; 300..399 goal
 // composite steps; 400..499 probes and parsing; 500..599 hub API; 600..699
-// Enroll (agent wire, carried in an RPC error's ErrorDetail).
+// Enroll (agent wire, carried in an RPC error's ErrorDetail); 700..799
+// native sessions (N1).
 enum ReasonCode {
   REASON_CODE_UNSPECIFIED = 0;
 
@@ -398,6 +399,41 @@ enum ReasonCode {
   // is for the key of the certificate the agent presents: a renewal needs a
   // new key.
   REASON_CODE_RENEW_CSR_INVALID = 606;
+
+  // Native sessions (N1). A duplicate command_id never retries blindly: the
+  // first outcome is returned, and a retry after NO_EFFECT needs a fresh
+  // command id linked to the first effect (02n).
+
+  // [CAP N1]
+  // The backend is unknown to this build or left unspecified: an unknown
+  // explicit backend fails closed.
+  REASON_CODE_NATIVE_BACKEND_UNSUPPORTED = 700;
+  // [CAP N1]
+  // The backend is known but not qualified on this machine (no advertised
+  // "native.<backend>" capability): disabled until ADR 0033 qualifies it.
+  REASON_CODE_NATIVE_NOT_QUALIFIED = 701;
+  // [CAP N1]
+  // The session id is already managed by a live controller; starting it
+  // again would double-run it.
+  REASON_CODE_NATIVE_ALREADY_MANAGED = 702;
+  // [CAP N1]
+  // The command's ownership generation is older than the session's: a
+  // superseded controller's command is never applied.
+  REASON_CODE_NATIVE_GENERATION_STALE = 703;
+  // [CAP N1]
+  // The session is held for reconciliation after an uncertain outcome (a
+  // crash with MAY_HAVE_RUN effects); control commands wait for it.
+  REASON_CODE_NATIVE_SESSION_HELD = 704;
+  // [CAP N1]
+  // Another turn of the session is still unresolved; ordinary turns run one
+  // at a time in admission order.
+  REASON_CODE_NATIVE_TURN_BUSY = 705;
+  // [CAP N1]
+  // Reserved for the adapter slices: no code emits this reason yet.
+  // Process exit is event-only in this slice; once a backend records
+  // liveness, start or send on a dead session is refused instead of
+  // silently reviving it.
+  REASON_CODE_NATIVE_EXITED = 706;
 }
 
 // AttachCloseReason says why a terminal attach ended (J1). Used by the

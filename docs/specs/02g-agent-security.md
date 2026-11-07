@@ -3,11 +3,10 @@
 - Status: Accepted; contracts unfrozen until v0.1 (ADR 0019)
 - Date: 2026-10-02
 - Part of: [02-contracts.md](02-contracts.md)
-- Output: `agent/v1/agent.proto` (`EnrollRequest`, `EnrollResponse`, `HelloAck`,
-  `ByeReason`), `command.proto` and `events.proto` (`trace`),
-  `type/v1/trace.proto`, `type/v1/status.proto` (`ReasonCode` 521 to 532 and
-  600 to 606), `hub/v1/machine.proto` (`RevokeMachine`, `MACHINE_STATE_REVOKED`),
-  `hub/v1/settings.proto` (`AuditEntry`)
+- Output: `agent/v1/agent.proto` (`EnrollRequest`, `EnrollResponse`, `HelloAck`, `ByeReason`),
+  `command.proto` and `events.proto` (`trace`, native N1/N2), `type/v1/trace.proto`,
+  `type/v1/status.proto` (`ReasonCode` 521 to 532, 600 to 606 and 700 to 706),
+  `hub/v1/machine.proto` (`RevokeMachine`, `MACHINE_STATE_REVOKED`), `hub/v1/settings.proto` (`AuditEntry`)
 - Decisions: [ADR 0004](../adr/0004-agent-connectivity.md),
   [ADR 0019](../adr/0019-pre-implementation-contract-decisions.md) addendum
 - Review: `enroll-trust-anchor-and-retry`, `connect-enroll-failure-wire`,
@@ -16,11 +15,10 @@
   `no-trace-context-on-wire` in
   [the contract review](../reviews/2026-10-02-contract-review.md)
 
-Authentication of people is [02f](02f-hub-authentication.md). This file is
-about the machine side: who the agent trusts before it has a certificate, what
-makes a hub the same hub, what happens when a machine is revoked, what each
-principal may ask an agent to do, and how security-relevant decisions made at
-the machine are kept.
+Authentication of people is [02f](02f-hub-authentication.md). This file is about the machine side:
+who the agent trusts before it has a certificate, what makes a hub the same hub, what happens
+when a machine is revoked, what each principal may ask an agent to do, and how security-relevant
+decisions made at the machine are kept.
 
 ## Enrollment trust anchor and retry (A1)
 
@@ -388,6 +386,8 @@ An **observe command** is one the VIEWER column allows (`CapturePane`, `RunHarne
 | `SendKeys` purpose `GOAL_NUDGE`, `GOAL_RESUME` (ready prompt, empty input line, goal-bound pane) | — | L | L | L, F | — |
 | `SendKeys` purpose `PROMPT_ANSWER` (`answering_prompt`) | — | L | L | — | — |
 | `Interrupt` | — | A | A | A | — |
+| `StartNativeSession`, `SendNativeTurn`, `ResumeNativeSession` | — | A | A | A | — |
+| `InterruptNativeSession`, `StopNativeSession` | — | A | A | A | — |
 | `RespawnPane` | — | L | L | L, F | — |
 | `KillWindow` on a fleet window | — | L | L | L, F (after `merged_grace`) | — |
 | `KillWindow` on a developer's window | — | — | L | — | — |

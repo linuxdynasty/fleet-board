@@ -50,6 +50,7 @@ var fills = map[string]func(m protoreflect.Message) string{
 	"<account_key>":   func(m protoreflect.Message) string { return nested(m, "account_key", "value") },
 	"<harness>":       func(m protoreflect.Message) string { return nested(m, "harness", "name") },
 	"<worktree path>": func(m protoreflect.Message) string { return str(m, "path") },
+	"<session>":       func(m protoreflect.Message) string { return nested(m, "session", "value") },
 	"<tool>":          func(m protoreflect.Message) string { return str(m, "tool") },
 	"<host>":          func(m protoreflect.Message) string { return str(m, "host") },
 	// HarnessInfo.profile; "" is the default profile (ADR 0018), and

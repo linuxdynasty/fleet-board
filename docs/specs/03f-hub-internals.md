@@ -184,6 +184,8 @@ contract; this is how the hub runs it.
   clock plus the kind's default (02 "Deadlines": 2 min, 30 min, 24 h for
   `StopProbe`, 10 min else), in the row and in the stored `Command`, so no
   command leaves without one (the agent takes an unset deadline as past).
+  Native start, send and resume are dispatch (a turn can run long); native
+  interrupt is interactive; native stop takes the 10 min default.
 - **Expiry.** An open row (`pending` or `delivered`) whose deadline came
   with no result is closed: `expired`, `Operation` `DONE` with status and
   reason `EXPIRED`, `done_time` set, each row its own version and

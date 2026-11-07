@@ -152,6 +152,7 @@ rises only when its behaviour changes in a way a command could notice.
 | `SetLogCapture`, `SetLogShipping` | `logs.terminal` | `SetLogShipping` yes; `SetLogCapture` — |
 | `Drain`, `Undrain` | `drain` | yes |
 | `EnsureScratch`, `CollectScratch` | `scratch` (also `StartGoal` with `WORKTREE_MODE_SCRATCH`, 05) | `EnsureScratch` yes; `CollectScratch` — |
+| `StartNativeSession`, `SendNativeTurn`, `ResumeNativeSession`, `InterruptNativeSession`, `StopNativeSession` | `native.<backend>` version 1, one advertised capability per qualified backend (N1) | no: one external effect per `command_id` through the journal; a duplicate returns the first outcome and a retry after NO_EFFECT needs fresh ids ([02n](02n-native-execution.md)) |
 
 Repeat safe: whether the agent may run the same command again (a re-send
 with a new `command_id`) with no other effect; `—` is not stated yet. A repeat

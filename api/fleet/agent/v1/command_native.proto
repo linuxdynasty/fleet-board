@@ -1,0 +1,158 @@
+// fleet.agent.v1 native session commands (N1): start, send-turn, resume,
+// interrupt and stop for one fleet-managed session (02n). Every command
+// names its backend; the agent answers STATUS_UNSUPPORTED with the
+// per-backend capability ("native.<backend>") when that backend is not
+// qualified on that machine. No shell string, no executable path and no
+// credential travels in these commands: the hub sends references (session,
+// account, repo short name), and the agent joins them to its local policy
+// and allowed roots. RunExec stays reserved and is not defined in v1.
+syntax = "proto3";
+
+package fleet.agent.v1;
+
+import "fleet/type/v1/ids.proto";
+import "fleet/type/v1/native.proto";
+import "fleet/type/v1/work.proto";
+
+// ===== N1. Native session control =====
+
+// [CAP N1]
+// StartNativeSession: open one managed session on a qualified backend. The
+// hub assigns the Fleet session id; the provider-native id comes back in
+// the result once the start effect binds it. A session id that is already
+// managed is refused with NATIVE_ALREADY_MANAGED; a held one with
+// NATIVE_SESSION_HELD. The start admits one journal effect, so a duplicate
+// command_id returns the first outcome instead of starting twice.
+message StartNativeSession {
+  fleet.type.v1.NativeBackend backend = 1;
+  // Hub-assigned Fleet session id for the managed session.
+  fleet.type.v1.SessionId session = 2;
+  // The hub's own account record for the subscription this session spends
+  // from. The agent never learns secrets, only this reference.
+  fleet.type.v1.AccountId account = 3;
+  // Harness profile to run under; empty is the harness default (ADR 0018).
+  // 128 bytes.
+  string account_profile = 4;
+  // Where the code lives. The agent joins it to an allowed root and refuses
+  // an unlisted root (REPO_ROOT_NOT_ALLOWED).
+  fleet.type.v1.RepoRef repo = 5;
+  // Checkout-relative subfolder, empty for the checkout root. Joined to the
+  // allowed checkout; ".." is refused with INVALID_ARGUMENT. 256 bytes.
+  string workdir_subpath = 6;
+  // Model and effort as the harness names them. Empty leaves each as is.
+  // 128 bytes each.
+  string model = 7;
+  string effort = 8;
+  // Capability and version evidence for the qualification that allows this
+  // start (for example "native.claude_code/1_cli-2.1.286_plan"). 128 bytes,
+  // no spaces: the journal stores it as one printable reference.
+  string qualification_ref = 9;
+  // Which machine-side interface to run through ("sdk", "cli",
+  // "app-server"); empty is the backend default. Together with backend it
+  // names the journal's interface namespace, so two interfaces on one
+  // backend never share a provider identity. 64 bytes.
+  string interface = 10;
+}
+
+// [CAP N1]
+// StartNativeSessionResult: the bound session, or the refusal.
+message StartNativeSessionResult {
+  // Provider-native session identity, now bound to the start effect and
+  // immutable for this session and generation. Empty when the start did not
+  // bind one. Untrusted text, 256 bytes (the journal bound).
+  string provider_session_id = 1;
+  // Effective model and effort, as the harness reports them. 128 bytes each.
+  string model = 2;
+  string effort = 3;
+}
+
+// [CAP N1]
+// SendNativeTurn: hand one turn of work to a managed session. The input is
+// the operator's or dispatcher's text, never terminal bytes: the adapter
+// delivers it through the backend's own turn interface. A turn sent while
+// another turn of the same session is unresolved is refused with
+// NATIVE_TURN_BUSY; ordinary turns wait for earlier unresolved effects of
+// the session in admission order (02n). The send admits one journal effect,
+// so a duplicate command_id returns the first admission instead of sending
+// twice, and a retry after NO_EFFECT needs a fresh command id linked to the
+// first effect.
+message SendNativeTurn {
+  fleet.type.v1.SessionId session = 1;
+  // The generation the sender holds; lower than the session's is refused
+  // with NATIVE_GENERATION_STALE.
+  uint64 ownership_generation = 2;
+  // One turn of work. Capped at 32 KiB; longer input is INVALID_ARGUMENT.
+  // Untrusted text.
+  string input = 3;
+}
+
+// [CAP N1]
+// SendNativeTurnResult: the admitted turn, in the session's order.
+message SendNativeTurnResult {
+  // The journal effect that carries this turn's single external call.
+  // Resending the same command_id returns this same id, never a new turn.
+  string effect_id = 1;
+  // Per-session admission order of the effect (1, 2, ...).
+  uint64 admission_order = 2;
+}
+
+// [CAP N1]
+// ResumeNativeSession: continue a managed session after its turn stream
+// broke, keeping the same provider identity where the backend allows it.
+// A session with an unresolved turn is refused with NATIVE_TURN_BUSY; an
+// unresumable one binds a fresh process and reports it. Process-liveness
+// refusal is owned by the adapter slices.
+message ResumeNativeSession {
+  fleet.type.v1.SessionId session = 1;
+  uint64 ownership_generation = 2;
+}
+
+// [CAP N1]
+// ResumeNativeSessionResult: the admitted resume, in the session's order.
+message ResumeNativeSessionResult {
+  // The journal effect that carries this resume's single external call.
+  string effect_id = 1;
+  uint64 admission_order = 2;
+  // True when the backend kept the provider session across the resume;
+  // false when it bound a fresh provider process to the same session.
+  bool provider_session_kept = 3;
+}
+
+// [CAP N1]
+// InterruptNativeSession: stop the running turn now, keeping the session.
+// Bypasses the ordinary admission order (an interrupt must not wait behind
+// the turn it stops) but still passes qualification, policy and ownership
+// checks. With no running turn it succeeds at once with accepted false.
+message InterruptNativeSession {
+  fleet.type.v1.SessionId session = 1;
+  uint64 ownership_generation = 2;
+}
+
+// [CAP N1]
+// InterruptNativeSessionResult: whether a turn was stopped.
+message InterruptNativeSessionResult {
+  // True when a running turn was stopped; false when there was none.
+  bool accepted = 1;
+}
+
+// [CAP N1]
+// StopNativeSession: end the managed session, stop its process, clean up
+// its machine-side state and leave the session record for the logs. Like an
+// interrupt it bypasses the ordinary admission order. Cleanup finished,
+// process gone and turn ended stay separate facts: a stopped session whose
+// process lingers reports cleanup_complete false, and the hub reconciles.
+message StopNativeSession {
+  fleet.type.v1.SessionId session = 1;
+  uint64 ownership_generation = 2;
+}
+
+// [CAP N1]
+// StopNativeSessionResult: what the stop finished.
+message StopNativeSessionResult {
+  // True when no native process of the session is left running.
+  bool process_exited = 1;
+  // True when the machine-side state (process, buffers, claims) is fully
+  // released. False leaves the session for reconciliation, never for a
+  // silent retry.
+  bool cleanup_complete = 2;
+}

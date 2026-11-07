@@ -33,6 +33,8 @@ var roleMatrix = []roleRow{
 	{"`SendKeys` purpose `GOAL_NUDGE`, `GOAL_RESUME` (ready prompt, empty input line, goal-bound pane)", []string{"SendKeys"}, []string{"GOAL_NUDGE", "GOAL_RESUME"}, [5]string{no, "L", "L", "L, F", no}},
 	{"`SendKeys` purpose `PROMPT_ANSWER` (`answering_prompt`)", []string{"SendKeys"}, []string{"PROMPT_ANSWER"}, [5]string{no, "L", "L", no, no}},
 	{"`Interrupt`", []string{"Interrupt"}, nil, [5]string{no, "A", "A", "A", no}},
+	{"`StartNativeSession`, `SendNativeTurn`, `ResumeNativeSession`", []string{"StartNativeSession", "SendNativeTurn", "ResumeNativeSession"}, nil, [5]string{no, "A", "A", "A", no}},
+	{"`InterruptNativeSession`, `StopNativeSession`", []string{"InterruptNativeSession", "StopNativeSession"}, nil, [5]string{no, "A", "A", "A", no}},
 	{"`RespawnPane`", []string{"RespawnPane"}, nil, [5]string{no, "L", "L", "L, F", no}},
 	{"`KillWindow` on a fleet window", []string{"KillWindow"}, []string{"fleet_window"}, [5]string{no, "L", "L", "L, F (after `merged_grace`)", no}},
 	{"`KillWindow` on a developer's window", []string{"KillWindow"}, []string{"developer_window"}, [5]string{no, no, "L", no, no}},

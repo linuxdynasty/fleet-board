@@ -131,7 +131,10 @@ page, err := db.RecoverNativeEffects(ctx, afterEffectID, 100) // mark uncertaint
   one per unsaved event (refused at emit, or a failed ring write) and one per
   named entry this job deleted (`RowsAffected`), so an entry already gone is
   not counted twice.
-- **Disabled native journal** (migration 9, #266; [02n](../../../docs/specs/02n-native-execution.md)).
+- **Native journal** (migrations 9-10, #266; [02n](../../../docs/specs/02n-native-execution.md)).
+  Migration 10 names the wire arms in the logged-command guard
+  (`StartNativeSession`, not `native.start`). Its production caller is the
+  native host (`internal/agent/native`).
   `native_sessions` keeps machine/installation/controller ownership under the
   existing Fleet `SessionId`; a provider ID is bound only to one exact claimed
   start effect and both IDs then stay fixed. `native_effects` keeps per-session
@@ -150,14 +153,14 @@ page, err := db.RecoverNativeEffects(ctx, afterEffectID, 100) // mark uncertaint
   `fleet-agent run` holds `fleet-agent.lock` from before Open through Close.
   No command-log foreign key permits its normal pruning without deleting the
   journal. Reads and recovery are paged at 1–1,000 effects. There is no
-  runtime producer, adapter, public command, or measured retention policy yet.
+  measured retention policy yet; at capacity, admission fails rather than
+  discarding unresolved rows.
 
 Signals: none of its own. `store.opened`, `store.migrated` and the
 `fleet_agent_writer_*` and `fleet_agent_store_*` metrics (`db="agent"`, 05b)
-come from `internal/store`.
-No-Observability-Change: these existing store signals also cover the dormant
-native journal; its runtime producer needs admission and reconciliation
-signals before it can be enabled.
+come from `internal/store`. The native host (`internal/agent/native`) adds
+`fleet_agent_native_effects_total`, `fleet_agent_native_buffer_dropped_bytes_total`,
+`fleet_agent_native_events_total` and the `native.*` log lines (02n).
 
 Tests use a real file in `t.TempDir()`: migrations on a fresh file and a
 reopen, a migration from schema 2, the file mode, a loose file refused,

@@ -96,7 +96,7 @@ func (d *DB) AdmitNativeEffect(ctx context.Context, r NativeEffectRecord) (Nativ
 		}
 		command, err := readEntry(ctx, tx, r.CommandID)
 		if err != nil || len(command.Body) == 0 || command.Status == StatusFinished ||
-			command.Kind != "native."+string(r.Kind) {
+			command.Kind != NativeWireKind(r.Kind) {
 			return ErrNativeConflict
 		}
 		got := sha256.Sum256(command.Body)

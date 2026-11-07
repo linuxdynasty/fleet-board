@@ -149,6 +149,11 @@ With tmux present `run` also starts the terminal-attach manager (01f J1) behind
 the `OpenAttach` and `CloseAttach` handlers: the default and fleet servers are
 served, never the probe server, and without a served server there is no manager.
 The manager reports its live count in the heartbeat.
+`run` also starts the native session host (row 23) behind its five command
+handlers: journal-backed admission and the adapter boundary, with recovery
+(first: dead attempts resolve, effects reconcile) before the executor's resume
+pass. No backend passes qualification yet, so the adapter set is empty and
+every native command answers unsupported naming its per-backend capability.
 
 ## Labels that change behaviour
 

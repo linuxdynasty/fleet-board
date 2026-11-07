@@ -1,0 +1,94 @@
+// fleet.type.v1 native sessions: the backend-neutral session resource every
+// native protocol shares (agent wire, hub API). A stored legacy session with
+// no backend is terminal; an unknown explicit backend fails closed (02n).
+// Native execution stays disabled under ADR 0033 until the exact interface,
+// version, auth and billing mode, approval behavior, deployment and
+// machine-side caller are qualified.
+syntax = "proto3";
+
+package fleet.type.v1;
+
+import "fleet/type/v1/ids.proto";
+import "fleet/type/v1/principal.proto";
+import "fleet/type/v1/work.proto";
+import "google/protobuf/timestamp.proto";
+
+// NativeBackend is the harness and interface a managed session runs
+// through. The agent advertises one capability per qualified backend named
+// "native.<backend>" (for example "native.claude_code", the lowercase enum
+// value without its prefix), version 1; a command that names a backend with
+// no advertised capability is answered STATUS_UNSUPPORTED with that name in
+// missing_capability, never run. A backend value this build does not know
+// is refused as NATIVE_BACKEND_UNSUPPORTED before anything else. New
+// backends are added here when their qualification lands (#267-#269), never
+// as a free-form string: a closed set keeps the capability name exact.
+enum NativeBackend {
+  NATIVE_BACKEND_UNSPECIFIED = 0;
+  NATIVE_BACKEND_CLAUDE_CODE = 1;
+  NATIVE_BACKEND_CODEX = 2;
+  NATIVE_BACKEND_CURSOR = 3;
+  NATIVE_BACKEND_MUSE = 4;
+  NATIVE_BACKEND_OPENCODE = 5;
+}
+
+// NativeControlState is who owns a managed session. A manual session has
+// none: only a fleet-managed session carries this resource.
+enum NativeControlState {
+  NATIVE_CONTROL_STATE_UNSPECIFIED = 0;
+  // The named controller owns the session; typed commands within local
+  // policy, goal consent and approval limits are accepted.
+  NATIVE_CONTROL_STATE_MANAGED = 1;
+  // The session is held for reconciliation after an uncertain outcome (a
+  // crash with MAY_HAVE_RUN effects, a failed binding); control commands
+  // are refused with NATIVE_SESSION_HELD until #270's transfer lands.
+  NATIVE_CONTROL_STATE_HELD = 2;
+}
+
+// NativeSession is one fleet-managed session: backend-neutral identity for
+// the hub and the agent. Goal attempt, turn, command, session, account and
+// provider IDs stay distinct (02n). The provider-native session ID is empty
+// until the start effect binds it; the pair is then immutable. All
+// references are non-secret identifiers; workdir_subpath is a logical
+// reference, never a machine path.
+message NativeSession {
+  // Hub-assigned Fleet session id.
+  SessionId id = 1;
+  uint64 version = 2;
+  google.protobuf.Timestamp create_time = 3;
+  google.protobuf.Timestamp update_time = 4;
+
+  NativeBackend backend = 10;
+  // Provider-native session identity, empty until bound. Untrusted text,
+  // 256 bytes (the journal bound).
+  string provider_session_id = 11;
+  MachineId machine = 12;
+  // The hub's own account record; the agent learns the account only through
+  // commands that reference it. Non-secret.
+  AccountId account = 13;
+  // Harness profile to run under; empty is the harness default (ADR 0018).
+  // Untrusted text, 128 bytes.
+  string account_profile = 14;
+  // Where the code lives (RepoRef identity is host and path only).
+  RepoRef repo = 15;
+  // Checkout-relative subfolder, empty for the checkout root. Joined to an
+  // allowed root by the agent; ".." is refused. Untrusted text, 256 bytes.
+  string workdir_subpath = 16;
+  // Model and effort as the harness names them. Empty leaves each as is.
+  // Untrusted text, 128 bytes each.
+  string model = 17;
+  string effort = 18;
+  // The principal that owns control; handoff changes it (#270).
+  Principal control_owner = 19;
+  // Ownership generation: control passes only forward; a command with a
+  // lower generation is refused with NATIVE_GENERATION_STALE.
+  uint64 ownership_generation = 20;
+  // Capability and version evidence for the qualification that allows this
+  // backend (for example "native.claude_code/1_cli-2.1.286_plan"). 128 bytes,
+  // no spaces: the journal stores it as one printable reference.
+  string qualification_ref = 21;
+  NativeControlState control_state = 22;
+  // Which machine-side interface the session runs through ("sdk", "cli",
+  // "app-server"); the backend default when empty. With backend it names
+  // the journal's interface namespace. 64 bytes.
+  string interface = 23;
+}

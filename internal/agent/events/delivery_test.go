@@ -65,6 +65,7 @@ func TestStampFillsEveryCoalesceKey(t *testing.T) {
 		{"harness_changed", &agentv1.Event{Body: &agentv1.Event_HarnessChanged{HarnessChanged: &agentv1.HarnessInfo{Harness: h}}}, "harness:claude:"},
 		{"harness_changed work", &agentv1.Event{Body: &agentv1.Event_HarnessChanged{HarnessChanged: &agentv1.HarnessInfo{Harness: h, Profile: "work"}}}, "harness:claude:work"},
 		{"forge_cli_status", &agentv1.Event{Body: &agentv1.Event_ForgeCliStatus{ForgeCliStatus: &agentv1.ForgeCliStatus{Tool: "gh", Host: "github.com"}}}, "forge:gh:github.com"},
+		{"native_usage", &agentv1.Event{Body: &agentv1.Event_NativeUsage{NativeUsage: &agentv1.NativeUsage{Session: &typev1.SessionId{Value: "session-1"}}}}, "native_usage:session-1"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

@@ -13,6 +13,7 @@ syntax = "proto3";
 
 package fleet.agent.v1;
 
+import "fleet/agent/v1/events_native.proto";
 import "fleet/agent/v1/screen.proto";
 import "fleet/agent/v1/snapshot.proto";
 import "fleet/agent/v1/usage.proto";
@@ -24,7 +25,8 @@ import "google/protobuf/timestamp.proto";
 
 // Event is one timestamped fact. body kinds are numbered by capability
 // group: 10-19 machine, 20-29 harness/usage, 30-49 tmux, 50-59 goals and
-// repos, 60-69 logs, 70-79 policy and self-management.
+// repos, 60-69 logs, 70-79 policy and self-management, 80-89 native
+// sessions (N2, shapes in events_native.proto).
 message Event {
   // Agent-wide sequence, strictly increasing and never reused, across
   // reconnects, agent crashes and hub restores: the agent persists a
@@ -146,6 +148,28 @@ message Event {
     // [DELIVERY NEVER_DROP] audited
     // Drain state changed (hub or local).
     DrainState drain_state = 72;
+
+    // [DELIVERY SHED] bounded output sample; a slow consumer drops chunks, never blocks approvals
+    // One scrubbed output chunk of a managed native session.
+    NativeOutput native_output = 80;
+    // [DELIVERY SHED] latest tool activity wins; turn end and usage below are the durable anchors
+    // One tool call started, finished or failed in a managed native session.
+    NativeToolActivity native_tool = 81;
+    // [DELIVERY NEVER_DROP] an approval must reach Triage and be retired
+    // The harness asks the operator to approve an action in a managed session.
+    NativeApprovalRequest native_approval = 82;
+    // [DELIVERY COALESCE native_usage:<session>] the burn-down uses the latest per session
+    // Provider-metered tokens of one turn of a managed native session.
+    NativeUsage native_usage = 83;
+    // [DELIVERY NEVER_DROP] a turn ending is not goal completion and not process exit
+    // The harness finished one turn of a managed native session.
+    NativeTurnEnded native_turn_ended = 84;
+    // [DELIVERY NEVER_DROP] process exit is not turn end and not cleanup
+    // The native process of a managed session exited.
+    NativeProcessExited native_process_exited = 85;
+    // [DELIVERY NEVER_DROP] an unknown SDK event is recorded, never completed
+    // An SDK event with no known kind arrived; carried as identity only.
+    NativeUnknownEvent native_unknown = 86;
   }
 }
 

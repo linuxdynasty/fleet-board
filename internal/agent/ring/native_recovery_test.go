@@ -73,7 +73,7 @@ func TestNativeHeldSessionAllowsInterruptButBlocksNewWork(t *testing.T) {
 		t.Fatal(err)
 	}
 	body := []byte("held work")
-	nativeCommandKind(t, db, "command-b", "native.resume", body)
+	nativeCommandKind(t, db, "command-b", "ResumeNativeSession", body)
 	if _, _, err := db.AdmitNativeEffect(ctx, ring.NativeEffectRecord{
 		EffectID: "effect-b", CommandID: "command-b", SessionID: session.SessionID,
 		Generation: 1, Kind: ring.NativeEffectResume, CommandBodyDigest: nativeDigest(body),
