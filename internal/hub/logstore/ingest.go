@@ -63,6 +63,19 @@ func (s *Store) Ingest(ctx context.Context, c Chunk) (end uint64, v Verdict, err
 		}
 		if c.Offset+c.UintRaw() <= end {
 			v = Duplicate
+			if c.Final && c.Offset+c.UintRaw() == end {
+				// The pane-exit final marker arrived after its bytes:
+				// record it on the stream's newest chunk so the stream
+				// reads closed. A stale Final short of the end is not
+				// the stream's end and is ignored.
+				if _, err := tx.ExecContext(ctx, `UPDATE log_chunks SET is_final=1
+					WHERE session_id=? AND pane=? AND stream=?
+					AND raw_offset+raw_length=(SELECT MAX(raw_offset+raw_length)
+					FROM log_chunks WHERE session_id=? AND pane=? AND stream=?)`,
+					session, pane, c.Stream, session, pane, c.Stream); err != nil {
+					return fmt.Errorf("logstore: mark final: %w", err)
+				}
+			}
 			return nil
 		}
 		if c.Offset != end+c.GapBefore {

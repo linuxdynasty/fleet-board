@@ -123,3 +123,34 @@ func TestReplayEqualsCapturedBytes(t *testing.T) {
 		t.Fatal("last span is not final")
 	}
 }
+
+// TestDuplicateFinalClosesStream: the pane-exit final marker arrives as a
+// zero-byte chunk after its bytes already flushed. It verdicts Duplicate,
+// but it must still close the stream: otherwise Delete and prune treat the
+// ended stream as open forever and the bytes are never reclaimed.
+func TestDuplicateFinalClosesStream(t *testing.T) {
+	t.Parallel()
+	st, ctx := testStore(t)
+	end := time.Unix(4000, 0).UTC()
+	raw := []byte("hello\n")
+	at, v, err := st.Ingest(ctx, logstore.Chunk{
+		Session: "s-dup", Machine: "m-1",
+		Pane: pane, Stream: logstore.TerminalStream, Offset: 0, Data: frame(t, raw),
+		RawLength: uint32(len(raw)), FrameStart: true, //nolint:gosec // G115: test bytes are tens of bytes
+		FirstTime: end.Add(-time.Second), LastTime: end,
+	})
+	if err != nil || v != logstore.Stored || at != uint64(len(raw)) {
+		t.Fatalf("ingest end=%d v=%v err=%v", at, v, err)
+	}
+	at, v, err = st.Ingest(ctx, logstore.Chunk{
+		Session: "s-dup", Machine: "m-1",
+		Pane: pane, Stream: logstore.TerminalStream, Offset: uint64(len(raw)),
+		Final: true, FirstTime: end, LastTime: end,
+	})
+	if err != nil || v != logstore.Duplicate || at != uint64(len(raw)) {
+		t.Fatalf("final marker end=%d v=%v err=%v, want a Duplicate at 6", at, v, err)
+	}
+	if _, err := st.Delete(ctx, "s-dup"); err != nil {
+		t.Fatalf("Delete after duplicate final: %v", err)
+	}
+}
