@@ -2,6 +2,7 @@ package logstore_test
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -111,4 +112,95 @@ func TestSearch(t *testing.T) {
 			t.Fatalf("paged matches %d, want 3", len(all))
 		}
 	})
+}
+
+// TestSearchStreamsAcrossBatches pins multi-batch search: one stream holds
+// more chunk rows than a single fetch batch (searchBatchRows), with one
+// frame straddling the batch edge. Both framed matches must surface, and
+// token paging must walk across the batches to the end.
+func TestSearchStreamsAcrossBatches(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	st := openFor(t, nil)
+	end := time.Unix(5000, 0).UTC()
+	p := paneID("%5")
+	var off uint64
+	putLine := func(s string) {
+		t.Helper()
+		raw := []byte(s)
+		if _, v, err := st.Ingest(ctx, logstore.Chunk{
+			Session: "s-big", Machine: "m-1", Pane: p, Stream: logstore.TerminalStream,
+			Offset: off, Data: frame(t, raw),
+			RawLength: uint32(len(raw)), FrameStart: true, FrameRawOffset: off, //nolint:gosec // G115: test bytes are tens of bytes
+			FirstTime: end, LastTime: end,
+		}); err != nil || v != logstore.Stored {
+			t.Fatalf("ingest line at %d: v=%v err=%v", off, v, err)
+		}
+		off += uint64(len(raw))
+	}
+	putFrame := func(raws ...[]byte) {
+		t.Helper()
+		encoded := frame(t, raws...)
+		third := len(encoded) / 3
+		parts := split(t, encoded, third, 2*third)
+		start := off
+		for i, raw := range raws {
+			if _, v, err := st.Ingest(ctx, logstore.Chunk{
+				Session: "s-big", Machine: "m-1", Pane: p, Stream: logstore.TerminalStream,
+				Offset: off, Data: parts[i],
+				RawLength: uint32(len(raw)), FrameStart: i == 0, FrameRawOffset: start, //nolint:gosec // G115: test bytes are tens of bytes
+				FirstTime: end, LastTime: end,
+			}); err != nil || v != logstore.Stored {
+				t.Fatalf("ingest frame row %d at %d: v=%v err=%v", i, off, v, err)
+			}
+			off += uint64(len(raw))
+		}
+	}
+	// Rows 0..22: single-row filler frames.
+	for i := 0; i < 23; i++ {
+		putLine(fmt.Sprintf("filler %03d\n", i))
+	}
+	// Rows 23..25: one frame straddling the 25-row batch edge, with the
+	// match in its last row: the first batch ends mid-frame, so the match
+	// only decodes when the carry-over rows join the second batch. The
+	// trailing row alone cannot decode (no frame header), so without the
+	// holdback this match is missed entirely.
+	putFrame([]byte("straddle one\n"), []byte("middle filler\n"), []byte("EDGE needle-line\n"))
+	// Rows 26..35: more fillers with the second match past the edge.
+	for i := 0; i < 10; i++ {
+		if i == 5 {
+			putLine("TAIL needle-line\n")
+			continue
+		}
+		putLine(fmt.Sprintf("later %03d\n", i))
+	}
+
+	var snippets []string
+	var scanned uint64
+	token := ""
+	for {
+		matches, next, n, err := st.Search(ctx, logstore.SearchQuery{
+			Query: "needle", Limit: 1, PageToken: token,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		scanned = n
+		for _, m := range matches {
+			snippets = append(snippets, m.Snippet)
+		}
+		token = next
+		if token == "" {
+			break
+		}
+		if len(snippets) > 10 {
+			t.Fatal("search token loops")
+		}
+	}
+	if len(snippets) != 2 || snippets[0] != "EDGE needle-line" || snippets[1] != "TAIL needle-line" {
+		t.Fatalf("snippets %q, want [EDGE TAIL] across batches", snippets)
+	}
+	if scanned == 0 {
+		t.Fatal("scanned zero bytes")
+	}
 }
