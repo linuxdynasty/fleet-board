@@ -39,6 +39,19 @@ type chunkRow struct {
 	data        []byte
 }
 
+// windowEnd is the exclusive end of the [start, start+maxBytes) replay
+// window (0 means to the end of the range). A sum that wraps mod 2^64
+// would land below start and skip every row, so it saturates instead.
+func windowEnd(start, maxBytes uint64) uint64 {
+	end := ^uint64(0)
+	if maxBytes > 0 {
+		if e := start + maxBytes; e >= start {
+			end = e
+		}
+	}
+	return end
+}
+
 // Read replays one stream from start, stopping after maxBytes raw bytes
 // (0 means to the end). It decodes from the frame start the offset falls
 // in, so any offset replays byte-exact. Gaps split spans.
@@ -91,10 +104,7 @@ func (s *Store) Read(ctx context.Context, session string, pane Pane, stream int,
 	var lastEnd uint64
 	haveLast := false
 	skipped := false
-	end := ^uint64(0)
-	if maxBytes > 0 {
-		end = start + maxBytes
-	}
+	end := windowEnd(start, maxBytes)
 	flush := func() {
 		if cur != nil && len(cur.Data) > 0 {
 			spans = append(spans, *cur)

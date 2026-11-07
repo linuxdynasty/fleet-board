@@ -141,9 +141,17 @@ func (s *Store) Prune(ctx context.Context, capBytes uint64, retention time.Durat
 			}
 			break
 		}
-		freed, err := s.deleteSession(ctx, candidate)
+		freed, deleted, err := s.deleteSession(ctx, candidate)
 		if err != nil {
 			return out, err
+		}
+		if !deleted {
+			// A chunk landed after selection and reopened a stream:
+			// the session is live again, so re-select instead of
+			// counting a delete that did not run.
+			s.log.Info("log.prune_skipped", "session", candidate,
+				"reason", "stream reopened after selection")
+			continue
 		}
 		out.PrunedSessions++
 		out.PrunedBytes += freed
@@ -244,10 +252,22 @@ func oldestClosed(ctx context.Context, tx *sql.Tx, q string, args ...any) (strin
 }
 
 // deleteSession removes one session in one transaction, returning the freed
-// stored bytes.
-func (s *Store) deleteSession(ctx context.Context, session string) (uint64, error) {
+// stored bytes and whether the delete ran. The candidate was picked in an
+// earlier read transaction, so a chunk may have landed since and reopened
+// a stream (Ingest stores regardless of ENDED state); the open-stream
+// check is re-run inside this write transaction and a reopened session is
+// skipped instead of deleting live data.
+func (s *Store) deleteSession(ctx context.Context, session string) (uint64, bool, error) {
 	var freed uint64
+	var deleted bool
 	err := s.db.Write(ctx, func(tx *sql.Tx) error {
+		open, err := openStreams(ctx, tx, session)
+		if err != nil {
+			return err
+		}
+		if open {
+			return nil
+		}
 		if err := tx.QueryRowContext(ctx, `SELECT COALESCE(SUM(LENGTH(data)),0) FROM log_chunks
 			WHERE session_id=?`, session).Scan(&freed); err != nil {
 			return fmt.Errorf("logstore: freed bytes: %w", err)
@@ -261,9 +281,10 @@ func (s *Store) deleteSession(ctx context.Context, session string) (uint64, erro
 				return fmt.Errorf("logstore: prune delete: %w", err)
 			}
 		}
+		deleted = true
 		return nil
 	})
-	return freed, err
+	return freed, deleted, err
 }
 
 // vacuum reclaims freed pages in bounded steps, one transaction per step.
