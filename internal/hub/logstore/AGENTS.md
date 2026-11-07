@@ -10,9 +10,13 @@ Rules for this package:
   the next version. `logs.db` is hub state the hub creates; `Open` never
   uses `MustExist`.
 - The accept rules are 03d W9 exactly: `offset + raw_length <= end` is
-  `DUPLICATE`, `offset == end + gap_before` stores, anything else is `HOLE`,
+  `DUPLICATE`, `offset - gap_before == end` stores (offset-minus-gap, never
+  end-plus-gap: the sum wraps mod 2^64), anything else is `HOLE`,
   an unmapped pane is `UNKNOWN_STREAM`. Every chunk gets its verdict; the
   ack follows the commit, never precedes it.
+- Retention re-checks open streams inside the delete transaction: a chunk
+  that lands between candidate selection and delete reopens the stream,
+  and the delete is skipped instead of removing live data.
 - The store never reads `state.db`: the pane-to-session map is the injected
   `Resolver`. The gateway owns that map; tests inject a fake.
 - Retention deletes the oldest ended sessions first, one transaction per

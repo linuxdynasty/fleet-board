@@ -334,7 +334,7 @@ sequenceDiagram
   T->>A: pipe-pane -o output (raw bytes)
   A->>A: append to spool segment · flush the open zstd frame every 10 s (or 256 KiB raw) → one chunk{offset, raw_length}, a frame closes after 5 min or 4 MiB raw
   A->>H: SessionLog: LogChunk{key LogStreamKey{pane, stream=TERMINAL (session_id if known)}, offset, zstd, raw_length, frame_start, frame_raw_offset, gap_before, first_byte_time, last_byte_time, goal_id}
-  H->>H: resolve key.pane to a session (UNKNOWN_STREAM if not yet) · offset + raw_length ≤ end → DUPLICATE · offset = stored end + gap_before → append · else HOLE
+  H->>H: resolve key.pane to a session (UNKNOWN_STREAM if not yet) · offset + raw_length ≤ end → DUPLICATE · offset − gap_before = stored end → append · else HOLE
   H->>W: tx (one per ≤ 1 s batch across all streams): insert log_chunks{session, pane, stream, raw_offset, raw_length, frame_start, frame_raw_offset, first_time, last_time, gap_before, data = the zstd blocks as received}
   W-->>H: committed (chunk and index are one row, so they cannot disagree)
   H-->>A: LogAck{key, acked_offset = stored end, status STORED | DUPLICATE | HOLE | UNKNOWN_STREAM} (every chunk, accepted or refused)
@@ -377,7 +377,7 @@ chunk with `LogAck{key, acked_offset = its stored end, status}`:
 
 | Chunk | Hub action | `status` |
 |---|---|---|
-| `offset == stored_end + gap_before` | store the row, ack the new end (the row records `gap_before` as lost bytes) | `STORED` |
+| `offset - gap_before == stored_end` (offset-minus-gap, never end-plus-gap: the sum wraps mod 2^64) | store the row, ack the new end (the row records `gap_before` as lost bytes) | `STORED` |
 | `offset + raw_length ≤ stored_end` | ignore, but a final marker at the stored end also marks the stream's newest chunk final so the ended stream reads closed | `DUPLICATE` (re-ack) |
 | anything else (a hole, or the hub is ahead) | store nothing, count `log.hole_refused` | `HOLE` with the hub's end |
 | the pane maps to no session yet | store nothing | `UNKNOWN_STREAM` |
@@ -399,7 +399,7 @@ the size cap and the optional age limit are hub settings
 limit), the oldest ended sessions are pruned first and a session with an open
 stream never is. Replay: the UI asks for `(session, from_raw_offset | from
 time)`; the hub finds the chunks by `(session, pane, stream, raw_offset)` or time, decompresses frames, streams to
-xterm.js; chunk `first_byte_time/last_byte_time` give time navigation. An undecodable frame is skipped and the next span marks the gap, for replay and search alike; `SearchSessionLogs` pages each stream's chunks in 25-row fetches and resumes inside a frame from its head. Harness
+xterm.js; chunk `first_byte_time/last_byte_time` give time navigation. An undecodable frame is skipped and the next span marks the gap on replay; search skips undecodable frames and stored gaps without marking them, so readers consult the session gap_bytes totals. `SearchSessionLogs` pages each stream's chunks in 25-row fetches and resumes inside a frame from its head. Harness
 transcripts (K3, v3) reuse the path with `stream=HARNESS_TRANSCRIPT` from
 `PaneHarnessSession.transcript_path`, opt-in per repo or machine.
 
@@ -447,8 +447,8 @@ stateDiagram-v2
 
 ### Ordering and consistency
 
-- Per stream, a chunk lands at `stored_end + gap_before`; a nonzero
-  `gap_before` is recorded on the row as lost bytes and the UI shows it.
+- Per stream, a chunk lands where `offset - gap_before` is the stored end;
+  a nonzero `gap_before` is recorded on the row as lost bytes and the UI shows it.
 - Duplicate chunks after an ack was lost are detected by offset and re-acked
   (`DUPLICATE`); a refused chunk is answered `HOLE` with the hub's end, so the
   agent always learns where the hub is.
@@ -492,7 +492,7 @@ stateDiagram-v2
   bytes, streams), `hub.log.replay{session}`.
 - Logs: `log.gap{session, machine, bytes_lost}`, `log.paused{machine, reason}`,
   `log.resumed`, `log.pruned{session, bytes}`, `log.prune_blocked{reason}`,
-  `log.hole_refused{session, offset, end}`.
+  `log.prune_skipped{session, reason}`, `log.hole_refused{session, offset, end}`.
 
 At 3 AM: "are logs still arriving?" → `fleet_hub_log_ack_latency_seconds` and
 `fleet_agent_log_unacked_bytes`; "why is there a gap in this session?" →
