@@ -18,5 +18,6 @@ wire's `(pane, stream)` to the session before calling `Ingest`; the
 `state.db`.
 
 The four reads (`Read`, `List`, `Get`, `Search`), plus `Stat` and
-`Delete`, serve the `FleetService` calls of the same names; those calls
-enforce the `LOGS` scope and audit the delete, this package does neither.
+`Delete`, are built for the future `FleetService` calls of the same names;
+until those land nothing calls them in production. Those calls will enforce
+the `LOGS` scope and audit the delete; this package does neither.
