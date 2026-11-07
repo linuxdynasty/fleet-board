@@ -410,7 +410,7 @@ each of its panes moves from `state.db` to `logs.db` (ADR 0015, amending 0013) a
 finds ended sessions with `ListStoredSessions` (filter machine, goal, harness,
 state, time), which returns each stream's `LogStreamKey`, the sizes and times,
 and the archived summaries, so `ReadSessionLog` and `fleet logs export <session>`
-have an entry point after the window is gone; sessions ended before any chunk (NULL `last_time`) sort last and page on a key of 0. Replay loads one stream's rows and decodes only the window it serves; an empty replay means nothing decodable in the window, and readers consult the session gap_bytes totals. `DeleteSessionLogs` removes one
+have an entry point after the window is gone; sessions ended before any chunk (NULL `last_time`) sort last and page on a key of 0. Replay loads one stream's rows into memory and decodes only the window it serves; an empty replay means nothing decodable in the window, and readers consult the session gap_bytes totals. Bounding a replay call for the future handlers (paging like search) is follow-up work with the wiring slice. `DeleteSessionLogs` removes one
 session's chunks, `log_sessions` row and summaries in one `logs.db` transaction, with one audit row in `state.db`
 (`logs.delete`: bytes, never content) and is refused while a stream still
 captures (`LOG_STREAM_OPEN`). Right after it commits the hub also removes the
