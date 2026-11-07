@@ -21,11 +21,13 @@ import (
 // probeAuditAction is the audit action of a ProbeAccount call (02m).
 const probeAuditAction = "account.probe"
 
-// ProbeAccount runs the account's probe now: it enqueues EnsureProbe
-// with run_now on an ONLINE machine that may launch the harness,
-// preferring other machines over the hub's. The run_now gate allows one
-// per account per minute, and a repeated request_id returns the stored
-// operation instead of queueing a second probe.
+// ProbeAccount runs the account's probe now once an account key is
+// stored: it enqueues EnsureProbe with run_now on an ONLINE machine
+// that may launch the harness, preferring other machines over the
+// hub's. Until the hub stores account keys it refuses NO_FIT_MACHINE
+// instead of queueing a probe the agent would refuse. The run_now gate
+// allows one per account per minute, and a repeated request_id returns
+// the stored operation instead of queueing a second probe.
 func (f *Fleet) ProbeAccount(ctx context.Context, req *connect.Request[hubv1.ProbeAccountRequest],
 ) (*connect.Response[hubv1.ProbeAccountResponse], error) {
 	who, err := authorizeSessionsWrite(ctx)
