@@ -55,15 +55,24 @@ func (s *Store) Read(ctx context.Context, session string, pane Pane, stream int,
 	if len(rows) == 0 {
 		return nil, ErrNotFound
 	}
-	// Index rows by frame start for one decode per frame.
+	// Index rows by frame start for one decode per frame. A frame
+	// missing its head (cap eviction, crash) or torn cannot decode:
+	// leaving it out of the map skips its rows below and marks the gap
+	// at the next span, instead of failing the whole read.
 	frames := map[uint64][]chunkRow{}
 	for _, r := range rows {
 		frames[r.frameOffset] = append(frames[r.frameOffset], r)
 	}
+	// Frames decode lazily on first touch inside the window: a windowed
+	// read must not pay for frames it never serves.
 	decoded := map[uint64][]byte{}
-	decode := func(f uint64) ([]byte, error) {
+	failed := map[uint64]bool{}
+	decode := func(f uint64) ([]byte, bool) {
 		if b, ok := decoded[f]; ok {
-			return b, nil
+			return b, true
+		}
+		if failed[f] {
+			return nil, false
 		}
 		var raw [][]byte
 		for _, r := range frames[f] {
@@ -71,13 +80,17 @@ func (s *Store) Read(ctx context.Context, session string, pane Pane, stream int,
 		}
 		b, err := decodeFrame(bytes.Join(raw, nil))
 		if err != nil {
-			return nil, fmt.Errorf("logstore: decode frame at %d: %w", f, err)
+			failed[f] = true
+			return nil, false
 		}
 		decoded[f] = b
-		return b, nil
+		return b, true
 	}
 	var spans []Span
 	var cur *Span
+	var lastEnd uint64
+	haveLast := false
+	skipped := false
 	end := ^uint64(0)
 	if maxBytes > 0 {
 		end = start + maxBytes
@@ -93,9 +106,11 @@ func (s *Store) Read(ctx context.Context, session string, pane Pane, stream int,
 		if rowEnd <= start || r.offset >= end {
 			continue
 		}
-		b, err := decode(r.frameOffset)
-		if err != nil {
-			return nil, err
+		b, ok := decode(r.frameOffset)
+		if !ok {
+			flush()
+			skipped = true
+			continue
 		}
 		from := start
 		if r.offset > from {
@@ -114,13 +129,24 @@ func (s *Store) Read(ctx context.Context, session string, pane Pane, stream int,
 		}
 		if cur == nil {
 			cur = &Span{Offset: from, FirstTime: r.firstTime}
-			if r.gapBefore > 0 && r.offset >= start {
+			switch {
+			case skipped && haveLast && r.offset > start:
+				// Bytes vanished between the last emitted byte and
+				// this row: the skipped frame plus any stored gap.
+				cur.Offset = r.offset
+				cur.GapBefore = r.offset - lastEnd
+			case skipped && !haveLast && r.offset > start:
+				cur.Offset = r.offset
+				cur.GapBefore = r.offset - start
+			case r.gapBefore > 0 && r.offset >= start:
 				cur.Offset = r.offset
 				cur.GapBefore = r.gapBefore
 			}
 		}
+		skipped = false
 		cur.Data = append(cur.Data, b[lo:hi]...)
 		cur.LastTime = r.lastTime
+		lastEnd, haveLast = to, true
 		if r.isFinal && to == rowEnd && (maxBytes == 0 || rowEnd <= end) {
 			cur.Final = true
 		}
