@@ -8,9 +8,10 @@
 // so a restart appends to the same file. The pane id loses its `%` in the
 // file name (`%3` maps to `3.log`); the path in the pipe command is
 // tmux-escaped (`%` to `%%`, `#` to `##`) and single-quoted, because tmux
-// expands status-left formats in it. The raw file holds bytes only: zstd
-// frames, the spool, shipping, logs.db and the 0.15 sizing stay row 25,
-// and the hub's SetLogShipping pause belongs to that row too.
+// expands status-left formats in it. The raw file holds bytes only: the
+// Chunker frames one stream's raw bytes into zstd chunks and the Spool
+// durables them until the hub acks each one (row 25); the SessionLog
+// stream client that drains the spool belongs to the agent connection row.
 //
 // Product code never runs tmux directly: one-shot calls go through
 // internal/proc (the "tmux" caller), behind the Runner seam, so tests run

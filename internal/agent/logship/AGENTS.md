@@ -3,8 +3,11 @@
 Read the root `AGENTS.md` first; it applies here. Rules for this package:
 
 - Raw `pipe-pane` bytes stay in plain append files, never in a database
-  (`fleet-sqlite-store`, 04 Q9). Frames, the spool, shipping, `logs.db`
-  and the 0.15 sizing are row 25 and stay out of this package.
+  (`fleet-sqlite-store`, 04 Q9). The `Chunker` (zstd frames) and the
+  `Spool` (durable compressed chunks, K2) live here; the `SessionLog`
+  stream client that drains the spool (acks, `HOLE` resends, the
+  `SetLogShipping` pause) belongs to the agent connection row and stays
+  out of this package.
 - One-shot tmux CLI calls go through `internal/proc` (caller `tmux`);
   never import `os/exec` here (the depguard rule refuses it).
 - Every argument after the binary and `-S` is a separate element, never a
