@@ -115,6 +115,67 @@ func TestPruneOldestFirst(t *testing.T) {
 	}
 }
 
+// TestPruneFindsClosedSessionPastTheWindow: the candidate window must
+// not hide a closed session behind older sessions with open streams.
+// Twenty oldest ended sessions each hold one open stream; the newest is
+// closed. Prune must find and delete the closed one, not report
+// no_final_session while over cap.
+func TestPruneFindsClosedSessionPastTheWindow(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	st := openFor(t, nil)
+	base := time.Unix(5000, 0).UTC()
+	for i := 0; i < 20; i++ {
+		id := string(rune('a'+i/10)) + string(rune('0'+i%10)) + "-open"
+		p := logstore.Pane{Server: "default", Start: "s1", ID: "%" + string(rune('a'+i))}
+		raw := []byte("ended but streaming\n")
+		if _, v, err := st.Ingest(ctx, logstore.Chunk{
+			Session: id, Machine: "m-1",
+			Pane: p, Stream: logstore.TerminalStream, Offset: 0, Data: frame(t, raw),
+			RawLength: uint32(len(raw)), FrameStart: true, //nolint:gosec // G115: test bytes are tens of bytes
+			FirstTime: base.Add(time.Duration(i) * time.Minute), LastTime: base.Add(time.Duration(i) * time.Minute),
+		}); err != nil || v != logstore.Stored {
+			t.Fatalf("ingest %s v=%v err=%v", id, v, err)
+		}
+		if err := st.EndSession(ctx, id, "m-1", base.Add(time.Duration(i)*time.Minute), nil); err != nil {
+			t.Fatal(err)
+		}
+		more := []byte("still streaming\n")
+		if _, v, err := st.Ingest(ctx, logstore.Chunk{
+			Session: id, Machine: "m-1",
+			Pane: p, Stream: logstore.TerminalStream, Offset: uint64(len(raw)), Data: frame(t, more),
+			RawLength: uint32(len(more)), FrameStart: true, //nolint:gosec // G115: test bytes are tens of bytes
+			FirstTime: base.Add(time.Duration(i) * time.Minute), LastTime: base.Add(time.Duration(i) * time.Minute),
+		}); err != nil || v != logstore.Stored {
+			t.Fatalf("reopen %s v=%v err=%v", id, v, err)
+		}
+	}
+	p := logstore.Pane{Server: "default", Start: "s1", ID: "%z"}
+	raw := []byte("closed newest\n")
+	if _, v, err := st.Ingest(ctx, logstore.Chunk{
+		Session: "new-closed", Machine: "m-1",
+		Pane: p, Stream: logstore.TerminalStream, Offset: 0, Data: frame(t, raw),
+		RawLength: uint32(len(raw)), FrameStart: true, Final: true, //nolint:gosec // G115: test bytes are tens of bytes
+		FirstTime: base.Add(20 * time.Minute), LastTime: base.Add(20 * time.Minute),
+	}); err != nil || v != logstore.Stored {
+		t.Fatalf("ingest new-closed v=%v err=%v", v, err)
+	}
+	if err := st.EndSession(ctx, "new-closed", "m-1", base.Add(20*time.Minute), nil); err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := st.Prune(ctx, 0, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.PrunedSessions != 1 {
+		t.Fatalf("pruned %d sessions, want the 1 closed one past the window", out.PrunedSessions)
+	}
+	if _, err := st.Get(ctx, "new-closed"); err == nil {
+		t.Fatal("closed newest survived the prune")
+	}
+}
+
 func TestPruneBlockedOnlyOpen(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()

@@ -169,7 +169,10 @@ func (s *Store) Prune(ctx context.Context, capBytes uint64, retention time.Durat
 // nextCandidate is the oldest ended session with no open stream: an
 // age-expired one first, then the oldest end_time. Empty means none is
 // deletable; age says the candidate expired by retention rather than the
-// cap. last_time orders sessions that ended without an end_time.
+// cap. last_time orders sessions that ended without an end_time. The
+// no-open-stream check lives in the query itself (mirroring
+// openStreams), so a closed session past any window is still found;
+// oldestClosed re-verifies each returned row.
 func (s *Store) nextCandidate(ctx context.Context, retention time.Duration, now time.Time) (string, bool, error) {
 	var id string
 	var age bool
@@ -178,7 +181,8 @@ func (s *Store) nextCandidate(ctx context.Context, retention time.Duration, now 
 			cutoff := now.Add(-retention).UnixNano()
 			found, err := oldestClosed(ctx, tx, `SELECT session_id FROM log_sessions
 				WHERE state='ENDED' AND end_time IS NOT NULL AND end_time < ?
-				ORDER BY end_time ASC LIMIT 20`, cutoff)
+				`+closedSession+`
+				ORDER BY end_time ASC LIMIT 1`, cutoff)
 			if err != nil {
 				return err
 			}
@@ -188,7 +192,8 @@ func (s *Store) nextCandidate(ctx context.Context, retention time.Duration, now 
 			}
 		}
 		found, err := oldestClosed(ctx, tx, `SELECT session_id FROM log_sessions
-			WHERE state='ENDED' ORDER BY COALESCE(end_time, last_time, 0) ASC LIMIT 20`)
+			WHERE state='ENDED' `+closedSession+`
+			ORDER BY COALESCE(end_time, last_time, 0) ASC LIMIT 1`)
 		if err != nil {
 			return err
 		}
@@ -200,6 +205,20 @@ func (s *Store) nextCandidate(ctx context.Context, retention time.Duration, now 
 	}
 	return id, age, nil
 }
+
+// closedSession keeps only sessions with no open stream: no pane stream
+// whose newest end lacks a final chunk there (the openStreams predicate,
+// correlated to the outer log_sessions row).
+const closedSession = `AND NOT EXISTS (
+		SELECT 1 FROM (
+			SELECT pane, stream, MAX(raw_offset + raw_length) AS end FROM log_chunks
+			WHERE session_id = log_sessions.session_id GROUP BY pane, stream
+		) AS newest
+		WHERE NOT EXISTS (SELECT 1 FROM log_chunks c
+			WHERE c.session_id = log_sessions.session_id AND c.pane = newest.pane
+			AND c.stream = newest.stream AND c.is_final = 1
+			AND c.raw_offset + c.raw_length = newest.end)
+	)`
 
 // oldestClosed is the first candidate of the query with no open stream.
 func oldestClosed(ctx context.Context, tx *sql.Tx, q string, args ...any) (string, error) {
