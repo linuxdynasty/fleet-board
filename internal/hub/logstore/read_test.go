@@ -25,7 +25,7 @@ func TestReadSkipsHeadlessFrameAndMarksGap(t *testing.T) {
 	if _, v, err := st.Ingest(ctx, logstore.Chunk{
 		Session: "s-1", Machine: "m-1",
 		Pane: pane, Stream: logstore.TerminalStream, Offset: 5, Data: tail,
-		RawLength: 6, GapBefore: 5, FrameStart: false, FrameRawOffset: 0, //nolint:gosec // G115: test bytes are tens of bytes
+		RawLength: 6, GapBefore: 5, FrameStart: false, FrameRawOffset: 0,
 		FirstTime: end.Add(-time.Second), LastTime: end,
 	}); err != nil || v != logstore.Stored {
 		t.Fatalf("ingest tail v=%v err=%v", v, err)
@@ -34,7 +34,7 @@ func TestReadSkipsHeadlessFrameAndMarksGap(t *testing.T) {
 	if _, v, err := st.Ingest(ctx, logstore.Chunk{
 		Session: "s-1", Machine: "m-1",
 		Pane: pane, Stream: logstore.TerminalStream, Offset: 11, Data: second,
-		RawLength: 7, FrameStart: true, FrameRawOffset: 11, //nolint:gosec // G115: test bytes are tens of bytes
+		RawLength: 7, FrameStart: true, FrameRawOffset: 11,
 		FirstTime: end, LastTime: end, Final: true,
 	}); err != nil || v != logstore.Stored {
 		t.Fatalf("ingest second v=%v err=%v", v, err)

@@ -319,7 +319,7 @@ func (s *Store) resumeHead(ctx context.Context, session, pane string, stream int
 	if !head.Valid || head.Int64 < 0 {
 		return 0, nil
 	}
-	return uint64(head.Int64), nil //nolint:gosec // G115: MAX(raw_offset) of stored rows is never negative
+	return uint64(head.Int64), nil
 }
 
 // searchBatch fetches one raw-offset page of a stream's chunk rows:
