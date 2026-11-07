@@ -6,6 +6,7 @@
   "logs": {
     "admin.": "docs/specs/05b-observability.md",
     "approval.": "docs/specs/03d-triage-sessions-logs.md",
+    "attach.": "docs/specs/02b-hub-api.md",
     "audit.": "docs/specs/05b-observability.md",
     "backup.": "docs/specs/05b-observability.md",
     "cert.": "docs/specs/05b-observability.md",
@@ -72,6 +73,8 @@
     "agent_cert_": "docs/specs/05b-observability.md",
     "agent_rollback_": "docs/specs/03n-reconnect.md",
     "approvals_": "docs/specs/03d-triage-sessions-logs.md",
+    "attach_": "docs/specs/02b-hub-api.md",
+    "attaches_": "docs/specs/02b-hub-api.md",
     "audit_": "docs/specs/05b-observability.md",
     "auth_failures_": "docs/specs/05b-observability.md",
     "backup_": "docs/specs/05b-observability.md",

@@ -409,6 +409,7 @@ func (f *Fleet) RevokeMachine(ctx context.Context, req *connect.Request[hubv1.Re
 			if err := f.stageMissing(plan.Serials); err != nil {
 				return nil, f.machineFailed(ctx, opMachineRevoke, "revoke", actor, "revocation", err)
 			}
+			f.attach.CloseMachine(id, typev1.AttachCloseReason_ATTACH_CLOSE_REASON_HUB_CLOSED)
 			f.byeMachine(id)
 		}
 		f.machineWrote(ctx, opMachineRevoke, actor, id, plan.Replay.Version, true)
@@ -460,6 +461,9 @@ func (f *Fleet) RevokeMachine(ctx context.Context, req *connect.Request[hubv1.Re
 		return nil, f.machineFailed(jctx, opMachineRevoke, "revoke", actor, "wiring",
 			errors.New("api: revoke needs the live stream"))
 	}
+	// A revoked credential ends its attaches HUB_CLOSED (02f), before
+	// the stream cut lands as AGENT_OFFLINE on the agent side.
+	f.attach.CloseMachine(id, typev1.AttachCloseReason_ATTACH_CLOSE_REASON_HUB_CLOSED)
 	f.byeMachine(id)
 	f.machineWrote(jctx, opMachineRevoke, actor, id, revoked.Machine.Version, revoked.Machine.Replay)
 	return connect.NewResponse(&hubv1.RevokeMachineResponse{Machine: machineFromStored(revoked.Machine)}), nil

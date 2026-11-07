@@ -362,6 +362,11 @@ func (s *session) accept(ctx context.Context, ack *agentv1.HelloAck, st ring.Sta
 func (s *session) connected(ctx context.Context) (ending, string, error) {
 	l := s.l
 	s.serving.Store(true)
+	// The Terminal opener lives exactly as long as this session: an
+	// attach opened on it dies with the stream, and the next session
+	// publishes its own.
+	l.publishTerminal(s.k.client, s.sctx)
+	defer l.unpublishTerminal()
 	// The queue opens first, so a Send that sees Connected is taken.
 	defer s.serveQueue(ctx)()
 	l.status.state(StateConnected, s.c.addr)

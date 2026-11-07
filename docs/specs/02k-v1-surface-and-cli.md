@@ -145,6 +145,11 @@ available. Envelope, deadline and local policy checks still run before input.
 An unfinished command uses the same guarded executor when resumed. This does
 not add an EnsureSession handler or complete the session mirror.
 
+With tmux present `run` also starts the terminal-attach manager (01f J1) behind
+the `OpenAttach` and `CloseAttach` handlers: the default and fleet servers are
+served, never the probe server, and without a served server there is no manager.
+The manager reports its live count in the heartbeat.
+
 ## Labels that change behaviour
 
 A label is free text the owner or the local policy adds ([03e](03e-settings-and-drift.md)).

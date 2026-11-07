@@ -167,6 +167,9 @@ type Loop struct {
 	// out is the Connected stream's outbound queue, nil when none
 	// (outbound.go); only Run's goroutine stores it.
 	out atomic.Pointer[outQueue]
+	// term is the Connected session's Terminal opener, nil when none
+	// (terminal.go); only the serving goroutine stores it.
+	term atomic.Pointer[terminalLive]
 	// capsDropped is each capability entry already logged as dropped;
 	// only Run's goroutine touches it.
 	capsDropped map[string]bool

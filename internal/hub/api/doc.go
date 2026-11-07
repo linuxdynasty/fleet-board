@@ -42,8 +42,12 @@
 // DismissTriageItem (each with its triage.* audit row), the dispatch
 // calls [Fleet.PreflightGoal], [Fleet.StartGoal] and [Fleet.ControlGoal]
 // (each with its dispatch.* audit row) and [Fleet.DecideApproval] (which
-// starts an approved dispatch and attaches its operation and goal),
-// the registry pass ([RegistryApplier], appended to the ingest jobs by
+// starts an approved dispatch and attaches its operation and goal).
+// [Fleet.PreflightGoal] and [Fleet.StartGoal] fill an empty goal text from
+// the approved default (03c) on repos whose hooks mode is not ESHU; an
+// explicit text is never rewritten, and an empty text on an ESHU repo, a
+// non-issue work item, or a key with no issue number stays refused.
+// The registry pass ([RegistryApplier], appended to the ingest jobs by
 // the daemon) driving dispatched goals from the agent's own sightings, the
 // session-control and approvals calls (their fresh Operation deadlines
 // come from the queued commands; new session commands wake the outbox only

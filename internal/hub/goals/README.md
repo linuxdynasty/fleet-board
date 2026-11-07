@@ -6,7 +6,8 @@ Confirm, Warn and Info severities (`Evaluate`, `DecideStart`), attempts
 (every retry is a new goal), the verifier (a DONE claim checked against the
 code host before the worker is freed), `READY_FOR_HUMAN_MERGE`, and the work
 item stage after a goal ends. The approved 0.18 default goal text lives here
-(`DefaultGoalText`); hub-side auto-fill for hook-less repos is #423.
+(`DefaultGoalText`); hub-side auto-fill for hook-less repos landed in
+#423 (empty text fills on non-ESHU repos, ESHU still refuses).
 
 Observed goals stay in the observed package (03k). The scheduler pass that
 picks work is row 23 and is not here.

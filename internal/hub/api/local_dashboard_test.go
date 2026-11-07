@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -81,6 +82,8 @@ func TestLocalServerServesTheDashboard(t *testing.T) {
 		{name: "client route falls back to the entry page", path: "/usage"},
 		{name: "nested client route falls back to the entry page", path: "/session/x/windows"},
 	}
+	// mu guards entry: the subtests run in parallel and share it.
+	var mu sync.Mutex
 	var entry string
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -98,9 +101,13 @@ func TestLocalServerServesTheDashboard(t *testing.T) {
 			if body == "" {
 				t.Fatalf("GET %s body is empty", tc.path)
 			}
+			mu.Lock()
+			differs := entry != "" && body != entry
 			if entry == "" {
 				entry = body
-			} else if body != entry {
+			}
+			mu.Unlock()
+			if differs {
 				t.Fatalf("GET %s body differs from the entry page", tc.path)
 			}
 		})
