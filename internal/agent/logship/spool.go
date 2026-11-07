@@ -286,7 +286,10 @@ func (s *Spool) acked() (uint64, error) {
 		return 0, fmt.Errorf("logship: read acked: %w", err)
 	}
 	if len(raw) != 8 {
-		return 0, fmt.Errorf("logship: acked file holds %d bytes, want 8", len(raw))
+		// A crash between the temp write and its rename leaves a short
+		// file: it was never committed, so it is ignored, never trusted.
+		// The chunks resend; the hub answers duplicates.
+		return 0, nil
 	}
 	return binary.LittleEndian.Uint64(raw), nil
 }

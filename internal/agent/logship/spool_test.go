@@ -123,6 +123,44 @@ func TestSpoolSurvivesRestart(t *testing.T) {
 	}
 }
 
+// TestOpenSpoolIgnoresTornAckedFile is the torn-ack wedge: a crash between
+// the acked temp write and its rename can leave a short acked file. The
+// reopen must ignore it (never trust it), so Pending, Floor and SetAcked
+// keep working instead of wedging the spool on an error.
+func TestOpenSpoolIgnoresTornAckedFile(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	open := func() *logship.Spool {
+		sp, err := logship.OpenSpool(dir, "default", "s1", "%3", logship.TerminalStream, 1<<30)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return sp
+	}
+	sp := open()
+	if _, err := sp.Append(storedAt(0, "first\n", false)); err != nil {
+		t.Fatal(err)
+	}
+	// Crash mid-ack: the durable file holds 4 bytes, not a full offset.
+	if err := os.WriteFile(filepath.Join(sp.Dir(), "acked.acked"), []byte{1, 2, 3, 4}, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	sp2 := open()
+	pending, err := sp2.Pending()
+	if err != nil {
+		t.Fatalf("Pending after torn acked: %v", err)
+	}
+	if len(pending) != 1 || pending[0].Offset != 0 {
+		t.Fatalf("pending %+v, want the unacked chunk at 0", pending)
+	}
+	if _, err := sp2.Floor(); err != nil {
+		t.Fatalf("Floor after torn acked: %v", err)
+	}
+	if err := sp2.SetAcked(6); err != nil {
+		t.Fatalf("SetAcked after torn acked: %v", err)
+	}
+}
+
 func TestSpoolCapKeepsNewest(t *testing.T) {
 	t.Parallel()
 	sp := openSpool(t, 64)
@@ -220,6 +258,16 @@ func TestSpoolIgnoresTornAckWriteOnRestart(t *testing.T) {
 	}
 	if floor != 6 {
 		t.Fatalf("floor %d, want 6", floor)
+	}
+	// The reopen cleaned the stray tmp, not just served around it.
+	entries, err := os.ReadDir(sp2.Dir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range entries {
+		if len(e.Name()) >= 4 && e.Name()[len(e.Name())-4:] == ".tmp" {
+			t.Fatalf("stray file %q in the spool dir", e.Name())
+		}
 	}
 }
 
