@@ -18,8 +18,10 @@ const maxChunkBytes = 960 * 1024
 // ack follows the commit: Write returns only after it.
 //
 // Accept rules (03d W9), per stream, where end is the stored end:
-//   - offset + raw_length <= end: DUPLICATE, nothing stored, end re-acked.
-//   - offset == end + gap_before: STORED, the row records gap_before.
+//   - offset + raw_length <= end, computed without wrapping: DUPLICATE,
+//     nothing stored, end re-acked.
+//   - offset - gap_before == end: STORED, the row records gap_before
+//     (offset-minus-gap, never end-plus-gap: the sum wraps mod 2^64).
 //   - anything else: HOLE with the hub's end, nothing stored.
 //   - the pane maps to no session: UNKNOWN_STREAM, nothing stored.
 //
@@ -61,9 +63,14 @@ func (s *Store) Ingest(ctx context.Context, c Chunk) (end uint64, v Verdict, err
 		if err != nil {
 			return err
 		}
-		if c.Offset+c.UintRaw() <= end {
+		// dupEnd is the chunk's end for the duplicate check: the sum
+		// wraps mod 2^64, so a wrapped sum must never verdict
+		// DUPLICATE (a far-ahead hostile chunk would land below end).
+		dupEnd := c.Offset + c.UintRaw()
+		wrapped := dupEnd < c.Offset
+		if !wrapped && dupEnd <= end {
 			v = Duplicate
-			if c.Final && c.Offset+c.UintRaw() == end {
+			if c.Final && dupEnd == end {
 				// The pane-exit final marker arrived after its bytes:
 				// record it on the stream's newest chunk so the stream
 				// reads closed. A stale Final short of the end is not
@@ -95,7 +102,7 @@ func (s *Store) Ingest(ctx context.Context, c Chunk) (end uint64, v Verdict, err
 		); err != nil {
 			return fmt.Errorf("logstore: insert chunk: %w", err)
 		}
-		end = c.Offset + c.UintRaw()
+		end = dupEnd
 		v = Stored
 		if _, err := tx.ExecContext(ctx, `UPDATE log_sessions SET last_time=?,
 			raw_bytes=raw_bytes+?, stored_bytes=stored_bytes+?, gap_bytes=gap_bytes+?

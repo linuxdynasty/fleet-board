@@ -1,6 +1,7 @@
 package logstore_test
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"testing"
@@ -142,6 +143,42 @@ func TestAcceptRules(t *testing.T) {
 		}
 		if got.GapBytes != 7 {
 			t.Fatalf("gap bytes %d, want 7", got.GapBytes)
+		}
+	})
+
+	t.Run("wrapping offset is a hole, not a duplicate", func(t *testing.T) {
+		// Offset=2^64-6 plus RawLength=10 wraps to 4, which sits below
+		// the stored end: without a wrap guard the duplicate check
+		// takes the DUPLICATE arm for a far-ahead hostile chunk.
+		// The shared store sits at end 23 here; continue it to 32.
+		raw9 := bytes.Repeat([]byte("x"), 9)
+		if _, v, err := st.Ingest(ctx, logstore.Chunk{
+			Pane: pane, Stream: logstore.TerminalStream, Offset: 23,
+			Data: frame(t, raw9), RawLength: uint32(len(raw9)), FrameStart: true, //nolint:gosec // G115: test bytes are nine bytes
+			FrameRawOffset: 23,
+		}); err != nil || v != logstore.Stored {
+			t.Fatalf("ingest 9 v=%v err=%v", v, err)
+		}
+		end, v, err := st.Ingest(ctx, logstore.Chunk{
+			Pane: pane, Stream: logstore.TerminalStream,
+			Offset: ^uint64(0) - 5, Data: frame(t, []byte("hostile")), RawLength: 10,
+			FrameStart: true, FrameRawOffset: ^uint64(0) - 5,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if v != logstore.Hole {
+			t.Fatalf("verdict %v, want Hole for the wrapping far-ahead chunk", v)
+		}
+		if end != 32 {
+			t.Fatalf("end %d, want 32 unchanged", end)
+		}
+		got, err := st.Get(ctx, "sess-1")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.RawBytes != 32 || got.GapBytes != 7 {
+			t.Fatalf("raw %d gap %d, want 32 and 7 unchanged", got.RawBytes, got.GapBytes)
 		}
 	})
 

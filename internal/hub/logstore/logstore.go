@@ -117,7 +117,7 @@ const (
 	Stored Verdict = iota + 1
 	// Duplicate means the bytes were already stored; the end is re-acked.
 	Duplicate
-	// Hole means offset != stored end + gap_before and the chunk stored
+	// Hole means offset - gap_before != stored end and the chunk stored
 	// nothing; the agent resends from the returned end.
 	Hole
 	// UnknownStream means the pane maps to no session yet; the agent keeps
