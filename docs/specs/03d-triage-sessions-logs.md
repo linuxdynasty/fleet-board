@@ -378,7 +378,7 @@ chunk with `LogAck{key, acked_offset = its stored end, status}`:
 | Chunk | Hub action | `status` |
 |---|---|---|
 | `offset == stored_end + gap_before` | store the row, ack the new end (the row records `gap_before` as lost bytes) | `STORED` |
-| `offset + raw_length ≤ stored_end` | ignore, but a `Final` at the stored end also marks the stream's newest chunk final so the ended stream reads closed | `DUPLICATE` (re-ack) |
+| `offset + raw_length ≤ stored_end` | ignore, but a final marker at the stored end also marks the stream's newest chunk final so the ended stream reads closed | `DUPLICATE` (re-ack) |
 | anything else (a hole, or the hub is ahead) | store nothing, count `log.hole_refused` | `HOLE` with the hub's end |
 | the pane maps to no session yet | store nothing | `UNKNOWN_STREAM` |
 
