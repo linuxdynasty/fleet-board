@@ -198,6 +198,19 @@ func (f *Fleet) markProbeRunNow(account string, now time.Time) {
 	f.probeRunNow[account] = now
 }
 
+// probeRateLimited refuses when the account probed less than a minute
+// ago. ProbeAccount calls it inside the transaction; the full RPC cannot
+// reach the refusal until account keys land (no success path can mark
+// the gate), so this helper carries the pin for the branch.
+func (f *Fleet) probeRateLimited(account string, now time.Time) error {
+	if !f.peekProbeRunNow(account, now) {
+		return apiError(connect.CodeFailedPrecondition,
+			typev1.ReasonCode_REASON_CODE_RATE_LIMITED,
+			"the account probed less than a minute ago: its reading is current", nil, nil)
+	}
+	return nil
+}
+
 // checkSkipReason names the first refusing check for the skip counter.
 func checkSkipReason(d goals.Decision) string {
 	for _, c := range d.Blocks {

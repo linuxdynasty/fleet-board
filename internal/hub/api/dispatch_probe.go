@@ -77,12 +77,8 @@ func (f *Fleet) ProbeAccount(ctx context.Context, req *connect.Request[hubv1.Pro
 		if err != nil {
 			return err
 		}
-		// The gate is peeked here and claimed in the commit hook, so
-		// a failed commit leaves a retry free to probe.
-		if !f.peekProbeRunNow(m.GetId().GetValue(), now) {
-			return apiError(connect.CodeFailedPrecondition,
-				typev1.ReasonCode_REASON_CODE_RATE_LIMITED,
-				"the account probed less than a minute ago: its reading is current", nil, nil)
+		if err := f.probeRateLimited(m.GetId().GetValue(), now); err != nil {
+			return err
 		}
 		probeID, err := ulid.New(now, f.random)
 		if err != nil {

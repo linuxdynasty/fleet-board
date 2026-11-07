@@ -43,6 +43,42 @@ func TestProbeRunNowGateOnePerMinute(t *testing.T) {
 	}
 }
 
+// TestProbeRateLimitedRefusal pins the exact RPC refusal the gate feeds:
+// a marked account gets FAILED_PRECONDITION RATE_LIMITED, an unmarked
+// one passes. The full RPC cannot reach this branch until account keys
+// land (no success path can mark it), so the helper carries the pin and
+// ProbeAccount calls it on one line.
+func TestProbeRateLimitedRefusal(t *testing.T) {
+	t.Parallel()
+	f := &Fleet{probeRunNow: map[string]time.Time{}}
+	now := time.Now()
+	if err := f.probeRateLimited("a1", now); err != nil {
+		t.Fatalf("open account: %v, want nil", err)
+	}
+	f.markProbeRunNow("a1", now)
+	err := f.probeRateLimited("a1", now)
+	var ce *connect.Error
+	if !errors.As(err, &ce) {
+		t.Fatalf("error %v is not a *connect.Error", err)
+	}
+	if ce.Code() != connect.CodeFailedPrecondition {
+		t.Errorf("code %v, want FailedPrecondition", ce.Code())
+	}
+	var reason typev1.ReasonCode
+	for _, d := range ce.Details() {
+		msg, derr := d.Value()
+		if derr != nil {
+			t.Fatal(derr)
+		}
+		if ed, ok := msg.(*typev1.ErrorDetail); ok {
+			reason = ed.GetReason()
+		}
+	}
+	if reason != typev1.ReasonCode_REASON_CODE_RATE_LIMITED {
+		t.Errorf("reason %v, want RATE_LIMITED", reason)
+	}
+}
+
 // TestCheckProbeReplayReturnsStoredOperation pins the replay-hit path the
 // ProbeAccount comment promises: a repeated request_id with the same body
 // returns the stored operation instead of queueing a second probe, and a
