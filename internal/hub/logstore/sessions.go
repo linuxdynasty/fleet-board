@@ -234,7 +234,9 @@ func (s *Store) List(ctx context.Context, f Filter) ([]StoredSession, string, er
 		if err != nil {
 			return nil, "", err
 		}
-		conds = append(conds, "(last_time<? OR (last_time=? AND session_id>?))")
+		// The ordering key is COALESCE(last_time, 0): sessions ended
+		// before any chunk have NULL last_time and sort last.
+		conds = append(conds, "(COALESCE(last_time,0)<? OR (COALESCE(last_time,0)=? AND session_id>?))")
 		args = append(args, nanos.UTC().UnixNano(), nanos.UTC().UnixNano(), tokSession)
 	}
 	q := `SELECT session_id, machine_id, session_name, started_by_fleet, state,
@@ -244,7 +246,7 @@ func (s *Store) List(ctx context.Context, f Filter) ([]StoredSession, string, er
 		//nolint:gosec // G202: filter clauses are fixed literals; values are bound args
 		q += " WHERE " + strings.Join(conds, " AND ")
 	}
-	q += " ORDER BY last_time DESC, session_id ASC LIMIT ?"
+	q += " ORDER BY COALESCE(last_time,0) DESC, session_id ASC LIMIT ?"
 	args = append(args, limit+1)
 	var out []StoredSession
 	err := s.db.Read(ctx, func(tx *sql.Tx) error {
@@ -292,7 +294,12 @@ func (s *Store) List(ctx context.Context, f Filter) ([]StoredSession, string, er
 	token := ""
 	if len(out) > limit {
 		out = out[:limit]
-		token = encodeToken(out[len(out)-1].LastTime, out[len(out)-1].ID)
+		// The token carries the ordering key: a NULL last_time sorts as 0.
+		key := out[len(out)-1].LastTime
+		if key.IsZero() {
+			key = time.Unix(0, 0).UTC()
+		}
+		token = encodeToken(key, out[len(out)-1].ID)
 	}
 	return out, token, nil
 }

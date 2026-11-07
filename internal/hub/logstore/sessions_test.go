@@ -196,3 +196,65 @@ func TestListPagingAndFilter(t *testing.T) {
 		t.Fatalf("live filter got %d, want 0", len(live))
 	}
 }
+
+// TestListKeepsNullTimeSessionsAcrossPages: a session ended before any
+// chunk arrives has NULL last_time. It must still appear exactly once when
+// paging through the whole list, ordered after sessions with a last_time.
+func TestListKeepsNullTimeSessionsAcrossPages(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	st := openFor(t, nil)
+	base := time.Unix(2000, 0).UTC()
+	for i, id := range []string{"a", "b", "c"} {
+		end := base.Add(time.Duration(i) * time.Minute)
+		raw := []byte("out " + id + "\n")
+		if _, _, err := st.Ingest(ctx, logstore.Chunk{
+			Session: "s-" + id, Machine: "m-1",
+			Pane: paneID("%" + string(rune('3'+i))), Stream: logstore.TerminalStream, Offset: 0,
+			Data:      frame(t, raw),
+			RawLength: uint32(len(raw)), FrameStart: true, //nolint:gosec // G115: test bytes are tens of bytes
+			FirstTime: end.Add(-time.Second), LastTime: end, Final: true,
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if err := st.EndSession(ctx, "s-"+id, "m-1", end, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// End with no chunk ever stored: last_time stays NULL. Two of them
+	// pin the token's equality arm: the second page's token carries key 0
+	// and the next page must still find the higher session id.
+	if err := st.EndSession(ctx, "s-null", "m-1", base.Add(-time.Hour), nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.EndSession(ctx, "s-null2", "m-1", base.Add(-time.Hour), nil); err != nil {
+		t.Fatal(err)
+	}
+	var seen []string
+	token := ""
+	for {
+		page, next, err := st.List(ctx, logstore.Filter{Limit: 2, PageToken: token})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, s := range page {
+			seen = append(seen, s.ID)
+		}
+		token = next
+		if token == "" {
+			break
+		}
+		if len(seen) > 10 {
+			t.Fatal("list token loops")
+		}
+	}
+	want := []string{"s-c", "s-b", "s-a", "s-null", "s-null2"}
+	if len(seen) != len(want) {
+		t.Fatalf("paged ids %q, want %q", seen, want)
+	}
+	for i := range want {
+		if seen[i] != want[i] {
+			t.Fatalf("paged ids %q, want %q", seen, want)
+		}
+	}
+}
